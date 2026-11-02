@@ -42,3 +42,23 @@ test('agentPrompt/agentWait : idle, done et blocked sont rendus tels quels', asy
     expect(await h.agentWait('a1', { until: ['idle'], timeoutMs: 1 })).toBe(s)
   }
 })
+
+test('paneCurrent lit pane_id, tab_id, workspace_id et cwd', async () => {
+  const h = new Herdr(() => {})
+  replies['pane current'] = {
+    stdout: '{"result":{"pane":{"pane_id":"w2D:p1","tab_id":"w2D:t1","workspace_id":"w2D","cwd":"/x"}}}',
+    stderr: '',
+    exitCode: 0,
+  }
+  expect(await h.paneCurrent()).toEqual({ paneId: 'w2D:p1', tabId: 'w2D:t1', workspaceId: 'w2D', cwd: '/x' })
+})
+
+test('paneCurrent lève une HerdrError si un identifiant manque', async () => {
+  const h = new Herdr(() => {})
+  replies['pane current'] = {
+    stdout: '{"result":{"pane":{"pane_id":"w2D:p1","tab_id":"w2D:t1","cwd":"/x"}}}',
+    stderr: '',
+    exitCode: 0,
+  }
+  await expect(h.paneCurrent()).rejects.toThrow(/workspace_id/)
+})

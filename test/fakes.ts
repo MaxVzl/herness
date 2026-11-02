@@ -37,7 +37,7 @@ export class FakeEngineHerdr extends FakeHerdr {
 
 const HERDR_METHODS = [
   'workspaceList', 'worktreeCreate', 'workspaceFocus', 'workspaceClose', 'tabList', 'tabCreate', 'tabRename', 'tabFocus',
-  'paneList', 'paneSplit', 'paneRename', 'paneRun', 'paneWaitOutput', 'paneLayout', 'paneProcessInfo', 'paneSendKeys',
+  'paneList', 'paneSplit', 'paneRename', 'paneRun', 'paneWaitOutput', 'paneLayout', 'paneProcessInfo', 'paneSendKeys', 'paneCurrent',
   'agentStart', 'agentPrompt', 'agentWait', 'agentGet', 'agentRead', 'notify',
 ] as const satisfies readonly (keyof EngineHerdr)[]
 

@@ -24,11 +24,12 @@ export interface Effects {
   sleep(ms: number): Promise<void>
 }
 
-export function realEffects(): Effects {
-  const herdr = new Herdr()
+/** `log` reçoit les journaux de herdr et des agents ; défaut : `console.error` (le cockpit les affiche dans ink). */
+export function realEffects(opts: { log?: (message: string) => void } = {}): Effects {
+  const herdr = new Herdr(opts.log)
   return {
     herdr,
-    agents: new AgentRunner(herdr),
+    agents: new AgentRunner(herdr, opts.log),
     git,
     forge,
     runInPane,

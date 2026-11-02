@@ -44,8 +44,9 @@ export function pendingGate(s: MissionState, kind?: GateKind): Gate | undefined 
 export async function decide(
   id: string,
   decision: Decision['decision'],
-  opts: { gateId?: string; note?: string; isTTY: boolean; confirm: () => Promise<boolean> },
+  opts: { gateId?: string; note?: string; isTTY: boolean; confirm: () => Promise<boolean>; out?: (line: string) => void },
 ): Promise<void> {
+  const out = opts.out ?? console.log
   if (!opts.isTTY) throw new Error('validation réservée à un terminal interactif')
   const s = await loadState(id)
   const gate = opts.gateId ? s.gates.find((g) => g.id === opts.gateId) : pendingGate(s)
@@ -53,8 +54,8 @@ export async function decide(
     throw new Error(opts.gateId ? `porte ${opts.gateId} introuvable` : 'aucune porte en attente')
   }
   if (gate.status !== 'pending') throw new Error(notPending(gate))
-  console.log(`Porte ${gate.id} (${gate.kind}) : ${gate.summary}`)
-  if (gate.path) console.log(`Fichier : ${gate.path}`)
+  out(`Porte ${gate.id} (${gate.kind}) : ${gate.summary}`)
+  if (gate.path) out(`Fichier : ${gate.path}`)
   if (!(await opts.confirm())) return
   await postInbox(id, {
     type: 'decision',

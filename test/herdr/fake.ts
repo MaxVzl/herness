@@ -59,6 +59,7 @@ export class FakeHerdr implements HerdrApi {
   }
   async workspaceClose(id: string) {
     this.calls.push(`workspaceClose ${id}`);
+    this.workspaces = this.workspaces.filter((w) => w.workspaceId !== id);
   }
   async tabList(ws: string): Promise<HerdrTab[]> {
     return this.tabs.filter((t) => t.workspaceId === ws);
@@ -74,6 +75,11 @@ export class FakeHerdr implements HerdrApi {
   }
   async tabFocus(tab: string) {
     this.calls.push(`tabFocus ${tab}`);
+  }
+  async tabClose(tab: string) {
+    this.calls.push(`tabClose ${tab}`);
+    this.tabs = this.tabs.filter((t) => t.tabId !== tab);
+    this.panes = this.panes.filter((p) => p.tabId !== tab);
   }
   async paneList(ws: string): Promise<HerdrPane[]> {
     return this.panes.filter((p) => p.workspaceId === ws).map(({ rect: _r, busy: _b, ...p }) => p);
@@ -115,5 +121,10 @@ export class FakeHerdr implements HerdrApi {
   async paneSendKeys(pane: string, ...keys: string[]) {
     this.calls.push(`paneSendKeys ${keys.join(' ')}`);
     if (keys.includes('ctrl+c')) this.pane(pane).busy = false;
+  }
+  async paneCurrent() {
+    const p = this.panes[0];
+    if (!p) throw new Error('aucun panneau');
+    return { paneId: p.paneId, tabId: p.tabId, workspaceId: p.workspaceId, cwd: '/fake' };
   }
 }

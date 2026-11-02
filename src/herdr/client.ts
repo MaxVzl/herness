@@ -39,6 +39,7 @@ export interface HerdrApi {
   tabCreate(a: { workspace: string; cwd: string; label: string }): Promise<{ tabId: string; rootPaneId: string }>;
   tabRename(tab: string, label: string): Promise<void>;
   tabFocus(tab: string): Promise<void>;
+  tabClose(tab: string): Promise<void>;
   paneList(ws: string): Promise<HerdrPane[]>;
   paneSplit(a: { pane: string; direction: 'right' | 'down'; ratio?: number; cwd: string }): Promise<{ paneId: string; tabId: string }>;
   paneRename(pane: string, label: string): Promise<void>;
@@ -48,6 +49,8 @@ export interface HerdrApi {
   paneLayout(pane: string): Promise<PaneLayoutEntry[]>;
   paneProcessInfo(pane: string): Promise<PaneProcessInfo>;
   paneSendKeys(pane: string, ...keys: string[]): Promise<void>;
+  /** Panneau qui exécute la commande (`herdr pane current`). */
+  paneCurrent(): Promise<{ paneId: string; tabId: string; workspaceId: string; cwd: string }>;
 }
 
 export class HerdrError extends Error {
@@ -164,6 +167,10 @@ export class Herdr implements HerdrApi {
     await this.call(['tab', 'focus', tab]);
   }
 
+  async tabClose(tab: string): Promise<void> {
+    await this.call(['tab', 'close', tab]);
+  }
+
   async paneList(ws: string): Promise<HerdrPane[]> {
     const r = await this.call(['pane', 'list', '--workspace', ws]);
     return (r['panes'] as Json[]).map(Herdr.pane);
@@ -206,6 +213,15 @@ export class Herdr implements HerdrApi {
 
   async paneSendKeys(pane: string, ...keys: string[]): Promise<void> {
     await this.call(['pane', 'send-keys', pane, ...keys]);
+  }
+
+  /** `pane_info` : `result.pane.{pane_id, tab_id, workspace_id, cwd}`. */
+  async paneCurrent(): Promise<{ paneId: string; tabId: string; workspaceId: string; cwd: string }> {
+    const p = (await this.call(['pane', 'current']))['pane'] as Json;
+    for (const k of ['pane_id', 'tab_id', 'workspace_id']) {
+      if (typeof p?.[k] !== 'string' || p[k] === '') throw new HerdrError('bad_response', `« herdr pane current » : champ ${k} absent ou vide`);
+    }
+    return { paneId: p['pane_id'], tabId: p['tab_id'], workspaceId: p['workspace_id'], cwd: typeof p['cwd'] === 'string' ? p['cwd'] : '' };
   }
 
   async agentStart(name: string, kind: string, pane: string, args: string[], timeoutMs: number): Promise<void> {
