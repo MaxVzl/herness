@@ -153,7 +153,8 @@ export async function startMission(input: string, cwd: string, deps: LifecycleDe
  * de reprise. `restart` (`--redemarrer`, après une mise à jour de herness) : moteur, tableau et visionneuses sont
  * arrêtés puis relancés même s'ils tournent, pour exécuter le nouveau code ; rien n'est envoyé aux agents.
  */
-export async function resumeMission(id: string, deps: LifecycleDeps, opts: { restart?: boolean } = {}): Promise<void> {
+/** `focus` (vrai par défaut) : finit en focalisant l'onglet master ; le cockpit passe faux pour rester à l'écran. */
+export async function resumeMission(id: string, deps: LifecycleDeps, opts: { restart?: boolean; focus?: boolean } = {}): Promise<void> {
   const { e } = deps
   const out = deps.out ?? console.log
   const s = await load(id)
@@ -214,7 +215,7 @@ export async function resumeMission(id: string, deps: LifecycleDeps, opts: { res
     out(`Mission bloquée : ${s.blockedReason ?? '(raison inconnue)'}`)
     out(`Pour la reprendre à l'étape ${s.blockedFrom ?? '?'}, valide la porte de reprise : herness valider ${id}`)
   }
-  await e.herdr.tabFocus(space.tabs.master)
+  if (opts.focus !== false) await e.herdr.tabFocus(space.tabs.master)
 }
 
 /**

@@ -255,6 +255,15 @@ test('reprendre relance moteur, tableau et orchestrateur absents', async () => {
   expect(await drainInbox('gh12')).toEqual([])
 })
 
+test('reprendre focalise l’onglet master, sauf avec focus:false', async () => {
+  const { fx, d, s } = await started()
+  await resumeMission('gh12', d)
+  expect(fx.herdr.calls.at(-1)).toBe(`tabFocus ${s.herdr.tabs['master']}`)
+  fx.herdr.calls.length = 0
+  await resumeMission('gh12', d, { focus: false })
+  expect(fx.herdr.calls.some((c) => c.startsWith('tabFocus'))).toBe(false)
+})
+
 test('reprendre ne relance pas ce qui tourne encore', async () => {
   const { fx, d, s } = await started()
   fx.herdr.pane(s.herdr.panes['engine']!).busy = true

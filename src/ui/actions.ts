@@ -64,12 +64,15 @@ export async function refuse(id: string, gateId: string, note: string, d: Action
   return decideWith(id, 'refused', gateId, note, d)
 }
 
-export function resume(id: string, d: ActionDeps): Promise<ActionResult> {
-  return run((out) => d.resume(id, { ...d.lifecycle, out }, { restart: false }))
+/** `focus: false` : la reprise ne focalise pas l'onglet master (le cockpit reste à l'écran, `o` l'ouvre). */
+export type ResumeOpts = { focus?: boolean }
+
+export function resume(id: string, d: ActionDeps, o: ResumeOpts = {}): Promise<ActionResult> {
+  return run((out) => d.resume(id, { ...d.lifecycle, out }, { restart: false, ...(o.focus === false ? { focus: false } : {}) }))
 }
 
-export function restart(id: string, d: ActionDeps): Promise<ActionResult> {
-  return run((out) => d.resume(id, { ...d.lifecycle, out }, { restart: true }))
+export function restart(id: string, d: ActionDeps, o: ResumeOpts = {}): Promise<ActionResult> {
+  return run((out) => d.resume(id, { ...d.lifecycle, out }, { restart: true, ...(o.focus === false ? { focus: false } : {}) }))
 }
 
 /**

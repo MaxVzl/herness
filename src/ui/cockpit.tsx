@@ -158,7 +158,8 @@ export function Cockpit({
   const acts = useMemo<CockpitActions>(() => {
     if (actions) return actions
     const deps = act.realActionDeps(repoPath, log)
-    return { ...missionActions(deps), startNew: (input) => act.startNew(input, deps) }
+    // p/R ne quittent pas le cockpit : `o` est le geste explicite pour ouvrir l'espace de la mission.
+    return { ...missionActions(deps, undefined, { focus: false }), startNew: (input) => act.startNew(input, deps) }
   }, [actions, repoPath, log])
   const prs = useMemo<PrLookup>(() => prCache ?? new PrCache(), [prCache])
   const read = useMemo(() => load ?? (() => projectMissions(repoPath)), [load, repoPath])

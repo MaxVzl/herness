@@ -67,7 +67,9 @@ test('resume et restart passent { restart } à resumeMission', async () => {
   const d = mk({ resume: (async (_id: string, _deps: unknown, o: unknown) => { opts.push(o) }) as never })
   await resume('m1', d)
   await restart('m1', d)
-  expect(opts).toEqual([{ restart: false }, { restart: true }])
+  await resume('m1', d, { focus: false })
+  await restart('m1', d, { focus: false })
+  expect(opts).toEqual([{ restart: false }, { restart: true }, { restart: false, focus: false }, { restart: true, focus: false }])
 })
 
 test('open focus l\'espace, ou rend un message', async () => {

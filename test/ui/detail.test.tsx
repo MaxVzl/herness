@@ -397,6 +397,18 @@ test('une porte décidée redevient sélectionnable quand l état ne la montre p
   expect(calls).toHaveLength(2)
 })
 
+test('missionActions avec focus:false transmet focus:false à resumeMission (p et R)', async () => {
+  const seen: unknown[] = []
+  const d = {
+    lifecycle: { e: {} },
+    resume: async (id: string, _d: unknown, o: unknown) => { seen.push([id, o]) },
+  } as unknown as ActionDeps
+  const m = missionActions(d, undefined, { focus: false })
+  await m.resume('T-1')
+  await m.restart('T-1')
+  expect(seen).toEqual([['T-1', { restart: false, focus: false }], ['T-1', { restart: true, focus: false }]])
+})
+
 test('missionActions relie les actions aux dépendances', async () => {
   const seen: unknown[] = []
   const d = {

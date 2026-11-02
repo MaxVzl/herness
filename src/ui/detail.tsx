@@ -108,12 +108,12 @@ export interface MissionActions {
   open(s: MissionState): Promise<ActionResult>
 }
 
-export function missionActions(d: ActionDeps, spawn?: Spawner): MissionActions {
+export function missionActions(d: ActionDeps, spawn?: Spawner, opts: act.ResumeOpts = {}): MissionActions {
   return {
     validate: (id, gateId, note) => act.validate(id, gateId, note, d),
     refuse: (id, gateId, note) => act.refuse(id, gateId, note, d),
-    resume: (id) => act.resume(id, d),
-    restart: (id, o) => (o?.detached ? act.restartDetached(id, spawn) : act.restart(id, d)),
+    resume: (id) => act.resume(id, d, opts),
+    restart: (id, o) => (o?.detached ? act.restartDetached(id, spawn) : act.restart(id, d, opts)),
     close: (id, confirm) => act.close(id, d, confirm),
     open: (s) => act.open(s, d),
   }
