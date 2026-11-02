@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test } from 'vitest'
 import { missionDir } from '../../src/paths.ts'
 import { newState, saveState, type MissionState } from '../../src/mission/state.ts'
 import {
-  bucketOf, isHidden, projectMissions, shortId, sortMissions, statusLabel, type PrInfo,
+  bucketOf, isHidden, needsPrRefresh, projectMissions, shortId, sortMissions, statusLabel, type PrInfo,
 } from '../../src/ui/model.ts'
 
 let home: string
@@ -79,6 +79,27 @@ test('isHidden : fermée avec PR mergée cachée, sinon visible', () => {
   expect(isHidden(s, merged, now)).toBe(true)
   expect(isHidden(s, open, now)).toBe(false)
   expect(isHidden(s, undefined, now)).toBe(false)
+})
+const closedPr: PrInfo = { state: 'CLOSED', checkedAt: now.toISOString() }
+test('isHidden : fermée avec PR CLOSED suit la règle des 7 jours depuis la fermeture', () => {
+  const closed = (at: string): MissionState =>
+    mk({ step: 'fermée', prUrl: url, createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission fermée (herness fermer)' }] })
+  expect(isHidden(closed('2026-11-02T12:00:00Z'), closedPr, now)).toBe(true)
+  expect(isHidden(closed('2026-11-08T12:00:00Z'), closedPr, now)).toBe(false)
+})
+test('isHidden : pr-ouverte avec PR CLOSED reste visible (à traiter)', () => {
+  expect(isHidden(mk({ step: 'pr-ouverte', prUrl: url, createdAt: '2026-10-01T00:00:00Z' }), closedPr, now)).toBe(false)
+})
+test('needsPrRefresh : ni PR mergée, ni PR CLOSED d’une mission fermée depuis plus de 7 jours', () => {
+  const closed = (at: string): MissionState =>
+    mk({ step: 'fermée', prUrl: url, createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission fermée (herness fermer)' }] })
+  expect(needsPrRefresh(mk({ step: 'tasks' }), undefined, now)).toBe(false)
+  expect(needsPrRefresh(mk({ step: 'pr-ouverte', prUrl: url }), undefined, now)).toBe(true)
+  expect(needsPrRefresh(mk({ step: 'pr-ouverte', prUrl: url }), open, now)).toBe(true)
+  expect(needsPrRefresh(mk({ step: 'pr-ouverte', prUrl: url }), merged, now)).toBe(false)
+  expect(needsPrRefresh(mk({ step: 'pr-ouverte', prUrl: url, createdAt: '2026-10-01T00:00:00Z' }), closedPr, now)).toBe(true)
+  expect(needsPrRefresh(closed('2026-11-08T12:00:00Z'), closedPr, now)).toBe(true)
+  expect(needsPrRefresh(closed('2026-11-02T12:00:00Z'), closedPr, now)).toBe(false)
 })
 test('isHidden : mission active jamais cachée', () => {
   expect(isHidden(mk({ step: 'tasks' }), merged, now)).toBe(false)

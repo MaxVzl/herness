@@ -40,13 +40,24 @@ function closedAt(s: MissionState): number {
   return new Date(entry?.at ?? s.createdAt).getTime()
 }
 
+/**
+ * Mission terminée masquée : PR mergée, ou mission fermée depuis plus de 7 jours sans PR ou avec une PR CLOSED.
+ * Une `pr-ouverte` dont la PR est CLOSED reste visible : elle demande une action.
+ */
 export function isHidden(s: MissionState, pr: PrInfo | undefined, now: Date): boolean {
   if (s.step === 'pr-ouverte') return pr?.state === 'MERGED'
   if (s.step === 'fermée') {
-    if (s.prUrl) return pr?.state === 'MERGED'
+    if (pr?.state === 'MERGED') return true
+    if (s.prUrl && pr?.state !== 'CLOSED') return false
     return now.getTime() - closedAt(s) > SEVEN_DAYS_MS
   }
   return false
+}
+
+/** État de PR à revérifier : ni mergée, ni CLOSED d'une mission masquée par la règle des 7 jours. */
+export function needsPrRefresh(s: MissionState, pr: PrInfo | undefined, now: Date): boolean {
+  if (!s.prUrl || pr?.state === 'MERGED') return false
+  return !(pr?.state === 'CLOSED' && isHidden(s, pr, now))
 }
 
 export async function projectMissions(repoPath: string): Promise<MissionState[]> {

@@ -6,7 +6,7 @@ import * as act from './actions.ts'
 import type { ActionResult } from './actions.ts'
 import { HelpLine, MissionDetail, missionActions, useMissionKeys, type HelpItem, type MissionActions, type Timer } from './detail.tsx'
 import { LineInput } from './inputs.tsx'
-import { bucketOf, isHidden, projectMissions, shortId, sortMissions, statusLabel, type Bucket, type PrInfo } from './model.ts'
+import { bucketOf, isHidden, needsPrRefresh, projectMissions, shortId, sortMissions, statusLabel, type Bucket, type PrInfo } from './model.ts'
 import { PrCache } from './pr-cache.ts'
 
 /** Gestes du cockpit : ceux d'une mission, plus le démarrage d'une nouvelle mission. */
@@ -177,8 +177,9 @@ export function Cockpit({
     let alive = true
     const refreshPrs = (list: MissionState[]): void => {
       if (refreshing.current) return
-      const urls = [...new Set(visibleMissions(list, prs, now(), showAllRef.current).flatMap((s) =>
-        (s.prUrl && prs.get(s.prUrl)?.state !== 'MERGED' ? [s.prUrl] : [])))]
+      const at = now()
+      const urls = [...new Set(visibleMissions(list, prs, at, showAllRef.current).flatMap((s) =>
+        (s.prUrl && needsPrRefresh(s, prs.get(s.prUrl), at) ? [s.prUrl] : [])))]
       if (urls.length === 0) return
       refreshing.current = true
       const done = (): void => {

@@ -108,6 +108,31 @@ test('une PR mergée est masquée, visible après a', async () => {
   expect(lastFrame()).not.toContain('livree')
 })
 
+test('PR CLOSED : fermée depuis plus de 7 jours masquée et jamais revérifiée ; pr-ouverte CLOSED visible et revérifiée', async () => {
+  const old = mission('26110201-31', 'abandonnee', '2026-10-01T10:00:00.000Z')
+  old.step = 'fermée'
+  old.prUrl = 'https://example.test/o/r/pull/31'
+  old.log = [{ at: '2026-10-20T10:00:00.000Z', msg: 'mission fermée (herness fermer)' }]
+  const open = mission('26110201-32', 'a-traiter', '2026-10-01T10:00:00.000Z')
+  open.step = 'pr-ouverte'
+  open.prUrl = 'https://example.test/o/r/pull/32'
+  const closed = (at: string): PrInfo => ({ state: 'CLOSED', checkedAt: at })
+  const pr = fakePrCache({ [old.prUrl]: closed('2026-10-21T10:00:00.000Z'), [open.prUrl]: closed('2026-10-21T10:00:00.000Z') })
+  const { stdin, lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => [old, open]} actions={fakeActions().a} prCache={pr.cache} columns={140}
+      now={() => new Date('2026-11-02T10:00:00.000Z')} intervalMs={20} />,
+  )
+  await tick()
+  expect(lastFrame()).toContain('a-traiter')
+  expect(lastFrame()).not.toContain('abandonnee')
+  stdin.write('a')
+  await tick()
+  expect(lastFrame()).toContain('abandonnee')
+  expect(pr.refreshed.length).toBeGreaterThan(0)
+  expect(pr.refreshed.flat()).not.toContain(old.prUrl)
+  expect(pr.refreshed.flat()).toContain(open.prUrl)
+})
+
 test('↓ puis v puis Entrée valide la porte de la deuxième mission', async () => {
   const first = mission('26110201-5', 'premiere', '2026-11-02T10:00:00.000Z')
   const second = mission('26110201-6', 'seconde', '2026-11-01T10:00:00.000Z')
