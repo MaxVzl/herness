@@ -449,3 +449,70 @@ test("reprendre --redemarrer échoue sans rien relancer si le moteur ne s'arrêt
   await expect(resumeMission('gh12', d, { restart: true })).rejects.toThrow(/moteur toujours actif/)
   expect(fx.herdr.runs).toEqual([])
 })
+
+// ---------- fermer : branche locale ----------
+
+const branchCalls = (fx: FakeEffects) => ({
+  fetch: fx.callsOf('git.fetchBranch'),
+  del: fx.callsOf('git.deleteBranch'),
+})
+
+test('fermer supprime la branche locale déjà entièrement sur origin', async () => {
+  const { fx, out, d } = await started({ git: { unpushedCount: async () => 0, currentBranch: async () => 'main', localOnlyCommits: async () => 0 } })
+  await closeMission('gh12', d)
+  expect(branchCalls(fx)).toEqual({ fetch: [[repo, 'herness/gh12']], del: [[repo, 'herness/gh12']] })
+  // Après la suppression du worktree.
+  const order = fx.calls.map((c) => c.fn)
+  expect(order.indexOf('git.worktreeRemove')).toBeLessThan(order.indexOf('git.deleteBranch'))
+  expect(out).toContain('branche locale herness/gh12 supprimée (toujours sur origin)')
+})
+
+test('fermer garde la branche qui a des commits absents d\'origin', async () => {
+  const { fx, out, d } = await started({ git: { unpushedCount: async () => 0, currentBranch: async () => 'main', localOnlyCommits: async () => 3 } })
+  await closeMission('gh12', d)
+  expect(branchCalls(fx).del).toEqual([])
+  expect(out).toContain('branche herness/gh12 gardée : 3 commit(s) absent(s) de origin')
+})
+
+test('fermer garde la branche sans branche distante ou si le fetch échoue', async () => {
+  const a = await started({ git: { unpushedCount: async () => 0, currentBranch: async () => 'main', localOnlyCommits: async () => null } })
+  await closeMission('gh12', a.d)
+  expect(branchCalls(a.fx).del).toEqual([])
+  expect(a.out).toContain('branche herness/gh12 gardée : pas de branche distante')
+})
+
+test('fermer garde la branche quand le fetch échoue', async () => {
+  const { fx, d } = await started({
+    git: {
+      unpushedCount: async () => 0,
+      currentBranch: async () => 'main',
+      fetchBranch: async () => { throw new Error('réseau') },
+      localOnlyCommits: async () => 0,
+    },
+  })
+  await closeMission('gh12', d)
+  expect(branchCalls(fx).del).toEqual([])
+})
+
+test('fermer ne supprime jamais la branche principale ni la branche courante du dépôt', async () => {
+  const main = await started({ git: { unpushedCount: async () => 0, currentBranch: async () => 'main', localOnlyCommits: async () => 0 } })
+  await patch({ branch: 'main' })
+  await closeMission('gh12', main.d)
+  expect(branchCalls(main.fx)).toEqual({ fetch: [], del: [] })
+  await rm(missionDir('gh12'), { recursive: true, force: true })
+
+  const cur = await started({ git: { unpushedCount: async () => 0, currentBranch: async () => 'herness/gh12', localOnlyCommits: async () => 0 } })
+  await closeMission('gh12', cur.d)
+  expect(branchCalls(cur.fx)).toEqual({ fetch: [], del: [] })
+})
+
+test('fermer ne touche pas à la branche si la fermeture est annulée ou échoue avant', async () => {
+  const { fx, d } = await started({
+    git: { unpushedCount: async () => 0, currentBranch: async () => 'main', localOnlyCommits: async () => 0 },
+    run: async (cmd: string) =>
+      cmd === demo.testDb!.down[0] ? { stdout: '', stderr: 'docker absent', exitCode: 1 } : { stdout: 'Logged in', stderr: '', exitCode: 0 },
+  })
+  await patch({ testDbUp: true })
+  await expect(closeMission('gh12', d)).rejects.toThrow(/docker absent/)
+  expect(branchCalls(fx)).toEqual({ fetch: [], del: [] })
+})

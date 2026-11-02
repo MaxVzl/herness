@@ -25,6 +25,27 @@ export async function fetchMain(repo: string, mainBranch: string): Promise<void>
   await git(repo, ['fetch', 'origin', mainBranch]);
 }
 
+/** Met à jour `origin/<branch>` ; échoue si la branche distante n'existe pas ou si le réseau manque. */
+export async function fetchBranch(repo: string, branch: string): Promise<void> {
+  await git(repo, ['fetch', 'origin', branch]);
+}
+
+/**
+ * Commits de `branch` sans équivalent de patch dans `origin/<branch>` (`git cherry`) : un commit rebasé ou
+ * rejoué côté origine ne compte pas. `null` : pas de branche distante (suivie localement).
+ */
+export async function localOnlyCommits(repo: string, branch: string): Promise<number | null> {
+  const remote = `origin/${branch}`;
+  if ((await git(repo, ['rev-parse', '--verify', '--quiet', `refs/remotes/${remote}`], false)).exitCode !== 0) return null;
+  const lines = (await git(repo, ['cherry', remote, branch])).stdout.split('\n');
+  return lines.filter((l) => l.startsWith('+')).length;
+}
+
+/** Supprime la branche locale (`git branch -D`) ; git refuse celle qui est extraite dans un worktree. */
+export async function deleteBranch(repo: string, branch: string): Promise<void> {
+  await git(repo, ['branch', '-D', branch]);
+}
+
 export async function identity(wt: string): Promise<{ name: string; email: string } | null> {
   const email = (await git(wt, ['config', 'user.email'], false)).stdout.trim();
   if (!email) return null;
