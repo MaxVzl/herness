@@ -27,6 +27,9 @@ program
   .description('Cockpit des missions du projet (↑/↓ mission, v/r/n porte, p/R/f/o, + nouvelle mission, a terminées, q quitter)')
   .action(async () => {
     try {
+      // Aucune invite de git/ssh pendant qu'ink dessine.
+      const { prepareTuiEnv } = await import('./ui/tui-env.ts')
+      prepareTuiEnv(process.env)
       const { default: React } = await import('react')
       const { render } = await import('ink')
       const { loadProjectConfig } = await import('./config/project.ts')
@@ -188,6 +191,9 @@ program
   .description("Tableau de bord d'une mission : les gestes du cockpit sur cette mission (c retour au cockpit, q quitter)")
   .action(async (id: string) => {
     try {
+      // Aucune invite de git/ssh pendant qu'ink dessine.
+      const { prepareTuiEnv } = await import('./ui/tui-env.ts')
+      prepareTuiEnv(process.env)
       const { default: React } = await import('react')
       const { render } = await import('ink')
       const { loadState } = await import('./mission/state.ts')
