@@ -47,3 +47,16 @@ test('PrCache persiste dans le fichier et ignore une sortie invalide', async () 
   await again.refresh([url])
   expect(again.get(url)?.state).toBe('CLOSED')
 })
+
+test('PrCache : deux instances gardent chacune les entrées de l’autre', async () => {
+  const file = join(dir, 'c.json')
+  const t = () => new Date('2026-11-02T10:00:00Z')
+  const u2 = 'https://github.com/o/r/pull/8'
+  const a = new PrCache(file, async () => ok('OPEN'), t)
+  const b = new PrCache(file, async () => ok('MERGED'), t)
+  await a.refresh([url])
+  await b.refresh([u2])
+  const c = new PrCache(file, async () => ok('OPEN'), t)
+  expect(c.get(url)?.state).toBe('OPEN')
+  expect(c.get(u2)?.state).toBe('MERGED')
+})

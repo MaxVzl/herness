@@ -70,6 +70,10 @@ test('isHidden : fermée sans PR depuis 8 jours cachée, 2 jours visible', () =>
 test('isHidden : fermée sans log de fermeture utilise createdAt', () => {
   expect(isHidden(mk({ step: 'fermée', createdAt: '2026-10-01T00:00:00Z' }), undefined, now)).toBe(true)
 })
+test('isHidden : un log « PR fermée » ne compte pas comme fermeture de la mission', () => {
+  const s = mk({ step: 'fermée', createdAt: '2026-10-01T00:00:00Z', log: [{ at: '2026-11-09T00:00:00Z', msg: 'PR fermée' }] })
+  expect(isHidden(s, undefined, now)).toBe(true)
+})
 test('isHidden : fermée avec PR mergée cachée, sinon visible', () => {
   const s = mk({ step: 'fermée', prUrl: url, createdAt: '2026-10-01T00:00:00Z' })
   expect(isHidden(s, merged, now)).toBe(true)

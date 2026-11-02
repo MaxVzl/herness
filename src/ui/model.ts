@@ -36,7 +36,7 @@ export function shortId(id: string): string {
 }
 
 function closedAt(s: MissionState): number {
-  const entry = [...s.log].reverse().find((l) => l.msg.includes('fermée'))
+  const entry = [...s.log].reverse().find((l) => /mission fermée/.test(l.msg))
   return new Date(entry?.at ?? s.createdAt).getTime()
 }
 

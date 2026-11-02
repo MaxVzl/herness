@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { run, type RunResult } from '../exec.ts'
 import { missionsRoot } from '../paths.ts'
@@ -11,6 +11,22 @@ const TTL_MS = 5 * 60 * 1000
 const STATES = new Set(['OPEN', 'MERGED', 'CLOSED'])
 
 export class PrCache {
+  private readFile(): Record<string, PrInfo> {
+    const out: Record<string, PrInfo> = {}
+    try {
+      const raw: unknown = JSON.parse(readFileSync(this.file, 'utf8'))
+      if (raw && typeof raw === 'object') {
+        for (const [url, v] of Object.entries(raw)) {
+          const e = v as Partial<PrInfo> | null
+          if (e && typeof e.checkedAt === 'string' && STATES.has(e.state as string)) out[url] = e as PrInfo
+        }
+      }
+    } catch {
+      // fichier absent ou illisible : cache vide
+    }
+    return out
+  }
+
   private entries: Record<string, PrInfo> = {}
 
   constructor(
@@ -18,17 +34,7 @@ export class PrCache {
     private runner: Runner = run,
     private now: () => Date = () => new Date(),
   ) {
-    try {
-      const raw: unknown = JSON.parse(readFileSync(file, 'utf8'))
-      if (raw && typeof raw === 'object') {
-        for (const [url, v] of Object.entries(raw)) {
-          const e = v as Partial<PrInfo> | null
-          if (e && typeof e.checkedAt === 'string' && STATES.has(e.state as string)) this.entries[url] = e as PrInfo
-        }
-      }
-    } catch {
-      // fichier absent ou illisible : cache vide
-    }
+    this.entries = this.readFile()
   }
 
   get(url: string): PrInfo | undefined {
@@ -52,8 +58,17 @@ export class PrCache {
     }
     if (!changed) return
     try {
+      // Relit juste avant d'écrire : on garde l'entrée la plus récente de chaque URL (autre instance possible).
+      const merged = this.readFile()
+      for (const [url, e] of Object.entries(this.entries)) {
+        const o = merged[url]
+        if (!o || e.checkedAt >= o.checkedAt) merged[url] = e
+      }
+      this.entries = merged
       await mkdir(dirname(this.file), { recursive: true })
-      await writeFile(this.file, JSON.stringify(this.entries, null, 2) + '\n')
+      const tmp = `${this.file}.${process.pid}.tmp`
+      await writeFile(tmp, JSON.stringify(merged, null, 2) + '\n')
+      await rename(tmp, this.file)
     } catch {
       // cache non persisté : sans conséquence
     }
