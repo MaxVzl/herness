@@ -34,13 +34,13 @@ Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, d
 | `herness dev <demande...>` | Démarre une mission : lien Wrike, issue GitHub ou texte libre. Crée l'espace herdr, le worktree et la branche `herness/<id>`, lance moteur, tableau et orchestrateur. |
 | `herness reprendre <id> [--redemarrer]` | Rouvre l'espace d'une mission et relance ce qui ne tourne plus (moteur, tableau, visionneuses spec et plan, orchestrateur). Une mission bloquée ouvre une porte de reprise (`reprise-bloquee`) : validée, elle repart de l'étape bloquée avec un budget de tours neuf. Une mission `pr-ouverte` ou `fermée` : affiche son état, ne relance rien. `--redemarrer` : arrête (double ctrl+c) puis relance moteur, tableau et visionneuses même s'ils tournent, sans rien envoyer aux agents. |
 | `herness statut [id]` | État de toutes les missions, ou détail d'une mission. |
-| `herness tasks <id>` | Tableau de bord d'une mission (celui du panneau `tasks`) : tâches, portes, journal ; `v` valider, `r` refuser, `q` quitter. |
+| `herness tasks <id>` | Tableau de bord d'une mission (celui du panneau `tasks`) : tâches, portes, journal, avec les gestes du cockpit sur cette mission (`v`, `r`, `n`, `p`, `R`, `f`, `o`, `←/→` pour choisir la porte), `c` retour au cockpit, `q` quitter. |
 | `herness voir <spec\|plan> <id>` | Visionneuse du panneau `spec` ou `plan` de l'onglet `docs` : affiche le document avec `bat` (à défaut `less -R`) et le recharge dès qu'il change. Une proposition d'amendement en attente (`<spec\|plan>.proposed.md` du dossier de mission) a la priorité, signalée par un en-tête ; sinon le fichier du worktree ; sinon un message d'attente. `q` quitte l'affichage, Entrée le rouvre. Lecture seule : n'écrit jamais `state.json`. |
 | `herness valider <id> [--porte <gateId>] [--note <texte>]` | Valide une porte en attente (par défaut la plus ancienne). |
 | `herness refuser <id> --note <texte> [--porte <gateId>]` | Refuse une porte ; `--note` (motif) est obligatoire. |
 | `herness fermer <id>` | Ferme la mission : base de test, moteur, worktree et espace herdr (confirmation s'il reste du travail). Sur une mission déjà `fermée` (abandon validé), nettoie ce qui reste. La branche locale est supprimée seulement si tout son contenu est déjà sur `origin` (jamais la branche distante ni la PR). |
 
-`valider` et `refuser` exigent un vrai terminal interactif (confirmation `o/N`) : un agent ne peut pas valider à ta place. Dans le panneau `tasks`, `v` (valider), `r` (refuser) et `q` (quitter) font la même chose.
+`valider` et `refuser` exigent un vrai terminal interactif (confirmation `o/N`) : un agent ne peut pas valider à ta place. Dans le panneau `tasks`, `v` (valider) et `r` (refuser, note obligatoire) font la même chose après confirmation (Entrée / Échap).
 
 ## Le cycle d'une mission
 

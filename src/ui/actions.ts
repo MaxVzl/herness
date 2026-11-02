@@ -14,9 +14,12 @@ export interface ActionDeps {
   cwd: string
 }
 
-/** Dépendances réelles, construites à l'appel (aucun effet créé à l'import). */
-export function realActionDeps(cwd: string): ActionDeps {
-  return { lifecycle: { e: realEffects() }, decide, resume: resumeMission, close: closeMission, start: startMission, cwd }
+/**
+ * Dépendances réelles, construites à l'appel (aucun effet créé à l'import). `log` reçoit les journaux de herdr :
+ * dans une interface ink, rien ne doit écrire directement dans le terminal.
+ */
+export function realActionDeps(cwd: string, log?: (message: string) => void): ActionDeps {
+  return { lifecycle: { e: realEffects(log ? { log } : {}) }, decide, resume: resumeMission, close: closeMission, start: startMission, cwd }
 }
 
 /** Exécute une action en accumulant sa sortie ; toute exception devient `ok: false`. */

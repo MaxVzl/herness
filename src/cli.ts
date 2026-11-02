@@ -162,15 +162,16 @@ program
 
 program
   .command('tasks <id>')
-  .description("Tableau de bord d'une mission (v valider, r refuser, q quitter)")
+  .description("Tableau de bord d'une mission : les gestes du cockpit sur cette mission (c retour au cockpit, q quitter)")
   .action(async (id: string) => {
     try {
       const { default: React } = await import('react')
       const { render } = await import('ink')
       const { loadState } = await import('./mission/state.ts')
-      const { TasksDashboard, TasksView } = await import('./ui/tasks.tsx')
+      const { TasksDashboard } = await import('./ui/tasks.tsx')
+      const { MissionDetail } = await import('./ui/detail.tsx')
       if (!process.stdin.isTTY || !process.stdout.isTTY) {
-        render(React.createElement(TasksView, { state: await loadState(id) })).unmount()
+        render(React.createElement(MissionDetail, { state: await loadState(id) })).unmount()
         return
       }
       await render(React.createElement(TasksDashboard, { id })).waitUntilExit()
