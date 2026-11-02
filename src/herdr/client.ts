@@ -213,7 +213,10 @@ export class Herdr implements HerdrApi {
   /** `pane_info` : `result.pane.{pane_id, tab_id, workspace_id, cwd}`. */
   async paneCurrent(): Promise<{ paneId: string; tabId: string; workspaceId: string; cwd: string }> {
     const p = (await this.call(['pane', 'current']))['pane'] as Json;
-    return { paneId: p['pane_id'], tabId: p['tab_id'], workspaceId: p['workspace_id'], cwd: p['cwd'] };
+    for (const k of ['pane_id', 'tab_id', 'workspace_id']) {
+      if (typeof p?.[k] !== 'string' || p[k] === '') throw new HerdrError('bad_response', `« herdr pane current » : champ ${k} absent ou vide`);
+    }
+    return { paneId: p['pane_id'], tabId: p['tab_id'], workspaceId: p['workspace_id'], cwd: typeof p['cwd'] === 'string' ? p['cwd'] : '' };
   }
 
   async agentStart(name: string, kind: string, pane: string, args: string[], timeoutMs: number): Promise<void> {
