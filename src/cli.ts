@@ -3,6 +3,32 @@ import { Command } from 'commander'
 const program = new Command()
 program.name('herness').version('0.1.0')
 
+// Sans argument : ouvre (ou crée) l'onglet cockpit du projet dans herdr.
+program.action(async () => {
+  const { Herdr } = await import('./herdr/client.ts')
+  const h = new Herdr()
+  const inHerdr = process.env.HERDR_ENV === '1' && (await h.paneCurrent().then(() => true, () => false))
+  if (!inHerdr) {
+    console.log('hors herdr : lance « herness cockpit » dans un terminal')
+    return
+  }
+  try {
+    const { openCockpit } = await import('./ui/location.ts')
+    await openCockpit(process.cwd(), h)
+  } catch (e) {
+    console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+    process.exitCode = 1
+  }
+})
+
+// Écran du cockpit (Tâche 7).
+program
+  .command('cockpit')
+  .description('Cockpit des missions du projet')
+  .action(() => {
+    console.log('à venir')
+  })
+
 // Serveur MCP de l'orchestrateur : rien d'autre que le protocole ne doit écrire sur stdout.
 program
   .command('mcp <id>', { hidden: true })
