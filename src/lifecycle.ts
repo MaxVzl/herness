@@ -256,6 +256,40 @@ async function stopEngine(s: MissionState, e: Effects, out: (l: string) => void,
 }
 
 /**
+ * Supprime la branche locale de la mission si tout son contenu est déjà sur `origin/<branche>` (jamais la branche
+ * principale ni la branche extraite dans le dépôt ; jamais la branche distante ni la PR). Au moindre doute elle est
+ * gardée ; une erreur n'empêche pas la fermeture. Rend vrai si la branche a été supprimée.
+ */
+async function cleanBranch(s: MissionState, e: Effects, cfg: ProjectConfig, out: (l: string) => void): Promise<boolean> {
+  const b = s.branch
+  if (!b || b === cfg.mainBranch) return false
+  try {
+    if ((await e.git.currentBranch(s.repoPath)) === b) return false
+    try {
+      await e.git.fetchBranch(s.repoPath, b)
+    } catch {
+      out(`branche ${b} gardée : origine injoignable`)
+      return false
+    }
+    const n = await e.git.localOnlyCommits(s.repoPath, b)
+    if (n === null) {
+      out(`branche ${b} gardée : pas de branche distante`)
+      return false
+    }
+    if (n > 0) {
+      out(`branche ${b} gardée : ${n} commit(s) absent(s) de origin`)
+      return false
+    }
+    await e.git.deleteBranch(s.repoPath, b)
+    out(`branche locale ${b} supprimée (toujours sur origin)`)
+    return true
+  } catch (err) {
+    out(`branche ${b} gardée : ${err instanceof Error ? err.message : String(err)}`)
+    return false
+  }
+}
+
+/**
  * `herness fermer <id>`. Commits non poussés ou worktree sale → confirmation dans un terminal interactif. Moteur
  * arrêté d'abord (seul écrivain de l'état ; s'il ne s'arrête pas, rien n'est fermé), puis bases de test supprimées
  * d'après l'état relu (un échec arrête tout), worktree supprimé, état `fermée` enregistré, et enfin l'espace herdr de
@@ -289,7 +323,7 @@ export async function closeMission(id: string, deps: LifecycleDeps): Promise<boo
   if (risks.length > 0) {
     const what = risks.join(' ; ')
     if (!deps.isTTY || !deps.confirm) throw new Error(`${what} : la fermeture demande une confirmation dans un terminal interactif`)
-    if (!(await deps.confirm(`${what} : le worktree sera supprimé (la branche locale est conservée). Fermer quand même ?`))) {
+    if (!(await deps.confirm(`${what} : le worktree sera supprimé (la branche locale n'est supprimée que si tout est déjà sur origin). Fermer quand même ?`))) {
       out('fermeture annulée')
       return false
     }
@@ -304,6 +338,7 @@ export async function closeMission(id: string, deps: LifecycleDeps): Promise<boo
     throw new Error(`base de test non supprimée, rien n'a été fermé : ${errors.join(' ; ')}`)
   }
   if (s.worktree && (!closed || wtLeft)) await e.git.worktreeRemove(s.repoPath, s.worktree)
+  const branchDeleted = await cleanBranch(s, e, cfg, out)
   s.step = 'fermée'
   s.log.push({ at: e.now().toISOString(), msg: 'mission fermée (herness fermer)' })
   await saveState(s)
@@ -311,7 +346,7 @@ export async function closeMission(id: string, deps: LifecycleDeps): Promise<boo
   if (s.herdr.workspace && (!closed || (await e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace))) {
     await e.herdr.workspaceClose(s.herdr.workspace)
   }
-  out(`Mission ${id} fermée (branche ${s.branch ?? '?'} conservée).`)
+  out(`Mission ${id} fermée (branche ${s.branch ?? '?'} ${branchDeleted ? 'supprimée localement' : 'conservée'}).`)
   return true
 }
 

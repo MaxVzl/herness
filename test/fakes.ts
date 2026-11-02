@@ -94,6 +94,10 @@ export function fakeEffects(overrides: FakeOverrides = {}): FakeEffects {
     isClean: async () => false,
     renameBranch: async () => {},
     fetchMain: async () => {},
+    fetchBranch: async () => {},
+    // Par défaut : pas de branche distante, la branche locale est gardée.
+    localOnlyCommits: async () => null,
+    deleteBranch: async () => {},
     identity: async () => ({ name: 'Moi', email: 'moi@example.com' }),
     controlCommits: async () => ({ ok: true, commits: 1 }),
     diffPackage: async (_wt, base) => ({ base, head: 'sha-head', commits: 1 }),

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { run } from '../../src/exec.js';
 import { access } from 'node:fs/promises';
-import { changedFiles, commitFiles, controlCommits, currentBranch, diffPackage, fetchMain, headSha, identity, isAncestor, isClean, mergeBase, push, rebaseOnto, renameBranch, unpushedCount, worktreeAddDetached, worktreeRemove } from '../../src/git/git.js';
+import { changedFiles, deleteBranch, fetchBranch, localOnlyCommits, commitFiles, controlCommits, currentBranch, diffPackage, fetchMain, headSha, identity, isAncestor, isClean, mergeBase, push, rebaseOnto, renameBranch, unpushedCount, worktreeAddDetached, worktreeRemove } from '../../src/git/git.js';
 
 let dir = '';
 const git = (...a: string[]) => run('git', ['-C', dir, ...a]);
@@ -278,5 +278,85 @@ describe('rebaseOnto, unpushedCount, isAncestor', () => {
     await push(dir, 'feature/x');
     const remote = await run('git', ['-C', bare, 'rev-parse', 'feature/x']);
     expect(remote.stdout.trim()).toBe(await headSha(dir));
+  });
+});
+
+describe('fetchBranch, localOnlyCommits, deleteBranch', () => {
+  let bare = '';
+  beforeEach(async () => {
+    bare = `${dir}-origin.git`;
+    await run('git', ['init', '--bare', '-b', 'main', bare]);
+    await git('remote', 'add', 'origin', bare);
+    await git('push', 'origin', 'main');
+    await git('checkout', '-b', 'herness/x');
+  });
+  afterEach(async () => {
+    await rm(bare, { recursive: true, force: true });
+    await rm(`${dir}-clone`, { recursive: true, force: true });
+  });
+
+  /** Clone de l'origine, partant de `origin/main`, où `fn` commite avant de pousser sur `herness/x`. */
+  async function remoteCommits(files: [string, string, string?][]) {
+    const clone = `${dir}-clone`;
+    await run('git', ['clone', '-q', bare, clone]);
+    const c = (...a: string[]) => run('git', ['-C', clone, ...a]);
+    await c('config', 'user.email', 'autre@example.com');
+    await c('config', 'user.name', 'Autre');
+    await c('checkout', '-q', '-b', 'herness/x', 'origin/main');
+    for (const [f, content, msg] of files) {
+      await writeFile(join(clone, f), content);
+      await c('add', f);
+      await c('commit', '-q', '-m', msg ?? `distant ${f}`);
+    }
+    await c('push', '-q', 'origin', 'herness/x');
+  }
+
+  it('identique à origin : 0 commit local seul, branche supprimable', async () => {
+    await commit('b.txt', 'b\n', 'b');
+    await push(dir, 'herness/x');
+    await git('checkout', 'main');
+    await fetchBranch(dir, 'herness/x');
+    expect(await localOnlyCommits(dir, 'herness/x')).toBe(0);
+    await deleteBranch(dir, 'herness/x');
+    expect((await git('branch', '--list', 'herness/x')).stdout.trim()).toBe('');
+    // La branche distante est intacte.
+    expect((await run('git', ['-C', bare, 'rev-parse', '--verify', 'herness/x'])).exitCode).toBe(0);
+  });
+
+  it('en avance avec un vrai commit nouveau : compté, branche gardée', async () => {
+    await commit('b.txt', 'b\n', 'b');
+    await push(dir, 'herness/x');
+    await commit('c.txt', 'c\n', 'c');
+    await commit('d.txt', 'd\n', 'd');
+    await git('checkout', 'main');
+    await fetchBranch(dir, 'herness/x');
+    expect(await localOnlyCommits(dir, 'herness/x')).toBe(2);
+  });
+
+  it('en avance seulement par des commits au patch équivalent (rebasés) : 0', async () => {
+    await commit('b.txt', 'b\n', 'b');
+    await git('checkout', 'main');
+    // L'origine a le même patch avec un autre SHA, plus des commits en plus.
+    await remoteCommits([['b.txt', 'b\n', 'b rebasé'], ['e.txt', 'e\n']]);
+    await fetchBranch(dir, 'herness/x');
+    expect(Number((await git('rev-list', '--count', 'origin/herness/x..herness/x')).stdout.trim())).toBe(1);
+    expect(await localOnlyCommits(dir, 'herness/x')).toBe(0);
+  });
+
+  it('sans branche distante : null', async () => {
+    await commit('b.txt', 'b\n', 'b');
+    await git('checkout', 'main');
+    await fetchBranch(dir, 'herness/x').catch(() => {});
+    expect(await localOnlyCommits(dir, 'herness/x')).toBeNull();
+  });
+
+  it('fetchBranch échoue quand la branche distante n’existe pas', async () => {
+    await expect(fetchBranch(dir, 'herness/absente')).rejects.toThrow();
+  });
+
+  it('deleteBranch refuse la branche courante (main comprise)', async () => {
+    await git('checkout', 'main');
+    await expect(deleteBranch(dir, 'main')).rejects.toThrow();
+    expect((await git('branch', '--list', 'main')).stdout.trim()).not.toBe('');
   });
 });
