@@ -1,4 +1,9 @@
+import { writeSync } from 'node:fs'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { expect, test } from 'vitest'
+import { missionDir } from '../../src/paths.ts'
 import { close, open, refuse, restart, restartDetached, resume, startNew, validate, type ActionDeps, type Spawner } from '../../src/ui/actions.ts'
 import type { MissionState } from '../../src/mission/state.ts'
 
@@ -82,20 +87,33 @@ test('open focus l\'espace, ou rend un message', async () => {
   expect(await open(none, d)).toEqual({ ok: false, lines: ['espace herdr inconnu'] })
 })
 
-test('restartDetached lance herness reprendre --redemarrer détaché ; une erreur de lancement devient ok:false', async () => {
-  const seen: unknown[] = []
-  const spawn: Spawner = (cmd, args, opts) => {
-    seen.push([cmd, args, opts])
-    return { unref: () => seen.push('unref'), once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'spawn') fn() } }
+test('restartDetached lance herness reprendre --redemarrer détaché via execPath, sortie dans un journal ; une erreur de lancement devient ok:false', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'herness-'))
+  process.env.HERNESS_HOME = home
+  try {
+    const seen: unknown[] = []
+    const spawn: Spawner = (cmd, args, opts) => {
+      seen.push([cmd, args, opts])
+      writeSync(opts.stdio[1], 'sortie du redémarrage\n')
+      return { unref: () => seen.push('unref'), once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'spawn') fn() } }
+    }
+    const r = await restartDetached('m1', spawn, () => new Date('2026-11-02T10:11:12.000Z'))
+    const log = join(missionDir('m1'), 'logs', 'redemarrage-2026-11-02T10-11-12-000Z.log')
+    expect(r).toEqual({ ok: true, lines: [`redémarrage lancé (ce panneau va se relancer) ; journal : ${log}`] })
+    const [cmd, args, opts] = seen[0] as [string, string[], { detached: boolean; stdio: unknown[] }]
+    expect(cmd).toBe(process.execPath)
+    expect(args[0]).toMatch(/bin\/herness\.js$/)
+    expect(args.slice(1)).toEqual(['reprendre', 'm1', '--redemarrer'])
+    expect(opts.detached).toBe(true)
+    expect(opts.stdio[0]).toBe('ignore')
+    expect(typeof opts.stdio[1]).toBe('number')
+    expect(opts.stdio[2]).toBe(opts.stdio[1])
+    expect(seen[1]).toBe('unref')
+    expect(await readFile(log, 'utf8')).toBe('sortie du redémarrage\n')
+    const bad: Spawner = () => ({ unref: () => {}, once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'error') fn(new Error('node introuvable')) } })
+    expect(await restartDetached('m1', bad)).toEqual({ ok: false, lines: ['node introuvable'] })
+  } finally {
+    delete process.env.HERNESS_HOME
+    await rm(home, { recursive: true, force: true })
   }
-  const r = await restartDetached('m1', spawn)
-  expect(r).toEqual({ ok: true, lines: ['redémarrage lancé (ce panneau va se relancer)'] })
-  const [cmd, args, opts] = seen[0] as [string, string[], unknown]
-  expect(cmd).toBe('node')
-  expect(args[0]).toMatch(/bin\/herness\.js$/)
-  expect(args.slice(1)).toEqual(['reprendre', 'm1', '--redemarrer'])
-  expect(opts).toEqual({ detached: true, stdio: 'ignore' })
-  expect(seen[1]).toBe('unref')
-  const bad: Spawner = () => ({ unref: () => {}, once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'error') fn(new Error('node introuvable')) } })
-  expect(await restartDetached('m1', bad)).toEqual({ ok: false, lines: ['node introuvable'] })
 })

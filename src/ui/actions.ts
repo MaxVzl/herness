@@ -1,10 +1,12 @@
 import { spawn as nodeSpawn } from 'node:child_process'
+import { closeSync, mkdirSync, openSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { decide } from '../engine/gates.ts'
 import { realEffects } from '../engine/effects.ts'
 import { closeMission, resumeMission, startMission, type LifecycleDeps } from '../lifecycle.ts'
 import type { MissionState } from '../mission/state.ts'
+import { missionDir } from '../paths.ts'
 
 export type ActionResult = { ok: boolean; lines: string[] }
 
@@ -14,7 +16,7 @@ const BIN = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'he
 export type Spawner = (
   cmd: string,
   args: string[],
-  opts: { detached: true; stdio: 'ignore' },
+  opts: { detached: true; stdio: ['ignore', number, number] },
 ) => { unref(): void; once(event: 'spawn' | 'error', fn: (err?: Error) => void): unknown }
 
 export interface ActionDeps {
@@ -77,17 +79,31 @@ export function restart(id: string, d: ActionDeps, o: ResumeOpts = {}): Promise<
 
 /**
  * Redémarrage lancé hors de ce processus : depuis le panneau `tasks` de la mission, `resumeMission` interromprait ce
- * panneau lui-même au milieu du redémarrage. `herness reprendre <id> --redemarrer` survit à cette interruption.
+ * panneau lui-même au milieu du redémarrage. `herness reprendre <id> --redemarrer` survit à cette interruption ; sa
+ * sortie va dans `<mission>/logs/redemarrage-<horodatage>.log` (rien n'est écrit dans le terminal d'ink).
  */
-export function restartDetached(id: string, spawn: Spawner = nodeSpawn as unknown as Spawner): Promise<ActionResult> {
+export function restartDetached(
+  id: string,
+  spawn: Spawner = nodeSpawn as unknown as Spawner,
+  now: () => Date = () => new Date(),
+): Promise<ActionResult> {
   return run(async (out) => {
-    const child = spawn('node', [BIN, 'reprendre', id, '--redemarrer'], { detached: true, stdio: 'ignore' })
-    await new Promise<void>((resolve, reject) => {
-      child.once('spawn', () => resolve())
-      child.once('error', (err) => reject(err ?? new Error('lancement impossible')))
-    })
-    child.unref()
-    out('redémarrage lancé (ce panneau va se relancer)')
+    const dir = join(missionDir(id), 'logs')
+    mkdirSync(dir, { recursive: true })
+    const log = join(dir, `redemarrage-${now().toISOString().replace(/[:.]/g, '-')}.log`)
+    const fd = openSync(log, 'a')
+    try {
+      const child = spawn(process.execPath, [BIN, 'reprendre', id, '--redemarrer'], { detached: true, stdio: ['ignore', fd, fd] })
+      await new Promise<void>((resolve, reject) => {
+        child.once('spawn', () => resolve())
+        child.once('error', (err) => reject(err ?? new Error('lancement impossible')))
+      })
+      child.unref()
+    } finally {
+      // L'enfant garde sa propre copie du descripteur.
+      closeSync(fd)
+    }
+    out(`redémarrage lancé (ce panneau va se relancer) ; journal : ${log}`)
   })
 }
 

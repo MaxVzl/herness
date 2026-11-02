@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { render } from 'ink-testing-library'
 import { Box, Text } from 'ink'
 import React from 'react'
@@ -429,8 +432,13 @@ test('missionActions relie les actions aux dépendances', async () => {
     spawned.push([cmd, args.slice(1), opts])
     return { unref: () => spawned.push('unref'), once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'spawn') fn() } }
   }
-  const r = await missionActions(d, spawn).restart('T-1', { detached: true })
+  const home = await mkdtemp(join(tmpdir(), 'herness-'))
+  process.env.HERNESS_HOME = home
+  const r = await missionActions(d, spawn).restart('T-1', { detached: true }).finally(async () => {
+    delete process.env.HERNESS_HOME
+    await rm(home, { recursive: true, force: true })
+  })
   expect(seen).toHaveLength(3)
-  expect(spawned).toEqual([['node', ['reprendre', 'T-1', '--redemarrer'], { detached: true, stdio: 'ignore' }], 'unref'])
-  expect(r.lines).toContain('redémarrage lancé (ce panneau va se relancer)')
+  expect(spawned).toEqual([[process.execPath, ['reprendre', 'T-1', '--redemarrer'], expect.objectContaining({ detached: true })], 'unref'])
+  expect(r.lines[0]).toMatch(/^redémarrage lancé \(ce panneau va se relancer\) ; journal : .*redemarrage-.*\.log$/)
 })
