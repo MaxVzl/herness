@@ -1,9 +1,10 @@
 import { render } from 'ink-testing-library'
 import React from 'react'
 import { expect, test, vi } from 'vitest'
+import { until, waitFor, waitMatch } from './wait.ts'
 import { Confirm, noteReducer, NoteInput, openInEditor } from '../../src/ui/inputs.tsx'
 
-const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms))
+const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms)) // uniquement pour affirmer une absence
 
 test('noteReducer : saisie, nouvelle ligne, effacement, ctrl+s', () => {
   let s = { lines: [''] }
@@ -22,13 +23,12 @@ test("Confirm n'envoie rien sur une autre touche", async () => {
   const onNo = vi.fn()
   const { stdin, lastFrame } = render(<Confirm question="Valider g1 ?" onYes={onYes} onNo={onNo} />)
   expect(lastFrame()).toContain('Valider g1 ?')
-  await tick()
   stdin.write('x')
-  await tick()
+  await tick() // absence : une autre touche n'appelle rien
   expect(onYes).not.toHaveBeenCalled()
   expect(onNo).not.toHaveBeenCalled()
   stdin.write('\r')
-  await tick()
+  await until(() => onYes.mock.calls.length === 1)
   expect(onYes).toHaveBeenCalledTimes(1)
 })
 
@@ -36,25 +36,23 @@ test('Confirm : Échap appelle onNo', async () => {
   const onYes = vi.fn()
   const onNo = vi.fn()
   const { stdin } = render(<Confirm question="?" onYes={onYes} onNo={onNo} />)
-  await tick()
   stdin.write('\x1b')
-  await tick(100)
+  await until(() => onNo.mock.calls.length === 1)
   expect(onNo).toHaveBeenCalledTimes(1)
   expect(onYes).not.toHaveBeenCalled()
 })
 
 test('NoteInput : saisie multi-ligne et ctrl+s', async () => {
   const onSubmit = vi.fn()
-  const { stdin } = render(<NoteInput onSubmit={onSubmit} onCancel={() => {}} />)
-  await tick()
+  const { stdin, lastFrame } = render(<NoteInput onSubmit={onSubmit} onCancel={() => {}} />)
   stdin.write('a')
-  await tick()
+  await waitFor(lastFrame, 'a▏')
   stdin.write('\r')
-  await tick()
+  await waitMatch(lastFrame, /a\n▏/)
   stdin.write('b')
-  await tick()
+  await waitFor(lastFrame, 'b▏')
   stdin.write('\x13')
-  await tick()
+  await until(() => onSubmit.mock.calls.length === 1)
   expect(onSubmit).toHaveBeenCalledWith('a\nb')
 })
 
@@ -62,27 +60,25 @@ test('NoteInput garde la note quand léditeur rend null', async () => {
   const editor = vi.fn(async () => null)
   const onSubmit = vi.fn()
   const { stdin, lastFrame } = render(<NoteInput initial="garde" onSubmit={onSubmit} onCancel={() => {}} editor={editor} />)
-  await tick()
   stdin.write('\x05')
-  await tick(100)
+  await waitFor(lastFrame, 'éditeur indisponible')
   expect(editor).toHaveBeenCalledWith('garde')
   expect(lastFrame()).toContain('garde')
   expect(lastFrame()).toContain('éditeur indisponible')
   stdin.write('\x13')
-  await tick()
+  await until(() => onSubmit.mock.calls.length === 1)
   expect(onSubmit).toHaveBeenCalledWith('garde')
 })
 
 test("NoteInput remplace la note par le texte de l'éditeur ; Échap annule", async () => {
   const onCancel = vi.fn()
   const { stdin, lastFrame } = render(<NoteInput onSubmit={() => {}} onCancel={onCancel} editor={async () => 'x\ny'} />)
-  await tick()
   stdin.write('\x05')
-  await tick(100)
+  await waitFor(lastFrame, 'y▏')
   expect(lastFrame()).toContain('x')
   expect(lastFrame()).toContain('y')
   stdin.write('\x1b')
-  await tick(100)
+  await until(() => onCancel.mock.calls.length === 1)
   expect(onCancel).toHaveBeenCalled()
 })
 
