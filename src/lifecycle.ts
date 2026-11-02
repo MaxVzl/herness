@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { access, readdir, writeFile } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { agentArgs } from './agents/adapters.ts'
 import { orchestratorName } from './agents/names.ts'
@@ -338,7 +338,13 @@ export async function closeMission(id: string, deps: LifecycleDeps): Promise<boo
     await saveState(s)
     throw new Error(`base de test non supprimée, rien n'a été fermé : ${errors.join(' ; ')}`)
   }
-  if (s.worktree && (!closed || wtLeft)) await e.git.worktreeRemove(s.repoPath, s.worktree)
+  if (s.worktree && (!closed || wtLeft)) {
+    // Lancé depuis un panneau du worktree (panneau `tasks`, terminal de la mission) : sans dossier courant,
+    // plus aucun git ni herdr ne pourrait être lancé ensuite.
+    const rel = relative(s.worktree, process.cwd())
+    if (!rel.startsWith('..') && !isAbsolute(rel)) process.chdir(s.repoPath)
+    await e.git.worktreeRemove(s.repoPath, s.worktree)
+  }
   const branchDeleted = await cleanBranch(s, e, cfg, out)
   s.step = 'fermée'
   s.log.push({ at: e.now().toISOString(), msg: 'mission fermée (herness fermer)' })

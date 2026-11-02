@@ -184,6 +184,30 @@ test('fermer sans commit non poussé ne demande rien et ferme tout', async () =>
   expect(after).toMatchObject({ step: 'fermée', testDbUp: false })
 })
 
+test('fermer depuis un panneau du worktree quitte le worktree avant de le supprimer', async () => {
+  let cwdAtRemove = ''
+  const { d, s } = await started({
+    git: { unpushedCount: async () => 0, worktreeRemove: async () => void (cwdAtRemove = process.cwd()) },
+  })
+  await mkdir(join(s.worktree!, 'src'), { recursive: true })
+  const before = process.cwd()
+  process.chdir(join(s.worktree!, 'src'))
+  try {
+    expect(await closeMission('gh12', d)).toBe(true)
+    expect(cwdAtRemove).toBe(repo)
+    expect(process.cwd()).toBe(repo)
+  } finally {
+    process.chdir(before)
+  }
+})
+
+test('fermer ne change pas le dossier courant hors du worktree', async () => {
+  const { d } = await started({ git: { unpushedCount: async () => 0 } })
+  const before = process.cwd()
+  await closeMission('gh12', d)
+  expect(process.cwd()).toBe(before)
+})
+
 test('fermer ne ferme jamais l\'espace avec --group', async () => {
   const { fx, d, s } = await started({ git: { unpushedCount: async () => 0 } })
   fx.herdr.seedWorkspace('Funéo')
