@@ -210,7 +210,7 @@ test('fermer ne change pas le dossier courant hors du worktree', async () => {
 
 test('fermer ne ferme jamais l\'espace avec --group', async () => {
   const { fx, d, s } = await started({ git: { unpushedCount: async () => 0 } })
-  fx.herdr.seedWorkspace('Funéo')
+  fx.herdr.seedWorkspace('Projet')
   await closeMission('gh12', d)
   expect(fx.callsOf('herdr.workspaceClose')).toEqual([[s.herdr.workspace]])
   expect(JSON.stringify(fx.calls)).not.toContain('--group')
