@@ -200,6 +200,43 @@ test('un échec de startNew garde les KO et l erreur finale', async () => {
   expect(pending).toEqual([])
 })
 
+test('+ pendant une fermeture est refusé ; la confirmation interne n est jamais active avec un champ', async () => {
+  let go: () => void = () => {}
+  let answer: boolean | undefined
+  const { a, calls } = fakeActions({
+    close: async (id, confirm) => {
+      calls.push(['close', id])
+      await new Promise<void>((r) => { go = r })
+      answer = await confirm('Fermer quand même ?')
+      return { ok: true, lines: [] }
+    },
+  })
+  const s = mission('26110201-33', 'fermer', '2026-11-02T10:00:00.000Z')
+  const { stdin, lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={a} prCache={fakePrCache().cache} columns={140} />,
+  )
+  await tick()
+  stdin.write('f')
+  await tick()
+  stdin.write('\r')
+  await tick()
+  stdin.write('+')
+  await tick()
+  expect(lastFrame()).not.toContain('Lien Wrike')
+  expect(lastFrame()).toContain('action en cours')
+  go()
+  await tick()
+  expect(lastFrame()).toContain('Fermer quand même ?')
+  expect(lastFrame()).not.toContain('Lien Wrike')
+  stdin.write('\r')
+  await tick()
+  expect(answer).toBe(true)
+  expect(calls).toEqual([['close', '26110201-33']])
+  stdin.write('+')
+  await tick()
+  expect(lastFrame()).toContain('Lien Wrike')
+})
+
 test('+ puis Échap annule sans démarrer', async () => {
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(

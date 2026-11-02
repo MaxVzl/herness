@@ -143,6 +143,9 @@ const realTimer: Timer = (fn, ms) => {
 
 export interface HelpItem { key: string; label: string; enabled: boolean }
 
+/** Gestes refusés pendant une fermeture : ils ouvrent une saisie ou lancent une action. */
+const GESTURES = new Set(['v', 'r', 'n', 'p', 'R', 'f', 'o'])
+
 type Overlay =
   | { kind: 'confirm'; question: string; onYes: () => void; onNo: () => void }
   | { kind: 'note'; title: string; onSubmit: (note: string) => void }
@@ -178,6 +181,8 @@ export interface MissionKeys {
   sentGates: string[]
   /** Affiche un message dans la zone de retour (ex. journal de herdr). */
   say: (text: string, ok?: boolean) => void
+  /** Une fermeture est en cours et peut demander une confirmation : aucune autre saisie ne doit s'ouvrir. */
+  busy: boolean
 }
 
 /**
@@ -262,6 +267,8 @@ export function useMissionKeys({
     if (released.size > 0) setMessage((m) => (m?.gate && released.has(m.gate) ? undefined : m))
   }, [state])
 
+  // Fermeture en cours (quelle que soit la mission) : elle peut ouvrir une confirmation à tout moment.
+  const busy = [...running.current].some((k) => k.endsWith('/close'))
   const keyOf = (g: Gate): string => `${state?.id}/${g.id}`
   const gates = state
     ? state.gates.filter((g) => g.status === 'pending' && !inflight.current.has(keyOf(g)) && !decided.current.has(keyOf(g)))
@@ -311,12 +318,14 @@ export function useMissionKeys({
     const k = `${state.id}/${name}`
     if (running.current.has(k)) return say('action déjà en cours', false)
     running.current.add(k)
+    bump((n) => n + 1)
     try {
       show(await fn(), success)
     } catch (e) {
       failed(e)
     } finally {
       running.current.delete(k)
+      bump((n) => n + 1)
     }
   }
 
@@ -336,6 +345,8 @@ export function useMissionKeys({
 
   useInput((input, key) => {
     if (!state) return
+    // Une fermeture peut encore demander une confirmation : aucune autre saisie ne doit pouvoir la croiser.
+    if (busy && GESTURES.has(input)) return say('action en cours', false)
     if (key.tab || key.leftArrow || key.rightArrow) {
       if (gates.length < 2 || !gate) return
       const i = gates.indexOf(gate)
@@ -430,5 +441,6 @@ export function useMissionKeys({
     ...(gate ? { selectedGate: gate.id } : {}),
     sentGates,
     say: (text, ok) => say(text, ok),
+    busy,
   }
 }

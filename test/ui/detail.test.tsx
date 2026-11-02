@@ -308,6 +308,70 @@ test('f demande confirmation avant close et relaie la confirmation interne', asy
   expect(lastFrame()).toContain('fermeture annulée')
 })
 
+test('pendant une fermeture, aucun autre geste n ouvre de saisie ni ne lance d action', async () => {
+  const s = base()
+  openGate(s, 'spec', 'A')
+  let go: () => void = () => {}
+  let answer: boolean | undefined
+  const { a, calls } = fakeActions({
+    close: async (id, confirm) => {
+      calls.push(['close', id])
+      await new Promise<void>((r) => { go = r })
+      answer = await confirm('Fermer quand même ?')
+      return ok(['fermée'])
+    },
+  })
+  const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
+  await tick()
+  stdin.write('f')
+  await tick()
+  stdin.write('\r')
+  await tick()
+  for (const k of ['v', 'r', 'n', 'f', 'p', 'R', 'o']) {
+    stdin.write(k)
+    await tick()
+    expect(lastFrame()).toContain('action en cours')
+    expect(lastFrame()).not.toContain('Valider g1')
+    expect(lastFrame()).not.toContain('Note')
+    expect(lastFrame()).not.toContain('Fermer T-1 ?')
+  }
+  expect(calls).toEqual([['close', 'T-1']])
+  go()
+  await tick()
+  expect(lastFrame()).toContain('Fermer quand même ?')
+  stdin.write('\r')
+  await tick()
+  expect(answer).toBe(true)
+  expect(lastFrame()).toContain('fermée')
+  stdin.write('p')
+  await tick()
+  expect(calls).toEqual([['close', 'T-1'], ['resume', 'T-1']])
+})
+
+test('une confirmation interne remplacée par une autre rend false', async () => {
+  const answers: boolean[] = []
+  const { a } = fakeActions({
+    close: async (_id, confirm) => {
+      const first = confirm('Première ?')
+      const second = confirm('Seconde ?')
+      answers.push(await first)
+      answers.push(await second)
+      return ok()
+    },
+  })
+  const { stdin, lastFrame } = render(<Harness state={base()} actions={a} />)
+  await tick()
+  stdin.write('f')
+  await tick()
+  stdin.write('\r')
+  await tick()
+  expect(lastFrame()).toContain('Seconde ?')
+  expect(lastFrame()).not.toContain('Première ?')
+  stdin.write('\r')
+  await tick()
+  expect(answers).toEqual([false, true])
+})
+
 test('p désactivé sur une mission fermée ; actif sinon', async () => {
   const s = base()
   s.step = 'fermée'

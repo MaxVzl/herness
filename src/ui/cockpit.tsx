@@ -234,6 +234,12 @@ export function Cockpit({
     ...(timer ? { timer } : {}),
   })
   sayRef.current = keys.say
+  // Jamais de champ actif en même temps qu'une saisie du hook (confirmation interne d'une fermeture, par exemple).
+  const overlayOpen = keys.overlay !== null
+  useEffect(() => {
+    if (overlayOpen) setAdding(false)
+  }, [overlayOpen])
+  const inputOpen = adding && !overlayOpen
 
   const startNew = (raw: string): void => {
     setAdding(false)
@@ -259,7 +265,7 @@ export function Cockpit({
       setSelectedId(visible[next]!.id)
       return
     }
-    if (input === '+') return setAdding(true)
+    if (input === '+') return keys.busy ? keys.say('action en cours', false) : setAdding(true)
     if (input === 'a') return setShowAll((v) => !v)
     if (input === 'q') exit()
   }, { isActive: !adding && keys.overlay === null })
@@ -275,7 +281,7 @@ export function Cockpit({
   const footer = (
     <Box flexDirection="column">
       {unreadable ? <Text color="red">lecture des missions impossible, nouvel essai…</Text> : null}
-      {adding ? (
+      {inputOpen ? (
         <Box marginTop={1}>
           <LineInput label={NEW_MISSION_LABEL} onSubmit={startNew} onCancel={() => setAdding(false)} />
         </Box>
