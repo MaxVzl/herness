@@ -163,22 +163,51 @@ export function Cockpit({
   const prs = useMemo<PrLookup>(() => prCache ?? new PrCache(), [prCache])
   const read = useMemo(() => load ?? (() => projectMissions(repoPath)), [load, repoPath])
 
+  // Relectures : une seule à la fois, et seul le résultat le plus récent est appliqué (numéro de séquence).
+  const polling = useRef(false)
+  const seq = useRef(0)
+  const applied = useRef(0)
+  // Rafraîchissement des PR : jamais relancé tant que le précédent tourne.
+  const refreshing = useRef(false)
+  const showAllRef = useRef(showAll)
+  showAllRef.current = showAll
+
   useEffect(() => {
     let alive = true
+    const refreshPrs = (list: MissionState[]): void => {
+      if (refreshing.current) return
+      const urls = [...new Set(visibleMissions(list, prs, now(), showAllRef.current).flatMap((s) =>
+        (s.prUrl && prs.get(s.prUrl)?.state !== 'MERGED' ? [s.prUrl] : [])))]
+      if (urls.length === 0) return
+      refreshing.current = true
+      const done = (): void => {
+        refreshing.current = false
+        if (alive) bump((n) => n + 1)
+      }
+      try {
+        // Sans attendre : le cache limite les appels à gh ; on redessine quand il a répondu.
+        void Promise.resolve(prs.refresh(urls)).then(done, done)
+      } catch {
+        // échec du rafraîchissement des PR : sans rapport avec la lecture des missions
+        done()
+      }
+    }
     const poll = async (): Promise<void> => {
+      if (polling.current) return
+      polling.current = true
+      const mine = ++seq.current
       try {
         const list = sortMissions(await read())
-        if (!alive) return
+        if (!alive || mine <= applied.current) return
+        applied.current = mine
         setAll(list)
         setLoaded(true)
         setUnreadable(false)
-        const urls = [...new Set(list.flatMap((s) => (s.prUrl ? [s.prUrl] : [])))]
-        if (urls.length > 0) {
-          // Sans attendre : le cache limite les appels à gh ; on redessine quand il a répondu.
-          void prs.refresh(urls).then(() => { if (alive) bump((n) => n + 1) }, () => {})
-        }
+        refreshPrs(list)
       } catch {
         if (alive) setUnreadable(true)
+      } finally {
+        polling.current = false
       }
     }
     void poll()
@@ -191,6 +220,10 @@ export function Cockpit({
 
   const visible = visibleMissions(all, prs, now(), showAll)
   const selected = visible.find((s) => s.id === selectedId) ?? visible[0]
+  // La sélection est épinglée à un identifiant dès qu'une ligne existe : un réordonnancement ne change jamais la cible.
+  useEffect(() => {
+    if (selected && selected.id !== selectedId) setSelectedId(selected.id)
+  }, [selected?.id, selectedId])
 
   const keys = useMissionKeys({
     state: selected,

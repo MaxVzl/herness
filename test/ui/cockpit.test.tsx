@@ -97,7 +97,8 @@ test('une PR mergée est masquée, visible après a', async () => {
   await tick()
   expect(lastFrame()).toContain('encours')
   expect(lastFrame()).not.toContain('livree')
-  expect(pr.refreshed[0]).toEqual([done.prUrl])
+  // la PR mergée (masquée et déjà connue comme mergée) n'est pas revérifiée
+  expect(pr.refreshed).toEqual([])
   stdin.write('a')
   await tick()
   expect(lastFrame()).toContain('livree')
@@ -203,6 +204,133 @@ test('la sélection suit la mission à travers les relectures', async () => {
   list = [z, x]
   await tick(80)
   expect(lastFrame()).toContain('26110201-13 · feat/26110201-13-zz')
+})
+
+test('sans ↓ préalable, la sélection reste sur la mission affichée quand la liste se réordonne', async () => {
+  const x = mission('26110201-20', 'xx', '2026-11-02T10:00:00.000Z')
+  let list = [x]
+  const { lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => list} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140} intervalMs={20} />,
+  )
+  await tick()
+  expect(lastFrame()).toContain('26110201-20 · feat/26110201-20-xx')
+  list = [mission('26110201-21', 'zz', '2026-11-03T10:00:00.000Z'), x]
+  await tick(80)
+  expect(lastFrame()).toContain('26110201-20 · feat/26110201-20-xx')
+})
+
+test('une relecture lente ne chevauche pas la suivante et un résultat périmé n est pas appliqué', async () => {
+  const stale = mission('26110201-22', 'vieux', '2026-11-02T10:00:00.000Z')
+  openGate(stale, 'spec', 'A')
+  const fresh = { ...stale, slug: 'neuf', gates: stale.gates.map((g) => ({ ...g, status: 'approved' as const })) }
+  let calls = 0
+  const load = async (): Promise<MissionState[]> => {
+    calls++
+    if (calls === 1) {
+      await tick(120)
+      return [stale]
+    }
+    return [fresh]
+  }
+  const { lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={load} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140} intervalMs={20} />,
+  )
+  await tick(90)
+  expect(calls).toBe(1)
+  await tick(150)
+  expect(calls).toBeGreaterThan(1)
+  expect(lastFrame()).toContain(' neuf ')
+  expect(lastFrame()).not.toContain('porte en attente')
+})
+
+test('un rafraîchissement des PR lent n est pas relancé à chaque relecture', async () => {
+  const s = mission('26110201-23', 'pr', '2026-11-02T10:00:00.000Z')
+  s.step = 'pr-ouverte'
+  s.prUrl = 'https://example.test/o/r/pull/8'
+  let refreshes = 0
+  const cache = { get: () => undefined, refresh: async () => { refreshes++; await tick(200) } }
+  render(<Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={fakeActions().a} prCache={cache} columns={140} intervalMs={20} />)
+  await tick(150)
+  expect(refreshes).toBe(1)
+  await tick(150)
+  expect(refreshes).toBe(2)
+})
+
+test('un rafraîchissement des PR qui lève n affiche pas l erreur de lecture', async () => {
+  const s = mission('26110201-24', 'pr', '2026-11-02T10:00:00.000Z')
+  s.step = 'pr-ouverte'
+  s.prUrl = 'https://example.test/o/r/pull/9'
+  const cache = { get: () => undefined, refresh: (): Promise<void> => { throw new Error('boom') } }
+  const { lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={fakeActions().a} prCache={cache} columns={140} intervalMs={20} />,
+  )
+  await tick(80)
+  expect(lastFrame()).toContain('PR #9')
+  expect(lastFrame()).not.toContain('lecture des missions impossible')
+})
+
+test('seules les PR visibles et non mergées sont rafraîchies', async () => {
+  const open = mission('26110201-25', 'ouverte', '2026-11-02T10:00:00.000Z')
+  open.step = 'pr-ouverte'
+  open.prUrl = 'https://example.test/o/r/pull/10'
+  const merged = mission('26110201-26', 'mergee', '2026-11-01T10:00:00.000Z')
+  merged.step = 'pr-ouverte'
+  merged.prUrl = 'https://example.test/o/r/pull/11'
+  const pr = fakePrCache({ [merged.prUrl]: { state: 'MERGED', checkedAt: '2026-11-02T10:00:00.000Z' } })
+  const { stdin } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => [open, merged]} actions={fakeActions().a} prCache={pr.cache} columns={140} intervalMs={20} />,
+  )
+  await tick()
+  stdin.write('a')
+  await tick(80)
+  expect(pr.refreshed.length).toBeGreaterThan(0)
+  for (const urls of pr.refreshed) expect(urls).toEqual([open.prUrl])
+})
+
+test('q quitte quand rien n est ouvert : la relecture s arrête', async () => {
+  let calls = 0
+  const { stdin } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => { calls++; return [] }} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140} intervalMs={20} />,
+  )
+  await tick()
+  stdin.write('q')
+  await tick()
+  const n = calls
+  await tick(100)
+  expect(calls).toBe(n)
+})
+
+test('le démontage arrête la relecture', async () => {
+  let calls = 0
+  const { unmount } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => { calls++; return [] }} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140} intervalMs={20} />,
+  )
+  await tick(60)
+  unmount()
+  const n = calls
+  await tick(100)
+  expect(calls).toBe(n)
+})
+
+test('une liste réordonnée pendant la confirmation garde la mission et la porte visées', async () => {
+  const x = mission('26110201-27', 'xx', '2026-11-02T10:00:00.000Z')
+  openGate(x, 'spec', 'A')
+  let list = [x]
+  const { a, calls } = fakeActions()
+  const { stdin, lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => list} actions={a} prCache={fakePrCache().cache} columns={140} intervalMs={20} />,
+  )
+  await tick()
+  stdin.write('v')
+  await tick()
+  expect(lastFrame()).toContain('Valider g1 (spec) de 01-27 ?')
+  const y = mission('26110201-28', 'yy', '2026-11-03T10:00:00.000Z')
+  openGate(y, 'plan', 'B')
+  list = [y, x]
+  await tick(80)
+  stdin.write('\r')
+  await tick()
+  expect(calls).toEqual([['validate', '26110201-27', 'g1', undefined]])
 })
 
 test('q quitte seulement hors saisie', async () => {
