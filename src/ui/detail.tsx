@@ -9,6 +9,21 @@ import { shortId } from './model.ts'
 const STEPS_AFTER_REVIEW: Step[] = ['global-review', 'preflight', 'pr', 'pr-ouverte', 'fermée']
 const FINISHED: Step[] = ['pr-ouverte', 'fermée']
 const MESSAGE_MS = 5000
+const SUCCESS_LINES = 5
+const FAILURE_LINES = 8
+
+/**
+ * Lignes affichées pour le résultat d'une action. Réussite : les 5 dernières (plus `success`). Échec : les lignes
+ * « KO … » et l'erreur finale (sinon les dernières lignes), 8 au plus.
+ */
+export function resultLines(r: ActionResult, success?: string): string[] {
+  const lines = r.ok && success ? [...r.lines, success] : r.lines
+  if (lines.length === 0) return [r.ok ? 'fait' : 'échec']
+  if (r.ok) return lines.slice(-SUCCESS_LINES)
+  const last = lines[lines.length - 1]!
+  const kos = lines.slice(0, -1).filter((l) => /^KO\b/.test(l))
+  return kos.length > 0 ? [...kos.slice(-(FAILURE_LINES - 1)), last] : lines.slice(-FAILURE_LINES)
+}
 
 function duration(ms: number): string {
   const s = Math.round(ms / 1000)
@@ -219,15 +234,19 @@ export function useMissionKeys({
   }, [])
 
   const show = (r: ActionResult, success?: string, gate?: string): void => {
-    const lines = r.ok && success ? [...r.lines, success] : r.lines
-    say((lines.length > 0 ? lines : [r.ok ? 'fait' : 'échec']).slice(-5).join('\n'), r.ok, gate)
+    say(resultLines(r, success).join('\n'), r.ok, gate)
   }
   const failed = (e: unknown): void => say(e instanceof Error ? e.message : String(e), false)
 
+  // Un succès s'efface après 5 s ; une erreur reste jusqu'à l'action ou la touche suivante.
   useEffect(() => {
-    if (!message) return
+    if (!message?.ok) return
     return timer(() => setMessage(undefined), MESSAGE_MS)
   }, [message, timer])
+  // Déclaré avant les gestes : une touche efface l'erreur affichée, puis son geste peut en afficher une autre.
+  useInput(() => {
+    setMessage((m) => (m && !m.ok ? undefined : m))
+  })
 
   // Une porte décidée ici redevient visible dès que l'état ne la montre plus en attente.
   useEffect(() => {

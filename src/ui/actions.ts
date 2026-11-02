@@ -118,8 +118,6 @@ export function open(s: MissionState, d: ActionDeps): Promise<ActionResult> {
 }
 
 export function startNew(input: string, d: ActionDeps): Promise<ActionResult> {
-  return run(async (out) => {
-    const id = await d.start(input, d.cwd, { ...d.lifecycle, out })
-    out(`mission ${id} lancée`)
-  })
+  // startMission annonce elle-même « Mission <id> lancée … ».
+  return run(async (out) => { await d.start(input, d.cwd, { ...d.lifecycle, out }) })
 }

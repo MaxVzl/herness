@@ -245,10 +245,11 @@ test('deux v rapides n envoient qu une décision', async () => {
   await tick()
   stdin.write('v')
   await tick()
+  // l'erreur reste affichée jusqu'à la touche suivante
+  expect(lastFrame()).toContain('aucune porte en attente')
   stdin.write('\r')
   await tick()
   expect(calls).toHaveLength(1)
-  expect(lastFrame()).toContain('aucune porte en attente')
   release()
   await tick()
   stdin.write('v')
@@ -373,6 +374,58 @@ test('le message montre les 5 dernières lignes, est relayé et disparaît à l 
   pending.at(-1)!.fn()
   await tick()
   expect(lastFrame()).not.toContain('l6')
+})
+
+test('un échec garde les lignes KO et l erreur finale (8 lignes au plus), ne s efface pas seul mais à la touche suivante', async () => {
+  const pending: { fn: () => void; ms: number }[] = []
+  const timer: Timer = (fn, ms) => { const e = { fn, ms }; pending.push(e); return () => { pending.splice(pending.indexOf(e), 1) } }
+  const lines = [
+    'OK git : présent', 'KO gh : absent', 'OK node : 24', 'KO herdr : hors session', 'OK a', 'OK b', 'OK c', 'OK d', 'OK e', 'OK f',
+    'environnement incomplet : corrige les KO ci-dessus',
+  ]
+  const { a } = fakeActions({ resume: async () => ({ ok: false, lines }) })
+  const { stdin, lastFrame } = render(<Harness state={base()} actions={a} timer={timer} />)
+  await tick()
+  stdin.write('p')
+  await tick()
+  const f = lastFrame()!
+  expect(f).toContain('KO gh : absent')
+  expect(f).toContain('KO herdr : hors session')
+  expect(f).toContain('environnement incomplet')
+  expect(f).not.toContain('OK f')
+  expect(pending).toEqual([])
+  stdin.write('x')
+  await tick()
+  expect(lastFrame()).not.toContain('environnement incomplet')
+})
+
+test('un échec sans ligne KO montre ses 8 dernières lignes', async () => {
+  const lines = Array.from({ length: 10 }, (_, i) => `ligne ${i + 1}`)
+  const { a } = fakeActions({ resume: async () => ({ ok: false, lines }) })
+  const { stdin, lastFrame } = render(<Harness state={base()} actions={a} />)
+  await tick()
+  stdin.write('p')
+  await tick()
+  expect(lastFrame()).toContain('ligne 3')
+  expect(lastFrame()).toContain('ligne 10')
+  expect(lastFrame()).not.toContain('ligne 2\n')
+  expect(lastFrame()).not.toMatch(/ligne 2$/m)
+})
+
+test('une erreur reste jusqu à l action suivante, qui la remplace', async () => {
+  const s = base()
+  const { a } = fakeActions({ resume: async () => ({ ok: false, lines: ['reprise impossible'] }) })
+  const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
+  await tick()
+  stdin.write('p')
+  await tick()
+  expect(lastFrame()).toContain('reprise impossible')
+  await tick(100)
+  expect(lastFrame()).toContain('reprise impossible')
+  stdin.write('R')
+  await tick()
+  expect(lastFrame()).not.toContain('reprise impossible')
+  expect(lastFrame()).toContain('redémarrage demandé')
 })
 
 test('une porte décidée redevient sélectionnable quand l état ne la montre plus en attente puis rouverte', async () => {

@@ -61,10 +61,9 @@ test('startNew rend l\'erreur de checkEnv sans lever', async () => {
   expect(await startNew('texte', d)).toEqual({ ok: false, lines: ['environnement incomplet'] })
 })
 
-test('startNew rend l\'id de la mission', async () => {
-  const r = await startNew('texte', mk())
-  expect(r.ok).toBe(true)
-  expect(r.lines.at(-1)).toContain('m1')
+test('startNew rend la sortie du lancement sans ligne en double', async () => {
+  const d = mk({ start: (async (_input: string, _cwd: string, deps: { out: (l: string) => void }) => { deps.out('Mission m1 lancée : espace herdr « m1 »'); return 'm1' }) as never })
+  expect(await startNew('texte', d)).toEqual({ ok: true, lines: ['Mission m1 lancée : espace herdr « m1 »'] })
 })
 
 test('resume et restart passent { restart } à resumeMission', async () => {

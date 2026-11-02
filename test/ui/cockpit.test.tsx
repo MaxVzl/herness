@@ -178,6 +178,28 @@ test('+ puis texte puis Entrée appelle startNew et affiche son erreur', async (
   expect(lastFrame()).not.toContain('Lien Wrike, issue GitHub ou texte :')
 })
 
+test('un échec de startNew garde les KO et l erreur finale', async () => {
+  const lines = ['OK git : présent', 'KO gh : non connecté', 'OK node : 24', 'OK a', 'OK b', 'OK c', 'OK d', 'environnement incomplet : corrige les KO ci-dessus']
+  const pending: { fn: () => void; ms: number }[] = []
+  const timer = (fn: () => void, ms: number) => { const e = { fn, ms }; pending.push(e); return () => { pending.splice(pending.indexOf(e), 1) } }
+  const { a } = fakeActions({ startNew: async () => ({ ok: false, lines }) })
+  const { stdin, lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => []} actions={a} prCache={fakePrCache().cache} columns={140} timer={timer} />,
+  )
+  await tick()
+  stdin.write('+')
+  await tick()
+  stdin.write('texte')
+  await tick()
+  stdin.write('\r')
+  await tick()
+  expect(lastFrame()).toContain('KO gh : non connecté')
+  expect(lastFrame()).toContain('environnement incomplet')
+  expect(lastFrame()).not.toContain('OK d')
+  // seul le message « démarrage… » (réussi) a une expiration, annulée par l'erreur
+  expect(pending).toEqual([])
+})
+
 test('+ puis Échap annule sans démarrer', async () => {
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(

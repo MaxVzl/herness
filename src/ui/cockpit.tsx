@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { MissionState } from '../mission/state.ts'
 import * as act from './actions.ts'
 import type { ActionResult } from './actions.ts'
-import { HelpLine, MissionDetail, missionActions, useMissionKeys, type HelpItem, type MissionActions, type Timer } from './detail.tsx'
+import { HelpLine, MissionDetail, missionActions, resultLines, useMissionKeys, type HelpItem, type MissionActions, type Timer } from './detail.tsx'
 import { LineInput } from './inputs.tsx'
 import { bucketOf, isHidden, needsPrRefresh, projectMissions, shortId, sortMissions, statusLabel, type Bucket, type PrInfo } from './model.ts'
 import { PrCache } from './pr-cache.ts'
@@ -245,7 +245,7 @@ export function Cockpit({
     void acts
       .startNew(input)
       .then(
-        (r) => keys.say((r.lines.length > 0 ? r.lines : [r.ok ? 'mission lancée' : 'échec']).slice(-5).join('\n'), r.ok),
+        (r) => keys.say((r.ok && r.lines.length === 0 ? ['mission lancée'] : resultLines(r)).join('\n'), r.ok),
         (e: unknown) => keys.say(e instanceof Error ? e.message : String(e), false),
       )
       .finally(() => { starting.current = false })
