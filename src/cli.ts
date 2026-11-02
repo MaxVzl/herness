@@ -21,12 +21,35 @@ program.action(async () => {
   }
 })
 
-// Écran du cockpit (Tâche 7).
+// Écran du cockpit : missions du projet du dossier courant ; hors TTY, une seule image.
 program
   .command('cockpit')
-  .description('Cockpit des missions du projet')
-  .action(() => {
-    console.log('à venir')
+  .description('Cockpit des missions du projet (↑/↓ mission, v/r/n porte, p/R/f/o, + nouvelle mission, a terminées, q quitter)')
+  .action(async () => {
+    try {
+      const { default: React } = await import('react')
+      const { render } = await import('ink')
+      const { loadProjectConfig } = await import('./config/project.ts')
+      const cfg = await loadProjectConfig(process.cwd())
+      if (!process.stdin.isTTY || !process.stdout.isTTY) {
+        const { CockpitSnapshot } = await import('./ui/cockpit.tsx')
+        const { projectMissions } = await import('./ui/model.ts')
+        const { PrCache } = await import('./ui/pr-cache.ts')
+        const missions = await projectMissions(cfg.repoPath)
+        render(React.createElement(CockpitSnapshot, {
+          name: cfg.name,
+          missions,
+          prCache: new PrCache(),
+          ...(process.stdout.columns ? { columns: process.stdout.columns } : {}),
+        })).unmount()
+        return
+      }
+      const { Cockpit } = await import('./ui/cockpit.tsx')
+      await render(React.createElement(Cockpit, { repoPath: cfg.repoPath, name: cfg.name })).waitUntilExit()
+    } catch (e) {
+      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      process.exitCode = 1
+    }
   })
 
 // Serveur MCP de l'orchestrateur : rien d'autre que le protocole ne doit écrire sur stdout.

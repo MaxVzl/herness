@@ -114,3 +114,25 @@ export function Confirm({ question, onYes, onNo }: { question: string; onYes: ()
     </Box>
   )
 }
+
+/** Champ d'une ligne : Entrée valide, Échap annule ; un collage multi-ligne est mis sur une ligne. */
+export function LineInput({ label, onSubmit, onCancel }: {
+  label: string
+  onSubmit: (text: string) => void
+  onCancel: () => void
+}): React.ReactElement {
+  const [text, setText] = useState('')
+  useInput((input, key) => {
+    if (key.escape) return onCancel()
+    if (key.return) return onSubmit(text)
+    if (key.backspace || key.delete) return setText((t) => t.slice(0, -1))
+    if (key.ctrl || key.meta || key.tab || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) return
+    if (input) setText((t) => t + input.replace(/\r\n|\r|\n/g, ' '))
+  })
+  return (
+    <Box flexDirection="column">
+      <Text color="yellow">{`${label} ${text}▏`}</Text>
+      <Text dimColor>Entrée valider · Échap annuler</Text>
+    </Box>
+  )
+}
