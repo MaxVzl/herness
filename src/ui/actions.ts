@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { decide } from '../engine/gates.ts'
 import { realEffects } from '../engine/effects.ts'
-import { closeMission, resumeMission, startMission, type LifecycleDeps } from '../lifecycle.ts'
+import { closeMission, deleteMission, resumeMission, startMission, type LifecycleDeps } from '../lifecycle.ts'
 import type { MissionState } from '../mission/state.ts'
 import { missionDir } from '../paths.ts'
 
@@ -24,6 +24,7 @@ export interface ActionDeps {
   decide: typeof decide
   resume: typeof resumeMission
   close: typeof closeMission
+  remove: typeof deleteMission
   start: typeof startMission
   cwd: string
 }
@@ -33,7 +34,7 @@ export interface ActionDeps {
  * dans une interface ink, rien ne doit écrire directement dans le terminal.
  */
 export function realActionDeps(cwd: string, log?: (message: string) => void): ActionDeps {
-  return { lifecycle: { e: realEffects(log ? { log } : {}) }, decide, resume: resumeMission, close: closeMission, start: startMission, cwd }
+  return { lifecycle: { e: realEffects(log ? { log } : {}) }, decide, resume: resumeMission, close: closeMission, remove: deleteMission, start: startMission, cwd }
 }
 
 /** Exécute une action en accumulant sa sortie ; toute exception devient `ok: false`. */
@@ -109,6 +110,11 @@ export function restartDetached(
 
 export function close(id: string, d: ActionDeps, confirm: (q: string) => Promise<boolean>): Promise<ActionResult> {
   return run((out) => d.close(id, { ...d.lifecycle, out, isTTY: true, confirm }))
+}
+
+/** La confirmation a déjà eu lieu dans l'interface (`x` puis Entrée). */
+export function remove(id: string, d: ActionDeps): Promise<ActionResult> {
+  return run((out) => d.remove(id, { ...d.lifecycle, out }, { force: true }))
 }
 
 export function open(s: MissionState, d: ActionDeps): Promise<ActionResult> {

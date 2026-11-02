@@ -121,6 +121,8 @@ export interface MissionActions {
   restart(id: string, opts?: { detached?: boolean }): Promise<ActionResult>
   close(id: string, confirm: (question: string) => Promise<boolean>): Promise<ActionResult>
   open(s: MissionState): Promise<ActionResult>
+  /** Supprime le dossier d'une mission fermée (confirmation déjà faite). */
+  remove(id: string): Promise<ActionResult>
 }
 
 export function missionActions(d: ActionDeps, spawn?: Spawner, opts: act.ResumeOpts = {}): MissionActions {
@@ -131,6 +133,7 @@ export function missionActions(d: ActionDeps, spawn?: Spawner, opts: act.ResumeO
     restart: (id, o) => (o?.detached ? act.restartDetached(id, spawn) : act.restart(id, d, opts)),
     close: (id, confirm) => act.close(id, d, confirm),
     open: (s) => act.open(s, d),
+    remove: (id) => act.remove(id, d),
   }
 }
 
@@ -144,7 +147,7 @@ const realTimer: Timer = (fn, ms) => {
 export interface HelpItem { key: string; label: string; enabled: boolean }
 
 /** Gestes refusés pendant une fermeture : ils ouvrent une saisie ou lancent une action. */
-const GESTURES = new Set(['v', 'r', 'n', 'p', 'R', 'f', 'o'])
+const GESTURES = new Set(['v', 'r', 'n', 'p', 'R', 'f', 'o', 'x'])
 
 type Overlay =
   | { kind: 'confirm'; question: string; onYes: () => void; onNo: () => void }
@@ -187,7 +190,8 @@ export interface MissionKeys {
 }
 
 /**
- * Touches partagées par le cockpit et le panneau `tasks` : ←/→/tab porte, v, r, n, p, R, f, o, et c si `onBack`.
+ * Touches partagées par le cockpit et le panneau `tasks` : ←/→/tab porte, v, r, n, p, R, f, o, x (hors panneau `tasks`),
+ * et c si `onBack`.
  * Garde anti-doublon par (mission, porte) : rien n'est renvoyé pendant qu'une décision part, et une porte décidée
  * ici est ignorée tant que l'état la montre encore en attente.
  */
@@ -387,6 +391,17 @@ export function useMissionKeys({
         return askClose(state)
       case 'o':
         return void runOnce('open', () => actions.open(state))
+      case 'x': {
+        // Le panneau `tasks` disparaît avec sa mission fermée : supprimer se fait depuis le cockpit.
+        if (ownPanel) return
+        if (state.step !== 'fermée') return say("supprimer indisponible : ferme d'abord la mission (f)", false)
+        const id = state.id
+        return confirmThen(
+          `Supprimer définitivement ${id} (état, spec, plan, journaux) ?`,
+          () => void runOnce('remove', () => actions.remove(id)),
+          () => say('suppression annulée'),
+        )
+      }
       case 'c':
         if (!onBack) return
         return void Promise.resolve()
@@ -428,6 +443,7 @@ export function useMissionKeys({
     { key: 'R', label: 'redémarrer', enabled: true },
     { key: 'f', label: 'fermer', enabled: true },
     { key: 'o', label: 'ouvrir', enabled: true },
+    ...(ownPanel ? [] : [{ key: 'x', label: 'supprimer', enabled: state?.step === 'fermée' }]),
     ...(onBack ? [{ key: 'c', label: 'cockpit', enabled: true }] : []),
   ]
   const help = helpItems.map((it) => (it.enabled ? `${it.key} ${it.label}` : `(${it.key} ${it.label})`)).join(' · ')

@@ -174,6 +174,17 @@ program
   )
 
 program
+  .command('supprimer <id>')
+  .description("Supprimer le dossier d'une mission fermée (état, spec, plan, journaux)")
+  .option('--oui', 'sans demander de confirmation')
+  .action((id: string, opts: { oui?: boolean }) =>
+    lifecycle(async (deps) => {
+      const { deleteMission } = await import('./lifecycle.ts')
+      await deleteMission(id, deps, { force: opts.oui === true })
+    }),
+  )
+
+program
   .command('statut [id]')
   .description("État des missions, ou détail d'une mission")
   .action(async (id?: string) => {

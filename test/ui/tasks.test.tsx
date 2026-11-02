@@ -94,6 +94,7 @@ function fakeActions() {
     resume: async (id) => { calls.push(['resume', id]); return done() },
     restart: async (id, o) => { calls.push(['restart', id, o?.detached === true]); return done() },
     close: async (id) => { calls.push(['close', id]); return done() },
+    remove: async (id) => { calls.push(['remove', id]); return done() },
     open: async (s) => { calls.push(['open', s.id]); return done() },
   }
   return { a, calls }

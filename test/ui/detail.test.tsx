@@ -33,6 +33,7 @@ function fakeActions(over: Partial<MissionActions> = {}) {
     restart: async (id, o) => { calls.push(o?.detached ? ['restart', id, 'détaché'] : ['restart', id]); return ok() },
     close: async (id, confirm) => { calls.push(['close', id]); return { ok: await confirm('Fermer quand même ?'), lines: [] } },
     open: async (s) => { calls.push(['open', s.id]); return ok() },
+    remove: async (id) => { calls.push(['remove', id]); return ok(['Mission T-1 supprimée.']) },
     ...over,
   }
   return { a, calls }
@@ -565,4 +566,43 @@ test('missionActions relie les actions aux dépendances', async () => {
   expect(seen).toHaveLength(3)
   expect(spawned).toEqual([[process.execPath, ['reprendre', 'T-1', '--redemarrer'], expect.objectContaining({ detached: true })], 'unref'])
   expect(r.lines[0]).toMatch(/^redémarrage lancé \(ce panneau va se relancer\) ; journal : .*redemarrage-.*\.log$/)
+})
+
+test('x supprime une mission fermée après confirmation ; Échap annule', async () => {
+  const s = { ...base(), step: 'fermée' as const }
+  const { a, calls } = fakeActions()
+  const r = render(<Harness state={s} actions={a} />)
+  await waitFor(r.lastFrame, 'AIDE')
+  expect(r.lastFrame()).toContain('x supprimer')
+  r.stdin.write('x')
+  await waitFor(r.lastFrame, 'Supprimer définitivement T-1 (état, spec, plan, journaux) ?')
+  r.stdin.write(ESC)
+  await waitFor(r.lastFrame, 'suppression annulée')
+  expect(calls).toEqual([])
+  r.stdin.write('x')
+  await waitFor(r.lastFrame, 'Supprimer définitivement T-1')
+  r.stdin.write('\r')
+  await waitFor(r.lastFrame, 'Mission T-1 supprimée.')
+  expect(calls).toEqual([['remove', 'T-1']])
+})
+
+test('x refuse une mission pas fermée', async () => {
+  const { a, calls } = fakeActions()
+  const r = render(<Harness state={base()} actions={a} />)
+  await waitFor(r.lastFrame, 'AIDE')
+  expect(r.lastFrame()).toContain('(x supprimer)')
+  r.stdin.write('x')
+  await waitFor(r.lastFrame, "supprimer indisponible : ferme d'abord la mission (f)")
+  expect(calls).toEqual([])
+})
+
+test('x absent du panneau tasks de la mission', async () => {
+  const { a, calls } = fakeActions()
+  const r = render(<Harness state={{ ...base(), step: 'fermée' }} actions={a} ownPanel />)
+  await waitFor(r.lastFrame, 'AIDE')
+  expect(r.lastFrame()).not.toContain('supprimer')
+  r.stdin.write('x')
+  await tick()
+  expect(r.lastFrame()).not.toContain('Supprimer')
+  expect(calls).toEqual([])
 })

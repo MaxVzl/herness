@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { missionDir } from '../../src/paths.ts'
-import { close, open, refuse, restart, restartDetached, resume, startNew, validate, type ActionDeps, type Spawner } from '../../src/ui/actions.ts'
+import { close, open, remove, refuse, restart, restartDetached, resume, startNew, validate, type ActionDeps, type Spawner } from '../../src/ui/actions.ts'
 import type { MissionState } from '../../src/mission/state.ts'
 
 function mk(over: Partial<ActionDeps> = {}, focused: string[] = []): ActionDeps {
@@ -13,6 +13,7 @@ function mk(over: Partial<ActionDeps> = {}, focused: string[] = []): ActionDeps 
     decide: (async () => {}) as never,
     resume: (async () => {}) as never,
     close: (async () => true) as never,
+    remove: (async () => true) as never,
     start: (async () => 'm1') as never,
     cwd: '/x',
     ...over,
@@ -115,4 +116,17 @@ test('restartDetached lance herness reprendre --redemarrer détaché via execPat
     delete process.env.HERNESS_HOME
     await rm(home, { recursive: true, force: true })
   }
+})
+
+test('remove supprime sans redemander : la confirmation a eu lieu dans l\'interface', async () => {
+  const seen: unknown[] = []
+  const d = mk({
+    remove: (async (id: string, deps: { out?: (l: string) => void }, o: { force?: boolean }) => {
+      seen.push([id, o.force])
+      deps.out?.(`Mission ${id} supprimée.`)
+      return true
+    }) as never,
+  })
+  expect(await remove('m1', d)).toEqual({ ok: true, lines: ['Mission m1 supprimée.'] })
+  expect(seen).toEqual([['m1', true]])
 })

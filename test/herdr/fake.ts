@@ -59,6 +59,7 @@ export class FakeHerdr implements HerdrApi {
   }
   async workspaceClose(id: string) {
     this.calls.push(`workspaceClose ${id}`);
+    this.workspaces = this.workspaces.filter((w) => w.workspaceId !== id);
   }
   async tabList(ws: string): Promise<HerdrTab[]> {
     return this.tabs.filter((t) => t.workspaceId === ws);

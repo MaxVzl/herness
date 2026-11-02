@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { access, readdir, writeFile } from 'node:fs/promises'
+import { access, readdir, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { agentArgs } from './agents/adapters.ts'
@@ -354,6 +354,31 @@ export async function closeMission(id: string, deps: LifecycleDeps): Promise<boo
     await e.herdr.workspaceClose(s.herdr.workspace)
   }
   out(`Mission ${id} fermée (branche ${s.branch ?? '?'} ${branchDeleted ? 'supprimée localement' : 'conservée'}).`)
+  return true
+}
+
+/**
+ * `herness supprimer` : efface le dossier d'une mission complètement fermée (état, spec, plan, journaux).
+ * Refuse tant qu'il reste quelque chose à fermer : `fermer` est le seul à arrêter moteur, bases et espace.
+ */
+export async function deleteMission(id: string, deps: LifecycleDeps, opts: { force?: boolean } = {}): Promise<boolean> {
+  const out = deps.out ?? console.log
+  const s = await load(id)
+  if (s.step !== 'fermée') throw new Error(`mission ${id} pas fermée : herness fermer ${id} d'abord`)
+  const left: string[] = []
+  if (s.worktree && (await exists(s.worktree))) left.push(`le worktree ${s.worktree}`)
+  if (s.herdr.workspace && (await deps.e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace)) left.push("l'espace herdr")
+  if (s.testDbUp || s.proofDbUp) left.push('une base de test')
+  if (left.length > 0) throw new Error(`il reste ${left.join(', ')} : relance herness fermer ${id}`)
+  if (!opts.force) {
+    if (!deps.isTTY || !deps.confirm) throw new Error('la suppression demande une confirmation dans un terminal interactif (ou --oui)')
+    if (!(await deps.confirm(`Supprimer définitivement la mission ${id} (état, spec, plan, journaux) ?`))) {
+      out('suppression annulée')
+      return false
+    }
+  }
+  await rm(missionDir(id), { recursive: true, force: true })
+  out(`Mission ${id} supprimée.`)
   return true
 }
 

@@ -41,6 +41,7 @@ Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, d
 | `herness valider <id> [--porte <gateId>] [--note <texte>]` | Valide une porte en attente (par défaut la plus ancienne). |
 | `herness refuser <id> --note <texte> [--porte <gateId>]` | Refuse une porte ; `--note` (motif) est obligatoire. |
 | `herness fermer <id>` | Ferme la mission : base de test, moteur, worktree et espace herdr (confirmation s'il reste du travail). Sur une mission déjà `fermée` (abandon validé), nettoie ce qui reste. La branche locale est supprimée seulement si tout son contenu est déjà sur `origin` (jamais la branche distante ni la PR). |
+| `herness supprimer <id> [--oui]` | Efface le dossier d'une mission `fermée` (état, spec, plan, journaux) après confirmation (`--oui` : sans). Refuse tant qu'il reste un worktree, un espace herdr ou une base : relancer `herness fermer` d'abord. |
 
 `valider` et `refuser` exigent un vrai terminal interactif (confirmation `o/N`) : un agent ne peut pas valider à ta place. Dans le cockpit et le panneau `tasks`, `v` (valider) et `r` (refuser, note obligatoire) font la même chose après confirmation en deux touches (voir « Cockpit »). Toutes ces commandes restent disponibles : le cockpit ne les remplace pas.
 
@@ -89,6 +90,7 @@ Hors herdr, `herness` n'ouvre rien et indique de lancer `herness cockpit` dans u
 | `R` | Redémarrer moteur, tableau et visionneuses (`herness reprendre --redemarrer`) |
 | `f` | Fermer la mission (`herness fermer`) ; confirmation, et une seconde s'il reste du travail |
 | `o` | Ouvrir l'espace herdr de la mission |
+| `x` | Supprimer une mission fermée (`herness supprimer`), après confirmation ; absent du panneau `tasks` |
 | `+` | Nouvelle mission : saisir un lien Wrike, une issue GitHub ou du texte, Entrée valide, Échap annule |
 | `a` | Afficher ou masquer les missions terminées masquées |
 | `q` | Quitter |
