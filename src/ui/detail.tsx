@@ -149,7 +149,8 @@ const GESTURES = new Set(['v', 'r', 'n', 'p', 'R', 'f', 'o'])
 type Overlay =
   | { kind: 'confirm'; question: string; onYes: () => void; onNo: () => void }
   | { kind: 'note'; title: string; onSubmit: (note: string) => void }
-  | { kind: 'choose'; note: string; gate: Gate }
+  // Mission capturée à l'ouverture : le choix vise toujours celle-ci, même si la sélection a changé depuis.
+  | { kind: 'choose'; note: string; gate: Gate; mission: MissionState }
 
 function Chooser({ onPick, onCancel }: { onPick: (k: 'v' | 'r') => void; onCancel: () => void }): React.ReactElement {
   useInput((input, key) => {
@@ -279,9 +280,7 @@ export function useMissionKeys({
     : []
   const finished = state ? FINISHED.includes(state.step) : false
 
-  const send = async (decision: 'approved' | 'refused', g: Gate, note: string | undefined): Promise<void> => {
-    if (!state) return
-    const id = state.id
+  const send = async (decision: 'approved' | 'refused', id: string, g: Gate, note: string | undefined): Promise<void> => {
     const k = `${id}/${g.id}`
     if (inflight.current.has(k) || decided.current.has(k)) return say(`décision déjà envoyée pour ${g.id}`, false)
     inflight.current.add(k)
@@ -307,10 +306,9 @@ export function useMissionKeys({
     setOverlay({ kind: 'confirm', question, onYes: answered(onYes), onNo: answered(onNo) })
   }
 
-  const askDecision = (decision: 'approved' | 'refused', g: Gate, note: string | undefined): void => {
-    if (!state) return
+  const askDecision = (decision: 'approved' | 'refused', s: MissionState, g: Gate, note: string | undefined): void => {
     const verb = decision === 'approved' ? 'Valider' : 'Refuser'
-    confirmThen(`${verb} ${g.id} (${g.kind}) de ${shortId(state.id)} ?`, () => void send(decision, g, note))
+    confirmThen(`${verb} ${g.id} (${g.kind}) de ${shortId(s.id)} ?`, () => void send(decision, s.id, g, note))
   }
 
   const runOnce = async (name: string, fn: () => Promise<ActionResult>, success?: string): Promise<void> => {
@@ -357,24 +355,26 @@ export function useMissionKeys({
     switch (input) {
       case 'v':
         if (!gate) return say('aucune porte en attente', false)
-        return askDecision('approved', gate, undefined)
+        return askDecision('approved', state, gate, undefined)
       case 'r': {
         if (!gate) return say('aucune porte en attente', false)
         const g = gate
+        const s = state
         return setOverlay({
           kind: 'note',
           title: `Note de refus pour ${g.id}`,
           onSubmit: (raw) => {
             const note = raw.trim()
             if (note === '') return say('une note est obligatoire pour refuser', false)
-            askDecision('refused', g, note)
+            askDecision('refused', s, g, note)
           },
         })
       }
       case 'n': {
         if (!gate) return say('aucune porte en attente', false)
         const g = gate
-        return setOverlay({ kind: 'note', title: `Note pour ${g.id}`, onSubmit: (note) => setOverlay({ kind: 'choose', note: note.trim(), gate: g }) })
+        const s = state
+        return setOverlay({ kind: 'note', title: `Note pour ${g.id}`, onSubmit: (note) => setOverlay({ kind: 'choose', note: note.trim(), gate: g, mission: s }) })
       }
       case 'p':
         if (finished) return say('reprendre indisponible : mission terminée', false)
@@ -413,7 +413,7 @@ export function useMissionKeys({
         onCancel={() => setOverlay(null)}
         onPick={(k) => {
           if (k === 'r' && o.note === '') return say('une note est obligatoire pour refuser', false)
-          askDecision(k === 'v' ? 'approved' : 'refused', o.gate, o.note === '' ? undefined : o.note)
+          askDecision(k === 'v' ? 'approved' : 'refused', o.mission, o.gate, o.note === '' ? undefined : o.note)
         }}
       />
     )

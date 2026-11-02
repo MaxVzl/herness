@@ -417,6 +417,34 @@ test('une liste réordonnée pendant la confirmation garde la mission et la port
   expect(calls).toEqual([['validate', '26110201-27', 'g1', undefined]])
 })
 
+test('le choix v/r d une note vise la mission de son ouverture, même disparue de la liste', async () => {
+  const x = mission('26110201-34', 'xx', '2026-11-02T10:00:00.000Z')
+  openGate(x, 'spec', 'A')
+  const y = mission('26110201-35', 'yy', '2026-11-01T10:00:00.000Z')
+  openGate(y, 'spec', 'B')
+  let list = [x, y]
+  const { a, calls } = fakeActions()
+  const { stdin, lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => list} actions={a} prCache={fakePrCache().cache} columns={140} intervalMs={20} />,
+  )
+  await tick()
+  stdin.write('n')
+  await tick()
+  stdin.write('voir')
+  await tick()
+  stdin.write('\x13')
+  await tick()
+  expect(lastFrame()).toContain('v valider · r refuser · échap annuler')
+  list = [y]
+  await tick(80)
+  stdin.write('v')
+  await tick()
+  expect(lastFrame()).toContain('Valider g1 (spec) de 01-34 ?')
+  stdin.write('\r')
+  await tick()
+  expect(calls).toEqual([['validate', '26110201-34', 'g1', 'voir']])
+})
+
 test('q quitte seulement hors saisie', async () => {
   const s = mission('26110201-14', 'q', '2026-11-02T10:00:00.000Z')
   openGate(s, 'spec', 'A')
