@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { access, readdir, writeFile } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { access, readdir, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { agentArgs } from './agents/adapters.ts'
 import { orchestratorName } from './agents/names.ts'
@@ -153,7 +153,8 @@ export async function startMission(input: string, cwd: string, deps: LifecycleDe
  * de reprise. `restart` (`--redemarrer`, après une mise à jour de herness) : moteur, tableau et visionneuses sont
  * arrêtés puis relancés même s'ils tournent, pour exécuter le nouveau code ; rien n'est envoyé aux agents.
  */
-export async function resumeMission(id: string, deps: LifecycleDeps, opts: { restart?: boolean } = {}): Promise<void> {
+/** `focus` (vrai par défaut) : finit en focalisant l'onglet master ; le cockpit passe faux pour rester à l'écran. */
+export async function resumeMission(id: string, deps: LifecycleDeps, opts: { restart?: boolean; focus?: boolean } = {}): Promise<void> {
   const { e } = deps
   const out = deps.out ?? console.log
   const s = await load(id)
@@ -214,7 +215,7 @@ export async function resumeMission(id: string, deps: LifecycleDeps, opts: { res
     out(`Mission bloquée : ${s.blockedReason ?? '(raison inconnue)'}`)
     out(`Pour la reprendre à l'étape ${s.blockedFrom ?? '?'}, valide la porte de reprise : herness valider ${id}`)
   }
-  await e.herdr.tabFocus(space.tabs.master)
+  if (opts.focus !== false) await e.herdr.tabFocus(space.tabs.master)
 }
 
 /**
@@ -337,7 +338,13 @@ export async function closeMission(id: string, deps: LifecycleDeps): Promise<boo
     await saveState(s)
     throw new Error(`base de test non supprimée, rien n'a été fermé : ${errors.join(' ; ')}`)
   }
-  if (s.worktree && (!closed || wtLeft)) await e.git.worktreeRemove(s.repoPath, s.worktree)
+  if (s.worktree && (!closed || wtLeft)) {
+    // Lancé depuis un panneau du worktree (panneau `tasks`, terminal de la mission) : sans dossier courant,
+    // plus aucun git ni herdr ne pourrait être lancé ensuite.
+    const rel = relative(s.worktree, process.cwd())
+    if (!rel.startsWith('..') && !isAbsolute(rel)) process.chdir(s.repoPath)
+    await e.git.worktreeRemove(s.repoPath, s.worktree)
+  }
   const branchDeleted = await cleanBranch(s, e, cfg, out)
   s.step = 'fermée'
   s.log.push({ at: e.now().toISOString(), msg: 'mission fermée (herness fermer)' })
@@ -347,6 +354,31 @@ export async function closeMission(id: string, deps: LifecycleDeps): Promise<boo
     await e.herdr.workspaceClose(s.herdr.workspace)
   }
   out(`Mission ${id} fermée (branche ${s.branch ?? '?'} ${branchDeleted ? 'supprimée localement' : 'conservée'}).`)
+  return true
+}
+
+/**
+ * `herness supprimer` : efface le dossier d'une mission complètement fermée (état, spec, plan, journaux).
+ * Refuse tant qu'il reste quelque chose à fermer : `fermer` est le seul à arrêter moteur, bases et espace.
+ */
+export async function deleteMission(id: string, deps: LifecycleDeps, opts: { force?: boolean } = {}): Promise<boolean> {
+  const out = deps.out ?? console.log
+  const s = await load(id)
+  if (s.step !== 'fermée') throw new Error(`mission ${id} pas fermée : herness fermer ${id} d'abord`)
+  const left: string[] = []
+  if (s.worktree && (await exists(s.worktree))) left.push(`le worktree ${s.worktree}`)
+  if (s.herdr.workspace && (await deps.e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace)) left.push("l'espace herdr")
+  if (s.testDbUp || s.proofDbUp) left.push('une base de test')
+  if (left.length > 0) throw new Error(`il reste ${left.join(', ')} : relance herness fermer ${id}`)
+  if (!opts.force) {
+    if (!deps.isTTY || !deps.confirm) throw new Error('la suppression demande une confirmation dans un terminal interactif (ou --oui)')
+    if (!(await deps.confirm(`Supprimer définitivement la mission ${id} (état, spec, plan, journaux) ?`))) {
+      out('suppression annulée')
+      return false
+    }
+  }
+  await rm(missionDir(id), { recursive: true, force: true })
+  out(`Mission ${id} supprimée.`)
   return true
 }
 

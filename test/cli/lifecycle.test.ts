@@ -5,7 +5,7 @@ import { execa } from 'execa'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import demo from '../fixtures/demo/config.ts'
 import type { ProjectConfig } from '../../src/config/project.ts'
-import { closeMission, missionStatus, resumeMission, startMission, type LifecycleDeps } from '../../src/lifecycle.ts'
+import { closeMission, deleteMission, missionStatus, resumeMission, startMission, type LifecycleDeps } from '../../src/lifecycle.ts'
 import { drainInbox } from '../../src/mission/inbox.ts'
 import { loadState, newState, saveState, type MissionState } from '../../src/mission/state.ts'
 import { missionDir } from '../../src/paths.ts'
@@ -184,9 +184,68 @@ test('fermer sans commit non poussé ne demande rien et ferme tout', async () =>
   expect(after).toMatchObject({ step: 'fermée', testDbUp: false })
 })
 
+test('fermer depuis un panneau du worktree quitte le worktree avant de le supprimer', async () => {
+  let cwdAtRemove = ''
+  const { d, s } = await started({
+    git: { unpushedCount: async () => 0, worktreeRemove: async () => void (cwdAtRemove = process.cwd()) },
+  })
+  await mkdir(join(s.worktree!, 'src'), { recursive: true })
+  const before = process.cwd()
+  process.chdir(join(s.worktree!, 'src'))
+  try {
+    expect(await closeMission('gh12', d)).toBe(true)
+    expect(cwdAtRemove).toBe(repo)
+    expect(process.cwd()).toBe(repo)
+  } finally {
+    process.chdir(before)
+  }
+})
+
+test('fermer ne change pas le dossier courant hors du worktree', async () => {
+  const { d } = await started({ git: { unpushedCount: async () => 0 } })
+  const before = process.cwd()
+  await closeMission('gh12', d)
+  expect(process.cwd()).toBe(before)
+})
+
+test('supprimer refuse une mission qui n\'est pas fermée', async () => {
+  const { d } = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: true, confirm: async () => true })
+  await expect(deleteMission('gh12', d)).rejects.toThrow('mission gh12 pas fermée : herness fermer gh12 d\'abord')
+  expect(await exists(missionDir('gh12'))).toBe(true)
+})
+
+test('supprimer refuse une mission fermée dont l\'espace herdr existe encore', async () => {
+  const { d } = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: true, confirm: async () => true })
+  await patch({ step: 'fermée' })
+  await expect(deleteMission('gh12', d)).rejects.toThrow(/il reste l'espace herdr : relance herness fermer gh12/)
+  expect(await exists(missionDir('gh12'))).toBe(true)
+})
+
+test('supprimer efface le dossier d\'une mission fermée après confirmation', async () => {
+  const asked: string[] = []
+  let answer = false
+  const r = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: true, confirm: async (q?: string) => (asked.push(q ?? ''), answer) })
+  await closeMission('gh12', r.d)
+  expect(await deleteMission('gh12', r.d)).toBe(false)
+  expect(asked.at(-1)).toBe('Supprimer définitivement la mission gh12 (état, spec, plan, journaux) ?')
+  expect(await exists(missionDir('gh12'))).toBe(true)
+  answer = true
+  expect(await deleteMission('gh12', r.d)).toBe(true)
+  expect(await exists(missionDir('gh12'))).toBe(false)
+  expect(r.out).toContain('Mission gh12 supprimée.')
+})
+
+test('supprimer hors terminal demande --oui', async () => {
+  const r = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: false })
+  await closeMission('gh12', r.d)
+  await expect(deleteMission('gh12', r.d)).rejects.toThrow(/confirmation dans un terminal interactif \(ou --oui\)/)
+  expect(await deleteMission('gh12', r.d, { force: true })).toBe(true)
+  expect(await exists(missionDir('gh12'))).toBe(false)
+})
+
 test('fermer ne ferme jamais l\'espace avec --group', async () => {
   const { fx, d, s } = await started({ git: { unpushedCount: async () => 0 } })
-  fx.herdr.seedWorkspace('Funéo')
+  fx.herdr.seedWorkspace('Projet')
   await closeMission('gh12', d)
   expect(fx.callsOf('herdr.workspaceClose')).toEqual([[s.herdr.workspace]])
   expect(JSON.stringify(fx.calls)).not.toContain('--group')
@@ -253,6 +312,15 @@ test('reprendre relance moteur, tableau et orchestrateur absents', async () => {
   expect((launch as { args: string[] }).args).toEqual(expect.arrayContaining(['--resume', s.orchestrator.sessionId!]))
   expect(fx.callsOf('herdr.agentPrompt')).toEqual([])
   expect(await drainInbox('gh12')).toEqual([])
+})
+
+test('reprendre focalise l’onglet master, sauf avec focus:false', async () => {
+  const { fx, d, s } = await started()
+  await resumeMission('gh12', d)
+  expect(fx.herdr.calls.at(-1)).toBe(`tabFocus ${s.herdr.tabs['master']}`)
+  fx.herdr.calls.length = 0
+  await resumeMission('gh12', d, { focus: false })
+  expect(fx.herdr.calls.some((c) => c.startsWith('tabFocus'))).toBe(false)
 })
 
 test('reprendre ne relance pas ce qui tourne encore', async () => {
@@ -366,6 +434,19 @@ test('CLI fermer sur une mission inconnue échoue avec un message clair', async 
   const r = await execa('node', ['bin/herness.js', 'fermer', 'C-3'], { reject: false, stdin: 'ignore', env: { HERNESS_HOME: home } })
   expect(r.exitCode).toBe(1)
   expect(r.stderr).toMatch(/mission C-3 introuvable/)
+})
+
+test('CLI supprimer --oui efface une mission fermée ; sans --oui hors terminal, refuse', async () => {
+  await saveState({ ...newState({ id: 'D-4', source: { kind: 'text', ref: 'x' }, project: 'demo', repoPath: repo }), step: 'fermée' })
+  const env = { HERNESS_HOME: home }
+  const no = await execa('node', ['bin/herness.js', 'supprimer', 'D-4'], { reject: false, stdin: 'ignore', env })
+  expect(no.exitCode).toBe(1)
+  expect(no.stderr).toMatch(/--oui/)
+  expect(await exists(missionDir('D-4'))).toBe(true)
+  const yes = await execa('node', ['bin/herness.js', 'supprimer', 'D-4', '--oui'], { reject: false, stdin: 'ignore', env })
+  expect(yes.exitCode).toBe(0)
+  expect(yes.stdout).toContain('Mission D-4 supprimée.')
+  expect(await exists(missionDir('D-4'))).toBe(false)
 })
 
 test('fermer supprime la base démarrée par le moteur juste avant son arrêt', async () => {
