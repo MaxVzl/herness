@@ -60,3 +60,29 @@ test('PrCache : deux instances gardent chacune les entrées de l’autre', async
   expect(c.get(url)?.state).toBe('OPEN')
   expect(c.get(u2)?.state).toBe('MERGED')
 })
+
+test('PrCache ne relance pas gh avant 5 min après un échec', async () => {
+  let t = new Date('2026-11-02T10:00:00Z')
+  let calls = 0
+  const c = new PrCache(join(dir, 'c.json'), async () => { calls++; throw new Error('gh absent') }, () => t)
+  await c.refresh([url])
+  t = new Date('2026-11-02T10:00:01Z')
+  await c.refresh([url])
+  t = new Date('2026-11-02T10:04:00Z')
+  await c.refresh([url])
+  expect(calls).toBe(1)
+  t = new Date('2026-11-02T10:05:01Z')
+  await c.refresh([url])
+  expect(calls).toBe(2)
+  expect(c.get(url)).toBeUndefined()
+})
+
+test('PrCache : une sortie invalide compte aussi comme essai', async () => {
+  let t = new Date('2026-11-02T10:00:00Z')
+  let calls = 0
+  const c = new PrCache(join(dir, 'c.json'), async () => { calls++; return { stdout: '', stderr: 'auth', exitCode: 1 } }, () => t)
+  await c.refresh([url])
+  t = new Date('2026-11-02T10:01:00Z')
+  await c.refresh([url])
+  expect(calls).toBe(1)
+})

@@ -28,6 +28,8 @@ export class PrCache {
   }
 
   private entries: Record<string, PrInfo> = {}
+  /** Dernier appel à gh par URL, réussi ou non : un gh en échec n'est pas rappelé à chaque rafraîchissement. */
+  private lastAttempt: Record<string, number> = {}
 
   constructor(
     private file: string = join(missionsRoot(), '..', 'pr-cache.json'),
@@ -44,8 +46,12 @@ export class PrCache {
   async refresh(urls: string[]): Promise<void> {
     let changed = false
     for (const url of urls) {
+      const t = this.now().getTime()
       const cur = this.entries[url]
-      if (cur && this.now().getTime() - new Date(cur.checkedAt).getTime() < TTL_MS) continue
+      if (cur && t - new Date(cur.checkedAt).getTime() < TTL_MS) continue
+      const last = this.lastAttempt[url]
+      if (last !== undefined && t - last < TTL_MS) continue
+      this.lastAttempt[url] = t
       try {
         const r = await this.runner('gh', ['pr', 'view', url, '--json', 'state'])
         const state = (JSON.parse(r.stdout) as { state?: unknown }).state
