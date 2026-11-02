@@ -75,6 +75,11 @@ export class FakeHerdr implements HerdrApi {
   async tabFocus(tab: string) {
     this.calls.push(`tabFocus ${tab}`);
   }
+  async tabClose(tab: string) {
+    this.calls.push(`tabClose ${tab}`);
+    this.tabs = this.tabs.filter((t) => t.tabId !== tab);
+    this.panes = this.panes.filter((p) => p.tabId !== tab);
+  }
   async paneList(ws: string): Promise<HerdrPane[]> {
     return this.panes.filter((p) => p.workspaceId === ws).map(({ rect: _r, busy: _b, ...p }) => p);
   }

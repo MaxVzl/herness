@@ -40,7 +40,12 @@ async function saveSpot(file: string, repoPath: string, spot: Spot): Promise<voi
 
 async function createTab(repoPath: string, workspace: string, h: HerdrApi, file: string): Promise<void> {
   const { tabId, rootPaneId } = await h.tabCreate({ workspace, cwd: repoPath, label: LABEL })
-  await h.paneRun(rootPaneId, `node ${shq(BIN)} cockpit`)
+  try {
+    await h.paneRun(rootPaneId, `node ${shq(BIN)} cockpit`)
+  } catch (e) {
+    await h.tabClose(tabId).catch(() => undefined)
+    throw e
+  }
   await h.tabFocus(tabId)
   await saveSpot(file, repoPath, { workspace, tab: tabId })
 }
@@ -66,12 +71,14 @@ export async function openCockpit(
 export async function focusCockpit(repoPath: string, h: HerdrApi, file: string = cockpitFile()): Promise<void> {
   const spot = (await readSpots(file))[repoPath]
   if (!spot) throw new Error("aucun cockpit pour ce projet : lance herness dans l'espace du projet")
-  const tab = (await h.tabList(spot.workspace)).find((t) => t.tabId === spot.tab)
-  if (!tab) {
+  const gone = new Error("cockpit introuvable : relance herness dans l'espace du projet")
+  const tabs = await h.tabList(spot.workspace).catch(() => [])
+  const tab = tabs.find((t) => t.tabId === spot.tab)
+  try {
     await h.workspaceFocus(spot.workspace)
-    await createTab(repoPath, spot.workspace, h, file)
-    return
+    if (tab) await h.tabFocus(tab.tabId)
+    else await createTab(repoPath, spot.workspace, h, file)
+  } catch {
+    throw gone
   }
-  await h.workspaceFocus(spot.workspace)
-  await h.tabFocus(tab.tabId)
 }

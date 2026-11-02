@@ -79,3 +79,23 @@ test('fichier cockpit.json invalide : traité comme vide', async () => {
   h.seedWorkspace('demo')
   expect(await openCockpit('/repo/demo', h, file, load)).toBe('créé')
 })
+
+test('focusCockpit : espace enregistré disparu -> message clair', async () => {
+  const h = new FakeHerdr()
+  h.seedWorkspace('demo')
+  await openCockpit('/repo/demo', h, file, load)
+  h.tabList = async () => { throw new Error('workspace not found') }
+  h.workspaceFocus = async () => { throw new Error('workspace not found') }
+  await expect(focusCockpit('/repo/demo', h, file)).rejects.toThrow(
+    "cockpit introuvable : relance herness dans l'espace du projet",
+  )
+})
+
+test('createTab : paneRun en échec ferme le nouvel onglet', async () => {
+  const h = new FakeHerdr()
+  h.seedWorkspace('demo')
+  h.paneRun = async () => { throw new Error('boom') }
+  await expect(openCockpit('/repo/demo', h, file, load)).rejects.toThrow('boom')
+  expect(h.tabs.some((t) => t.label === 'herness')).toBe(false)
+  expect(h.calls.some((c) => c.startsWith('tabClose'))).toBe(true)
+})

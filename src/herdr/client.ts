@@ -39,6 +39,7 @@ export interface HerdrApi {
   tabCreate(a: { workspace: string; cwd: string; label: string }): Promise<{ tabId: string; rootPaneId: string }>;
   tabRename(tab: string, label: string): Promise<void>;
   tabFocus(tab: string): Promise<void>;
+  tabClose(tab: string): Promise<void>;
   paneList(ws: string): Promise<HerdrPane[]>;
   paneSplit(a: { pane: string; direction: 'right' | 'down'; ratio?: number; cwd: string }): Promise<{ paneId: string; tabId: string }>;
   paneRename(pane: string, label: string): Promise<void>;
@@ -164,6 +165,10 @@ export class Herdr implements HerdrApi {
 
   async tabFocus(tab: string): Promise<void> {
     await this.call(['tab', 'focus', tab]);
+  }
+
+  async tabClose(tab: string): Promise<void> {
+    await this.call(['tab', 'close', tab]);
   }
 
   async paneList(ws: string): Promise<HerdrPane[]> {
