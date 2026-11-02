@@ -31,6 +31,8 @@ Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, d
 
 | Commande | Rôle |
 | --- | --- |
+| `herness` | Dans herdr : ouvre (ou crée) l'onglet `herness` du projet, qui affiche le cockpit (voir « Cockpit »). Hors herdr : affiche « hors herdr : lance « herness cockpit » dans un terminal » et ne fait rien d'autre. |
+| `herness cockpit` | Écran du cockpit dans le terminal courant (projet du dossier courant). Hors terminal interactif, affiche une seule image et rend la main. |
 | `herness dev <demande...>` | Démarre une mission : lien Wrike, issue GitHub ou texte libre. Crée l'espace herdr, le worktree et la branche `herness/<id>`, lance moteur, tableau et orchestrateur. |
 | `herness reprendre <id> [--redemarrer]` | Rouvre l'espace d'une mission et relance ce qui ne tourne plus (moteur, tableau, visionneuses spec et plan, orchestrateur). Une mission bloquée ouvre une porte de reprise (`reprise-bloquee`) : validée, elle repart de l'étape bloquée avec un budget de tours neuf. Une mission `pr-ouverte` ou `fermée` : affiche son état, ne relance rien. `--redemarrer` : arrête (double ctrl+c) puis relance moteur, tableau et visionneuses même s'ils tournent, sans rien envoyer aux agents. |
 | `herness statut [id]` | État de toutes les missions, ou détail d'une mission. |
@@ -40,7 +42,7 @@ Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, d
 | `herness refuser <id> --note <texte> [--porte <gateId>]` | Refuse une porte ; `--note` (motif) est obligatoire. |
 | `herness fermer <id>` | Ferme la mission : base de test, moteur, worktree et espace herdr (confirmation s'il reste du travail). Sur une mission déjà `fermée` (abandon validé), nettoie ce qui reste. La branche locale est supprimée seulement si tout son contenu est déjà sur `origin` (jamais la branche distante ni la PR). |
 
-`valider` et `refuser` exigent un vrai terminal interactif (confirmation `o/N`) : un agent ne peut pas valider à ta place. Dans le panneau `tasks`, `v` (valider) et `r` (refuser, note obligatoire) font la même chose après confirmation (Entrée / Échap).
+`valider` et `refuser` exigent un vrai terminal interactif (confirmation `o/N`) : un agent ne peut pas valider à ta place. Dans le cockpit et le panneau `tasks`, `v` (valider) et `r` (refuser, note obligatoire) font la même chose après confirmation en deux touches (voir « Cockpit »). Toutes ces commandes restent disponibles : le cockpit ne les remplace pas.
 
 ## Le cycle d'une mission
 
@@ -70,9 +72,40 @@ Un amendement validé s'applique dès qu'aucun agent n'a de consigne en cours ni
 
 Un arrêt sans commit et sans compte rendu, ou tout autre échec du contrôle des commits (identité, auteur, arbre non propre, fichier interdit), bloque la mission.
 
+## Cockpit
+
+`herness` (sans argument), lancé dans un panneau herdr depuis le dépôt du projet, ouvre l'onglet `herness` de l'espace courant, ou le remet au premier plan s'il existe déjà. Cet onglet lance `herness cockpit` : toutes les missions du projet, une par ligne, avec leur statut (porte en attente en ambre, mission bloquée en rouge, active normale, terminée grisée), et à côté le détail de la mission sélectionnée (en dessous si le terminal fait moins de 100 colonnes). Les missions les plus urgentes sont en tête : portes en attente, puis bloquées, actives, terminées ; à égalité, la plus récente d'abord. L'écran se rafraîchit chaque seconde ; la sélection reste sur la même mission même si l'ordre change.
+
+Hors herdr, `herness` n'ouvre rien et indique de lancer `herness cockpit` dans un terminal ; `herness cockpit` marche partout.
+
+| Touche | Effet |
+| --- | --- |
+| `↑` / `↓` | Choisir la mission |
+| `←` / `→` (ou `tab`) | Choisir la porte en attente de la mission (si elle en a plusieurs) |
+| `v` | Valider la porte choisie |
+| `r` | Refuser la porte choisie : note obligatoire |
+| `n` | Valider ou refuser avec une note : saisie de la note, puis `v` ou `r` |
+| `p` | Reprendre la mission (`herness reprendre`) ; indisponible sur une mission terminée |
+| `R` | Redémarrer moteur, tableau et visionneuses (`herness reprendre --redemarrer`) |
+| `f` | Fermer la mission (`herness fermer`) ; confirmation, et une seconde s'il reste du travail |
+| `o` | Ouvrir l'espace herdr de la mission |
+| `+` | Nouvelle mission : saisir un lien Wrike, une issue GitHub ou du texte, Entrée valide, Échap annule |
+| `a` | Afficher ou masquer les missions terminées masquées |
+| `q` | Quitter |
+
+Les touches inutilisables (pas de porte en attente, mission terminée…) sont grisées dans la ligne d'aide en bas d'écran.
+
+**Décisions en deux touches.** `v` ne valide pas tout de suite : une confirmation « Valider <porte> (<type>) de <mission> ? » s'affiche, Entrée confirme, Échap annule. `r` demande d'abord la note de refus (vide, elle est refusée), puis la même confirmation. `n` demande la note, puis `v` (valider avec la note) ou `r` (refuser ; la note est alors obligatoire), puis la confirmation. Une décision déjà envoyée pour une porte n'est pas renvoyée tant que l'état la montre en attente.
+
+**Saisie d'une note.** Entrée passe à la ligne, `ctrl+s` valide la note, `ctrl+e` l'ouvre dans l'éditeur du terminal (`$VISUAL`, sinon `$EDITOR`, sinon `nano` ou `vi`) et reprend son contenu au retour, Échap annule.
+
+**Panneau `tasks`.** Dans l'onglet `master`, `tasks` est le même écran limité à la mission (`herness tasks <id>`), avec les mêmes touches sauf `↑`/`↓`, `+` et `a`, plus `c` qui ramène au cockpit du projet (onglet `herness`, recréé s'il a été fermé). Ici `R` redémarre en arrière-plan (processus détaché) : le panneau ne s'interrompt pas lui-même.
+
+**Missions terminées masquées.** Par défaut, le cockpit cache : une mission `pr-ouverte` dont la PR est fusionnée ; une mission `fermée` avec PR dont la PR est fusionnée ; une mission `fermée` sans PR, sept jours après sa fermeture. Une ligne « N missions terminées masquées (a) » le rappelle ; `a` montre tout. L'état des PR vient de `gh`, rafraîchi au plus toutes les 5 minutes par PR, et seulement pour les missions affichées dont la PR n'est pas déjà fusionnée.
+
 ## Disposition herdr
 
-Un espace par mission, avec les onglets :
+Un espace par mission, avec les onglets (en plus de l'onglet `herness` du cockpit, créé dans l'espace où tu lances `herness`) :
 
 - `master` : orchestrator à gauche ; à droite `tasks` en haut et `lazygit` (sur le worktree) en bas
 - `docs` (créé juste après `master`) : `spec` à gauche, `plan` à droite, chacun lançant `herness voir` ; `herness reprendre` recrée l'onglet s'il manque et relance les visionneuses au repos
@@ -118,5 +151,5 @@ Le fichier exporte par défaut un objet simple, sans import vers les sources de 
 
 ## Limites actuelles
 
-- herdr est indispensable : pas de mode sans herdr.
+- herdr est indispensable pour mener une mission : seul l'écran `herness cockpit` se lance hors herdr.
 - Le premier jalon (un vrai ticket jusqu'à la PR) n'a pas encore été exécuté.
