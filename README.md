@@ -93,15 +93,17 @@ Hors herdr, `herness` n'ouvre rien et indique de lancer `herness cockpit` dans u
 | `a` | Afficher ou masquer les missions terminées masquées |
 | `q` | Quitter |
 
-Les touches inutilisables (pas de porte en attente, mission terminée…) sont grisées dans la ligne d'aide en bas d'écran.
+Les touches inutilisables (pas de porte en attente, mission terminée…) sont grisées dans la ligne d'aide en bas d'écran. Depuis le cockpit, `p` et `R` laissent le cockpit à l'écran (`o` ouvre l'espace de la mission). Pendant une fermeture, les autres gestes et `+` sont refusés (« action en cours ») jusqu'à sa fin.
+
+**Messages.** Un succès s'affiche 5 secondes ; un message d'erreur reste jusqu'à la touche suivante. Un échec garde ses lignes `KO` et l'erreur finale (8 lignes au plus).
 
 **Décisions en deux touches.** `v` ne valide pas tout de suite : une confirmation « Valider <porte> (<type>) de <mission> ? » s'affiche, Entrée confirme, Échap annule. `r` demande d'abord la note de refus (vide, elle est refusée), puis la même confirmation. `n` demande la note, puis `v` (valider avec la note) ou `r` (refuser ; la note est alors obligatoire), puis la confirmation. Une décision déjà envoyée pour une porte n'est pas renvoyée tant que l'état la montre en attente.
 
 **Saisie d'une note.** Entrée passe à la ligne, `ctrl+s` valide la note, `ctrl+e` l'ouvre dans l'éditeur du terminal (`$VISUAL`, sinon `$EDITOR`, sinon `nano` ou `vi`) et reprend son contenu au retour, Échap annule.
 
-**Panneau `tasks`.** Dans l'onglet `master`, `tasks` est le même écran limité à la mission (`herness tasks <id>`), avec les mêmes touches sauf `↑`/`↓`, `+` et `a`, plus `c` qui ramène au cockpit du projet (onglet `herness`, recréé s'il a été fermé). Ici `R` redémarre en arrière-plan (processus détaché) : le panneau ne s'interrompt pas lui-même.
+**Panneau `tasks`.** Dans l'onglet `master`, `tasks` est le même écran limité à la mission (`herness tasks <id>`), avec les mêmes touches sauf `↑`/`↓`, `+` et `a`, plus `c` qui ramène au cockpit du projet (onglet `herness`, recréé s'il a été fermé). Ici `R` redémarre en arrière-plan (processus détaché, sortie dans `logs/redemarrage-<horodatage>.log` du dossier de mission) : le redémarrage survit à l'arrêt du panneau, qui est relancé.
 
-**Missions terminées masquées.** Par défaut, le cockpit cache : une mission `pr-ouverte` dont la PR est fusionnée ; une mission `fermée` avec PR dont la PR est fusionnée ; une mission `fermée` sans PR, sept jours après sa fermeture. Une ligne « N missions terminées masquées (a) » le rappelle ; `a` montre tout. L'état des PR vient de `gh`, rafraîchi au plus toutes les 5 minutes par PR, et seulement pour les missions affichées dont la PR n'est pas déjà fusionnée.
+**Missions terminées masquées.** Par défaut, le cockpit cache : une mission `pr-ouverte` dont la PR est fusionnée ; une mission `fermée` avec PR dont la PR est fusionnée ; une mission `fermée` sans PR ou dont la PR est fermée sans fusion, sept jours après sa fermeture (une `pr-ouverte` dont la PR est fermée reste affichée). Une ligne « N missions terminées masquées (a) » le rappelle ; `a` montre tout. L'état des PR vient de `gh`, rafraîchi au plus toutes les 5 minutes par PR, et seulement pour les missions affichées dont la PR n'est ni fusionnée, ni fermée d'une mission masquée ; un `gh` en échec n'est pas rappelé avant 5 minutes.
 
 ## Disposition herdr
 
