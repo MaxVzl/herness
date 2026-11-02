@@ -60,6 +60,7 @@ export function TasksDashboard({
   const keys = useMissionKeys({
     state,
     actions: acts,
+    ownPanel: true,
     ...(state ? { onBack: () => back(state.repoPath) } : {}),
     ...(timer ? { timer } : {}),
   })
@@ -71,7 +72,7 @@ export function TasksDashboard({
 
   return (
     <Box flexDirection="column">
-      {state ? <MissionDetail state={state} {...(keys.selectedGate ? { selectedGate: keys.selectedGate } : {})} /> : <Text>chargement…</Text>}
+      {state ? <MissionDetail state={state} sentGates={keys.sentGates} {...(keys.selectedGate ? { selectedGate: keys.selectedGate } : {})} /> : <Text>chargement…</Text>}
       {unreadable ? <Text color="red">état illisible, nouvel essai…</Text> : null}
       {keys.overlay ? <Box marginTop={1}>{keys.overlay}</Box> : null}
       {keys.message ? <Text color={keys.messageOk ? 'cyan' : 'red'}>{keys.message}</Text> : null}

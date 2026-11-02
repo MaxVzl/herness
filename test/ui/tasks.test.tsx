@@ -91,7 +91,7 @@ function fakeActions() {
     validate: async (id, gateId, note) => { calls.push(['validate', id, gateId, note]); return done() },
     refuse: async (id, gateId, note) => { calls.push(['refuse', id, gateId, note]); return done() },
     resume: async (id) => { calls.push(['resume', id]); return done() },
-    restart: async (id) => { calls.push(['restart', id]); return done() },
+    restart: async (id, o) => { calls.push(['restart', id, o?.detached === true]); return done() },
     close: async (id) => { calls.push(['close', id]); return done() },
     open: async (s) => { calls.push(['open', s.id]); return done() },
   }
@@ -228,6 +228,15 @@ test('c appelle focusCockpit avec repoPath', async () => {
   stdin.write('c')
   await tick()
   expect(focus).toHaveBeenCalledWith('/r')
+})
+
+test('R depuis le panneau tasks passe par le redémarrage détaché', async () => {
+  const { a, calls } = fakeActions()
+  const { stdin } = render(<TasksDashboard id="T-1" actions={a} load={async () => base()} />)
+  await tick()
+  stdin.write('R')
+  await tick()
+  expect(calls).toEqual([['restart', 'T-1', true]])
 })
 
 test('p désactivé sur une mission fermée', async () => {

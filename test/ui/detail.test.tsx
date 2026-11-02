@@ -5,7 +5,7 @@ import { expect, test, vi } from 'vitest'
 import { openGate } from '../../src/engine/gates.ts'
 import { newState, type MissionState } from '../../src/mission/state.ts'
 import { MissionDetail, missionActions, useMissionKeys, type MissionActions, type Timer } from '../../src/ui/detail.tsx'
-import type { ActionDeps, ActionResult } from '../../src/ui/actions.ts'
+import type { ActionDeps, ActionResult, Spawner } from '../../src/ui/actions.ts'
 
 const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms))
 const ESC = '\u001b'
@@ -26,7 +26,7 @@ function fakeActions(over: Partial<MissionActions> = {}) {
     validate: async (id, gateId, note) => { calls.push(['validate', id, gateId, note]); return ok() },
     refuse: async (id, gateId, note) => { calls.push(['refuse', id, gateId, note]); return ok() },
     resume: async (id) => { calls.push(['resume', id]); return ok(['reprise demandée']) },
-    restart: async (id) => { calls.push(['restart', id]); return ok() },
+    restart: async (id, o) => { calls.push(o?.detached ? ['restart', id, 'détaché'] : ['restart', id]); return ok() },
     close: async (id, confirm) => { calls.push(['close', id]); return { ok: await confirm('Fermer quand même ?'), lines: [] } },
     open: async (s) => { calls.push(['open', s.id]); return ok() },
     ...over,
@@ -34,11 +34,11 @@ function fakeActions(over: Partial<MissionActions> = {}) {
   return { a, calls }
 }
 
-function Harness(props: { state: MissionState; actions: MissionActions; onBack?: () => Promise<void> | void; timer?: Timer; onMessage?: (m: string) => void }): React.ReactElement {
+function Harness(props: { state: MissionState; actions: MissionActions; onBack?: () => Promise<void> | void; timer?: Timer; onMessage?: (m: string) => void; ownPanel?: boolean }): React.ReactElement {
   const k = useMissionKeys(props)
   return (
     <Box flexDirection="column">
-      <MissionDetail state={props.state} {...(k.selectedGate ? { selectedGate: k.selectedGate } : {})} />
+      <MissionDetail state={props.state} sentGates={k.sentGates} {...(k.selectedGate ? { selectedGate: k.selectedGate } : {})} />
       {k.overlay}
       {k.message ? <Text>{`MSG ${k.message}`}</Text> : null}
       <Text>{`AIDE ${k.help}`}</Text>
@@ -53,8 +53,93 @@ test('MissionDetail met en évidence la porte sélectionnée', () => {
   const f = render(<MissionDetail state={s} selectedGate="g2" />).lastFrame()!
   expect(f).toMatch(/▸.*g2/)
   expect(f).not.toMatch(/▸.*g1/)
-  const d = render(<MissionDetail state={s} />).lastFrame()!
-  expect(d).toMatch(/▸.*g1/)
+  const d = render(<MissionDetail state={s} sentGates={['g1']} />).lastFrame()!
+  expect(d).not.toContain('▸')
+  expect(d).toMatch(/g1.*décision envoyée/)
+  expect(d).not.toMatch(/g2.*décision envoyée/)
+})
+
+test('pendant l envoi, la porte n est plus marquée ▸ et affiche décision envoyée', async () => {
+  const s = base()
+  openGate(s, 'spec', 'A')
+  const { a } = fakeActions({ validate: () => new Promise(() => {}) })
+  const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
+  await tick()
+  stdin.write('v')
+  await tick()
+  stdin.write('\r')
+  await tick()
+  expect(lastFrame()).not.toContain('▸')
+  expect(lastFrame()).toMatch(/g1.*décision envoyée/)
+})
+
+test('une action qui lève affiche son erreur', async () => {
+  const s = base()
+  openGate(s, 'spec', 'A')
+  const { a } = fakeActions({
+    validate: async () => { throw new Error('boum v') },
+    resume: async () => { throw new Error('boum p') },
+  })
+  const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
+  await tick()
+  stdin.write('v')
+  await tick()
+  stdin.write('\r')
+  await tick()
+  expect(lastFrame()).toContain('boum v')
+  stdin.write('p')
+  await tick()
+  expect(lastFrame()).toContain('boum p')
+})
+
+test('la porte sélectionnée est réinitialisée quand la mission change', async () => {
+  const s = base()
+  openGate(s, 'spec', 'A')
+  openGate(s, 'plan', 'B')
+  const other = { ...s, id: 'T-2', gates: s.gates.map((g) => ({ ...g })) }
+  const { a } = fakeActions()
+  const r = render(<Harness state={s} actions={a} />)
+  await tick()
+  r.stdin.write('\t')
+  await tick()
+  expect(r.lastFrame()).toMatch(/▸.*g2/)
+  r.rerender(<Harness state={other} actions={a} />)
+  await tick()
+  expect(r.lastFrame()).toMatch(/▸.*g1/)
+})
+
+test('la libération d une porte n efface que son propre message', async () => {
+  const s = base()
+  openGate(s, 'spec', 'A')
+  const { a } = fakeActions()
+  const r = render(<Harness state={s} actions={a} />)
+  await tick()
+  r.stdin.write('v')
+  await tick()
+  r.stdin.write('\r')
+  await tick()
+  r.stdin.write('R')
+  await tick()
+  expect(r.lastFrame()).toContain('redémarrage demandé')
+  const done = { ...s, gates: s.gates.map((g) => ({ ...g, status: 'approved' as const })) }
+  r.rerender(<Harness state={done} actions={a} />)
+  await tick()
+  expect(r.lastFrame()).toContain('redémarrage demandé')
+})
+
+test('démontage pendant la confirmation interne de close : elle rend false', async () => {
+  let answer: boolean | undefined
+  const { a } = fakeActions({ close: async (_id, confirm) => { answer = await confirm('Fermer quand même ?'); return ok() } })
+  const r = render(<Harness state={base()} actions={a} />)
+  await tick()
+  r.stdin.write('f')
+  await tick()
+  r.stdin.write('\r')
+  await tick()
+  expect(r.lastFrame()).toContain('Fermer quand même ?')
+  r.unmount()
+  await tick()
+  expect(answer).toBe(false)
 })
 
 test('v affiche la question puis Entrée valide ; Échap n envoie rien', async () => {
@@ -252,6 +337,11 @@ test('R redémarre, o ouvre, c appelle onBack', async () => {
   stdin.write('c')
   await tick()
   expect(calls).toEqual([['restart', 'T-1'], ['open', 'T-1']])
+  const own = render(<Harness state={s} actions={a} ownPanel />)
+  await tick()
+  own.stdin.write('R')
+  await tick()
+  expect(calls.at(-1)).toEqual(['restart', 'T-1', 'détaché'])
   expect(onBack).toHaveBeenCalledTimes(1)
 })
 
@@ -322,4 +412,13 @@ test('missionActions relie les actions aux dépendances', async () => {
   await m.refuse('T-1', 'g1', 'non')
   await m.restart('T-1')
   expect(seen).toEqual([['T-1', 'approved', 'g1', undefined], ['T-1', 'refused', 'g1', 'non'], ['resume', 'T-1', true]])
+  const spawned: unknown[] = []
+  const spawn: Spawner = (cmd, args, opts) => {
+    spawned.push([cmd, args.slice(1), opts])
+    return { unref: () => spawned.push('unref'), once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'spawn') fn() } }
+  }
+  const r = await missionActions(d, spawn).restart('T-1', { detached: true })
+  expect(seen).toHaveLength(3)
+  expect(spawned).toEqual([['node', ['reprendre', 'T-1', '--redemarrer'], { detached: true, stdio: 'ignore' }], 'unref'])
+  expect(r.lines).toContain('redémarrage lancé (ce panneau va se relancer)')
 })

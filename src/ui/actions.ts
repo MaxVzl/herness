@@ -1,9 +1,21 @@
+import { spawn as nodeSpawn } from 'node:child_process'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { decide } from '../engine/gates.ts'
 import { realEffects } from '../engine/effects.ts'
 import { closeMission, resumeMission, startMission, type LifecycleDeps } from '../lifecycle.ts'
 import type { MissionState } from '../mission/state.ts'
 
 export type ActionResult = { ok: boolean; lines: string[] }
+
+const BIN = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'herness.js')
+
+/** Sous-ensemble de `child_process.spawn` utilisé pour le redémarrage détaché ; injectable pour les tests. */
+export type Spawner = (
+  cmd: string,
+  args: string[],
+  opts: { detached: true; stdio: 'ignore' },
+) => { unref(): void; once(event: 'spawn' | 'error', fn: (err?: Error) => void): unknown }
 
 export interface ActionDeps {
   lifecycle: LifecycleDeps
@@ -58,6 +70,22 @@ export function resume(id: string, d: ActionDeps): Promise<ActionResult> {
 
 export function restart(id: string, d: ActionDeps): Promise<ActionResult> {
   return run((out) => d.resume(id, { ...d.lifecycle, out }, { restart: true }))
+}
+
+/**
+ * Redémarrage lancé hors de ce processus : depuis le panneau `tasks` de la mission, `resumeMission` interromprait ce
+ * panneau lui-même au milieu du redémarrage. `herness reprendre <id> --redemarrer` survit à cette interruption.
+ */
+export function restartDetached(id: string, spawn: Spawner = nodeSpawn as unknown as Spawner): Promise<ActionResult> {
+  return run(async (out) => {
+    const child = spawn('node', [BIN, 'reprendre', id, '--redemarrer'], { detached: true, stdio: 'ignore' })
+    await new Promise<void>((resolve, reject) => {
+      child.once('spawn', () => resolve())
+      child.once('error', (err) => reject(err ?? new Error('lancement impossible')))
+    })
+    child.unref()
+    out('redémarrage lancé (ce panneau va se relancer)')
+  })
 }
 
 export function close(id: string, d: ActionDeps, confirm: (q: string) => Promise<boolean>): Promise<ActionResult> {

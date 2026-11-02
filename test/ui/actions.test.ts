@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { close, open, refuse, restart, resume, startNew, validate, type ActionDeps } from '../../src/ui/actions.ts'
+import { close, open, refuse, restart, restartDetached, resume, startNew, validate, type ActionDeps, type Spawner } from '../../src/ui/actions.ts'
 import type { MissionState } from '../../src/mission/state.ts'
 
 function mk(over: Partial<ActionDeps> = {}, focused: string[] = []): ActionDeps {
@@ -78,4 +78,22 @@ test('open focus l\'espace, ou rend un message', async () => {
   expect(focused).toEqual(['w1'])
   const none = { herdr: { tabs: {}, panes: {} } } as unknown as MissionState
   expect(await open(none, d)).toEqual({ ok: false, lines: ['espace herdr inconnu'] })
+})
+
+test('restartDetached lance herness reprendre --redemarrer détaché ; une erreur de lancement devient ok:false', async () => {
+  const seen: unknown[] = []
+  const spawn: Spawner = (cmd, args, opts) => {
+    seen.push([cmd, args, opts])
+    return { unref: () => seen.push('unref'), once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'spawn') fn() } }
+  }
+  const r = await restartDetached('m1', spawn)
+  expect(r).toEqual({ ok: true, lines: ['redémarrage lancé (ce panneau va se relancer)'] })
+  const [cmd, args, opts] = seen[0] as [string, string[], unknown]
+  expect(cmd).toBe('node')
+  expect(args[0]).toMatch(/bin\/herness\.js$/)
+  expect(args.slice(1)).toEqual(['reprendre', 'm1', '--redemarrer'])
+  expect(opts).toEqual({ detached: true, stdio: 'ignore' })
+  expect(seen[1]).toBe('unref')
+  const bad: Spawner = () => ({ unref: () => {}, once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'error') fn(new Error('node introuvable')) } })
+  expect(await restartDetached('m1', bad)).toEqual({ ok: false, lines: ['node introuvable'] })
 })
