@@ -48,6 +48,8 @@ export interface HerdrApi {
   paneLayout(pane: string): Promise<PaneLayoutEntry[]>;
   paneProcessInfo(pane: string): Promise<PaneProcessInfo>;
   paneSendKeys(pane: string, ...keys: string[]): Promise<void>;
+  /** Panneau qui exécute la commande (`herdr pane current`). */
+  paneCurrent(): Promise<{ paneId: string; tabId: string; workspaceId: string; cwd: string }>;
 }
 
 export class HerdrError extends Error {
@@ -206,6 +208,12 @@ export class Herdr implements HerdrApi {
 
   async paneSendKeys(pane: string, ...keys: string[]): Promise<void> {
     await this.call(['pane', 'send-keys', pane, ...keys]);
+  }
+
+  /** `pane_info` : `result.pane.{pane_id, tab_id, workspace_id, cwd}`. */
+  async paneCurrent(): Promise<{ paneId: string; tabId: string; workspaceId: string; cwd: string }> {
+    const p = (await this.call(['pane', 'current']))['pane'] as Json;
+    return { paneId: p['pane_id'], tabId: p['tab_id'], workspaceId: p['workspace_id'], cwd: p['cwd'] };
   }
 
   async agentStart(name: string, kind: string, pane: string, args: string[], timeoutMs: number): Promise<void> {

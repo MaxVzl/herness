@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { applyDecision, decide, openGate, pendingGate } from '../../src/engine/gates.ts'
 import { drainInbox } from '../../src/mission/inbox.ts'
 import { newState, saveState } from '../../src/mission/state.ts'
@@ -91,4 +91,19 @@ test('une porte caduque n’est plus en attente : pendingGate l’ignore, une d�
   expect(r).toEqual({ ok: false, reason: "porte g1 caduque : plus rien ne l'attend, décision ignorée" })
   await saveState(s)
   await expect(decide('T-1', 'approved', { gateId: 'g1', isTTY: true, confirm: async () => true })).rejects.toThrow("porte g1 caduque : plus rien ne l'attend")
+})
+
+test('decide écrit le résumé de la porte via out', async () => {
+  await withGates()
+  const lines: string[] = []
+  await decide('T-1', 'approved', { isTTY: true, confirm: async () => false, out: (l) => lines.push(l) })
+  expect(lines[0]).toMatch(/^Porte g1 \(/)
+})
+
+test('decide sans out garde l\'affichage console', async () => {
+  await withGates()
+  const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+  await decide('T-1', 'approved', { isTTY: true, confirm: async () => false })
+  expect(spy).toHaveBeenCalledWith(expect.stringMatching(/^Porte g1 \(/))
+  spy.mockRestore()
 })

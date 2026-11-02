@@ -116,4 +116,9 @@ export class FakeHerdr implements HerdrApi {
     this.calls.push(`paneSendKeys ${keys.join(' ')}`);
     if (keys.includes('ctrl+c')) this.pane(pane).busy = false;
   }
+  async paneCurrent() {
+    const p = this.panes[0];
+    if (!p) throw new Error('aucun panneau');
+    return { paneId: p.paneId, tabId: p.tabId, workspaceId: p.workspaceId, cwd: '/fake' };
+  }
 }
