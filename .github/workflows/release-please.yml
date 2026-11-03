@@ -13,6 +13,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      # Les notes de release-please ne nomment personne : on ajoute « by @auteur »
+      # à chaque entrée liée à une PR, ce qui fait aussi apparaître la section
+      # « Contributors » de la release.
+      - name: Auteurs des PR dans les notes de release
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          while IFS= read -r line; do
+            pr=$(grep -oE '\[#[0-9]+\]' <<<"$line" | head -1 | tr -dc 0-9)
+            if [ -n "$pr" ]; then
+              who=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json author --jq .author.login 2>/dev/null || true)
+              case "$who" in ''|*bot*|app/*) ;; *) line="$line by @$who" ;; esac
+            fi
+            printf '%s\n' "$line"
+          done < notes.md > notes-auteurs.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes-auteurs.md
