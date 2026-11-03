@@ -52,7 +52,19 @@ export function projectDirs(): string[] {
   return [user, join(packageRoot, 'projects')]
 }
 
-export async function loadProjectConfig(cwd: string): Promise<ProjectConfig> {
+/** Aucune config ne couvre le dossier (les autres erreurs : config invalide, import cassé…). */
+export class NoProjectError extends Error {}
+
+export interface FoundConfig {
+  config: ProjectConfig
+  file: string
+}
+
+/**
+ * Config du projet dont `repoPath` contient `cwd`, avec son fichier. Un fichier déjà
+ * importé ne se recharge pas : pour revalider après modification, passer par un autre processus.
+ */
+export async function findProjectConfig(cwd: string): Promise<FoundConfig> {
   const real = await realpath(cwd)
   const dirs = [...new Set(projectDirs())]
   for (const projectsDir of dirs) {
@@ -71,10 +83,14 @@ export async function loadProjectConfig(cwd: string): Promise<ProjectConfig> {
       const parsed = ProjectConfigSchema.safeParse(mod.default)
       if (!parsed.success) throw new Error(`config de projet invalide (${file}) : ${parsed.error.message}`)
       const config = parsed.data
-      if (real === config.repoPath || real.startsWith(config.repoPath + sep)) return config
+      if (real === config.repoPath || real.startsWith(config.repoPath + sep)) return { config, file }
     }
   }
-  throw new Error(`aucun projet herness pour ${cwd} (dossiers cherchés : ${dirs.join(', ')})`)
+  throw new NoProjectError(`aucun projet herness pour ${cwd} (dossiers cherchés : ${dirs.join(', ')})`)
+}
+
+export async function loadProjectConfig(cwd: string): Promise<ProjectConfig> {
+  return (await findProjectConfig(cwd)).config
 }
 
 export function fill(cmd: string[], vars: Record<string, string>): string[] {

@@ -27,11 +27,13 @@ Après une mise à jour de herness, lance `herness reprendre <id> --redemarrer` 
 
 ## Commandes
 
-Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, de n'importe où pour les autres.
+Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, `init` et `projet`, de n'importe où pour les autres.
 
 | Commande | Rôle |
 | --- | --- |
 | `herness` | Dans herdr : ouvre (ou crée) l'onglet `herness` du projet, qui affiche le cockpit (voir « Cockpit »). Hors herdr : affiche « hors herdr : lance « herness cockpit » dans un terminal » et ne fait rien d'autre. |
+| `herness init` | Crée la config herness du dépôt courant (voir « Ajouter un projet »), puis demande s'il faut l'affiner avec Claude. Sur un dépôt déjà configuré, ne réécrit rien et pose seulement la question. |
+| `herness projet` | Affiche la config qui s'applique au dépôt courant (nom, fichier, dépôt) et vérifie qu'elle est valide. |
 | `herness cockpit` | Écran du cockpit dans le terminal courant (projet du dossier courant). Hors terminal interactif, affiche une seule image et rend la main. |
 | `herness dev <demande...> [--note <texte>]` | Démarre une mission : lien Wrike, issue GitHub ou texte libre ; `--note` ajoute des précisions qui complètent la demande (écrites dans `note.md`, elles l'emportent en cas de contradiction). Crée l'espace herdr, le worktree et la branche `herness/<id>`, lance moteur, tableau et orchestrateur. |
 | `herness reprendre <id> [--redemarrer]` | Rouvre l'espace d'une mission et relance ce qui ne tourne plus (moteur, tableau, visionneuses spec et plan, orchestrateur). Une mission bloquée ouvre une porte de reprise (`reprise-bloquee`) : validée, elle repart de l'étape bloquée avec un budget de tours neuf. Une mission `pr-ouverte` ou `fermée` : affiche son état, ne relance rien. `--redemarrer` : arrête (double ctrl+c) puis relance moteur, tableau et visionneuses même s'ils tournent, sans rien envoyer aux agents. |
@@ -132,11 +134,21 @@ Les configs de projet vivent **hors du dépôt**, une par dossier :
 
 `HERNESS_PROJECTS_DIR` remplace ce dossier (pratique pour les tests). herness lit aussi le dossier `projects/` du dépôt, qui ne contient que `projects/exemple/` — un modèle commenté, jamais chargé, qui vise un chemin factice.
 
-Pour ajouter un projet :
+Pour ajouter un projet, lance `herness init` depuis son dépôt. Il écrit `~/.config/herness/projects/<nom>/` en déduisant du dépôt :
+
+- `name` (nom du dossier), `repoPath` (racine git) et `mainBranch` (branche par défaut d'`origin`, sinon `main` ou `master`) ;
+- le gestionnaire de paquets (`packageManager` de `package.json`, sinon le lockfile) ;
+- `preflight` : les scripts `typecheck`, `lint`, `format:check` et `test` de `package.json` qui existent ;
+- `commitFormat` d'après les 50 derniers commits (avec ou sans portée, avec ou sans suffixe `[{id}]`) ;
+- un `prepare-worktree.sh` qui copie `.env` et `.env.local` du checkout principal et installe les dépendances.
+
+Le reste prend les valeurs par défaut du modèle `projects/exemple/`. `init` demande ensuite s'il faut affiner la config avec Claude : Claude s'ouvre dans le terminal, à la racine du dépôt, explore la CI, les scripts et les services, ajuste preflight, préparation, base de test et chemins interdits, te pose ses questions et ne modifie que le dossier de config. À sa sortie, herness revalide la config. Relancer `herness init` sur un projet déjà configuré repropose seulement l'affinage.
+
+À la main, ça revient à :
 
 1. `mkdir -p ~/.config/herness/projects/mon-projet && cp projects/exemple/* ~/.config/herness/projects/mon-projet/`
 2. Adapter `config.ts` (au minimum `name` et `repoPath`) et les scripts.
-3. Lancer herness depuis le dépôt : il choisit le projet dont `repoPath` contient le dossier courant. Sinon, l'erreur liste les dossiers cherchés.
+3. Lancer `herness projet` depuis le dépôt : il affiche la config choisie (celle dont `repoPath` contient le dossier courant) ou l'erreur, avec les dossiers cherchés.
 
 Le fichier exporte par défaut un objet simple, sans import vers les sources de herness : herness le valide avec son schéma au chargement. Les chemins des scripts se calculent depuis l'emplacement de la config (`import.meta.url`).
 
