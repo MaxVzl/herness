@@ -1,7 +1,8 @@
 import { Command } from 'commander'
+import { VERSION } from './version.ts'
 
 const program = new Command()
-program.name('herness').version('0.1.0')
+program.name('herness').version(VERSION)
 
 // Sans argument : ouvre (ou crée) l'onglet cockpit du projet dans herdr.
 program.action(async () => {
