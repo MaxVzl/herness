@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/MaxVzl/herness/compare/v0.3.1...v0.4.0) (2026-11-03)
+
+
+### Features
+
+* herness init crée la config d'un projet et propose de l'affiner avec Claude ([#16](https://github.com/MaxVzl/herness/issues/16)) ([ee9056f](https://github.com/MaxVzl/herness/commit/ee9056f3bf4ce04660b368980b49754453cb34e8))
+
 ## [0.3.1](https://github.com/MaxVzl/herness/compare/v0.3.0...v0.3.1) (2026-11-03)
 
 
