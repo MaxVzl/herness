@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/MaxVzl/herness/compare/v0.3.0...v0.3.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* fin d'agent prouvée par le compte rendu, libération des panneaux Claude ([#11](https://github.com/MaxVzl/herness/issues/11)) ([8f0d187](https://github.com/MaxVzl/herness/commit/8f0d18742143d6bb49f278ddd5bd9a40cbd4b0bc))
+
 ## [0.3.0](https://github.com/MaxVzl/herness/compare/v0.2.0...v0.3.0) (2026-11-03)
 
 
