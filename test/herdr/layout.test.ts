@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createMissionSpace, markDone, paneIsIdle, slot, timing } from '../../src/herdr/layout.js';
+import { createMissionSpace, markDone, paneIsIdle, signals, slot, timing } from '../../src/herdr/layout.js';
 import { FakeHerdr } from './fake.js';
 
+// Valeur réelle, lue avant que les tests ne la mettent à zéro.
+const RETIRE_DELAY_MS = timing.retireDelayMs;
+
 beforeEach(() => {
+  signals.kill = () => {
+    throw new Error('signal réel interdit dans les tests');
+  };
   timing.retireDelayMs = 0;
   timing.pollMs = 0;
 });
@@ -106,6 +112,51 @@ describe('slot', () => {
     expect(h.pane(got).label).toBe('T7');
     expect(h.calls.filter((c) => c === 'paneSendKeys ctrl+c')).toHaveLength(2);
     expect(h.panes).toHaveLength(6);
+  });
+
+  // Mesuré : Claude Code ne quitte pas sur deux ctrl+c espacés de 1500 ms, mais quitte à 300 ms (cursor-agent aussi à 250 ms).
+  it('les deux ctrl+c partent à 250 ms d’écart', () => {
+    expect(RETIRE_DELAY_MS).toBe(250);
+  });
+
+  function fullGrid() {
+    const { h, tab, pane } = setup();
+    h.pane(pane).label = 'T1 ✓';
+    for (const l of ['T2', 'T3', 'T4', 'T5', 'T6']) h.addPane(tab, { x: 0, y: 0, width: 10, height: 10 }, l);
+    for (const p of h.panes) p.busy = true;
+    h.pane(pane).deaf = true;
+    return { h, tab, pane };
+  }
+
+  it('un panneau sourd aux ctrl+c est libéré par SIGTERM à ses processus au premier plan, jamais au shell', async () => {
+    const { h, tab, pane } = fullGrid();
+    const sent: [number, string][] = [];
+    signals.kill = (pid, sig) => {
+      sent.push([pid, sig]);
+      h.pane(pane).busy = false;
+    };
+    expect(await slot(h, tab, '/wt', 'T7')).toBe(pane);
+    expect(sent).toEqual([[2, 'SIGTERM']]);
+  });
+
+  it('SIGKILL si SIGTERM ne suffit pas', async () => {
+    const { h, tab, pane } = fullGrid();
+    const sent: [number, string][] = [];
+    signals.kill = (pid, sig) => {
+      sent.push([pid, sig]);
+      if (sig === 'SIGKILL') h.pane(pane).busy = false;
+    };
+    expect(await slot(h, tab, '/wt', 'T7')).toBe(pane);
+    expect(sent).toEqual([[2, 'SIGTERM'], [2, 'SIGKILL']]);
+  });
+
+  it('échec final : le message nomme le panneau, son agent et les PID', async () => {
+    const { h, tab, pane } = fullGrid();
+    h.pane(pane).agent = 'claude';
+    signals.kill = () => {};
+    await expect(slot(h, tab, '/wt', 'T7')).rejects.toThrow(
+      `le panneau ${pane} (T1 ✓, agent claude, PID 2) n'est pas revenu au shell après ctrl+c, SIGTERM et SIGKILL`,
+    );
   });
 
   it('échoue avec « grille pleine » quand aucun panneau n’est recyclable', async () => {

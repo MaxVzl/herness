@@ -3,7 +3,11 @@ import { join } from 'node:path';
 import type { HerdrApi, HerdrPane, PaneProcessInfo } from './client.js';
 
 /** Délais réglables (les tests les mettent à 0). */
-export const timing = { retireDelayMs: 1500, pollMs: 500, retirePolls: 20 };
+// Claude Code ne quitte que si le second ctrl+c suit vite le premier (mesuré : 1500 ms ne suffit pas, 300 ms oui).
+export const timing = { retireDelayMs: 250, pollMs: 500, retirePolls: 20, signalPolls: 6 };
+
+/** Envoi d'un signal à un processus ; remplaçable dans les tests. */
+export const signals = { kill: (pid: number, sig: 'SIGTERM' | 'SIGKILL'): void => void process.kill(pid, sig) };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const wsOf = (id: string) => id.split(':')[0] as string;
@@ -114,19 +118,42 @@ async function isFree(h: HerdrApi, pane: HerdrPane): Promise<boolean> {
   return paneIsIdle(await h.paneProcessInfo(pane.paneId));
 }
 
+/** Relit le panneau (l'agent a pu disparaître) jusqu'à ce qu'il soit libre ; `polls` essais. */
+async function freedWithin(h: HerdrApi, pane: HerdrPane, polls: number): Promise<boolean> {
+  for (let i = 0; i < polls; i++) {
+    const fresh = (await h.paneList(wsOf(pane.paneId))).find((p) => p.paneId === pane.paneId) ?? pane;
+    if (await isFree(h, fresh)) return true;
+    await sleep(timing.pollMs);
+  }
+  return false;
+}
+
+/**
+ * Libère un panneau terminé : double ctrl+c, puis SIGTERM et enfin SIGKILL aux processus au premier plan (jamais au
+ * shell). Le message d'échec nomme l'agent et les PID, pour savoir quoi arrêter à la main.
+ */
 async function retire(h: HerdrApi, pane: HerdrPane): Promise<void> {
   if (await isFree(h, pane)) return;
   for (let i = 0; i < 2; i++) {
     await h.paneSendKeys(pane.paneId, 'ctrl+c');
     await sleep(timing.retireDelayMs);
   }
-  for (let i = 0; i < timing.retirePolls; i++) {
-    // l'agent a pu disparaître : on relit le panneau
-    const fresh = (await h.paneList(wsOf(pane.paneId))).find((p) => p.paneId === pane.paneId) ?? pane;
-    if (await isFree(h, fresh)) return;
-    await sleep(timing.pollMs);
+  if (await freedWithin(h, pane, timing.retirePolls)) return;
+  let pids: number[] = [];
+  for (const sig of ['SIGTERM', 'SIGKILL'] as const) {
+    const info = await h.paneProcessInfo(pane.paneId);
+    pids = info.foregroundPids.filter((p) => p !== info.shellPid);
+    for (const pid of pids) {
+      try {
+        signals.kill(pid, sig);
+      } catch {
+        /* processus déjà terminé */
+      }
+    }
+    if (await freedWithin(h, pane, timing.signalPolls)) return;
   }
-  throw new Error(`le panneau ${pane.paneId} n'est pas revenu au shell après double ctrl+c`);
+  const who = [pane.label, pane.agent ? `agent ${pane.agent}` : undefined, pids.length ? `PID ${pids.join(', ')}` : undefined].filter(Boolean).join(', ');
+  throw new Error(`le panneau ${pane.paneId}${who ? ` (${who})` : ''} n'est pas revenu au shell après ctrl+c, SIGTERM et SIGKILL`);
 }
 
 /** Même règle que `cmd_slot` de herdr-ticket-grid.sh. Rend l'identifiant d'un panneau libre, nommé `label`. */
