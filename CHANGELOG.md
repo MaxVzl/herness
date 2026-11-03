@@ -6,3 +6,8 @@
 ### Features
 
 * note facultative au démarrage d'une mission (herness dev --note, cockpit +) ([#4](https://github.com/MaxVzl/herness/issues/4)) ([f598330](https://github.com/MaxVzl/herness/commit/f598330b1fada4adbd0fe6a820cd2f6ee22b0b46))
+
+
+### Bug Fixes
+
+* herness --version lit la version de package.json ([#6](https://github.com/MaxVzl/herness/issues/6)) ([3fa86ba](https://github.com/MaxVzl/herness/commit/3fa86bade8a06101dac14ab5bc541ab1e461b1be))
