@@ -16,6 +16,7 @@ import {
   arbitrationPending,
   ASK_TIMEOUT_MS,
   askAgent,
+  awaitAgent,
   ensureAgent,
   exists,
   findingsOf,
@@ -89,7 +90,7 @@ async function converse(
   if (pa) {
     if (await e.herdr.agentGet(pa.agent)) {
       log(s, e, `${what} : reprise, attente de ${pa.agent} sans renvoi de ${pa.file}`)
-      const r = await settle(s, e, h, what, pa.agent, await e.agents.wait(pa.agent, ASK_TIMEOUT_MS[a.role]))
+      const r = await awaitAgent(s, e, h, what, a.role, pa)
       return r === 'done' ? pa : r
     }
     delete h.pendingAsk
@@ -274,7 +275,7 @@ async function globalFix(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
   const fixBase = G.fixBase
   const make = async (): Promise<PendingAsk> => {
     G.reportSize = await fileSize(join(dir, 'rapport.md'))
-    return { agent: name, file, fromSha: fixBase }
+    return { agent: name, file, fromSha: fixBase, report: { path: join(dir, 'rapport.md'), size: G.reportSize } }
   }
   const pa = await converse(s, e, G, fixerAgent(cfg, GR, name, `CG${G.round}`, G.fixer), make, implementerDelivered(s, e))
   if (typeof pa === 'string') return pa
@@ -671,7 +672,7 @@ async function preflightFix(s: MissionState, e: Effects, cfg: ProjectConfig): Pr
   const fixBase = P.fixBase
   const make = async (): Promise<PendingAsk> => {
     P.reportSize = await fileSize(join(dir, 'rapport.md'))
-    return { agent: name, file, fromSha: fixBase }
+    return { agent: name, file, fromSha: fixBase, report: { path: join(dir, 'rapport.md'), size: P.reportSize } }
   }
   const pa = await converse(s, e, P, fixerAgent(cfg, PF, name, `CP${P.round}`, P.fixer), make, implementerDelivered(s, e))
   if (typeof pa === 'string') return pa
