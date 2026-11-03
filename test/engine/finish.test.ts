@@ -717,3 +717,27 @@ test("M1 : preflight, compte rendu inchangé depuis l'envoi des correctifs : blo
   expect(s.gates).toEqual([])
   expect(s.blockedReason).toContain('contrôle du commit en échec')
 })
+
+test("preflight : correcteur vu au repos sans compte rendu, le commit n'est contrôlé qu'après son compte rendu", async () => {
+  let sleeps = 0
+  const P = { round: 1, results: [], acceptedRed: [], used: [], diag: 1, phase: 'fix' as const, fixer: 'new' as const, fixFindings: '- src/x.ts:1 lint', fixFailure: '' }
+  const { fx, eng } = await setup({
+    patch: { step: 'preflight', loops: { ...baseLoops(), globalReview: { round: 0, reviewedSha: 'sha-rev' }, preflight: P } },
+    over: {
+      sleep: async () => {
+        if (++sleeps === 2) await writeFile(join(pdir(), 'rapport.md'), 'ancien\ncorrigé, commit c1\n')
+      },
+      git: {
+        controlCommits: async () => {
+          expect(await readFile(join(pdir(), 'rapport.md'), 'utf8')).toContain('commit c1')
+          return { ok: true, commits: 1 }
+        },
+      },
+    },
+  })
+  await mkdir(pdir(), { recursive: true })
+  await writeFile(join(pdir(), 'rapport.md'), 'ancien\n')
+  const s = await until(eng, () => fx.callsOf('git.controlCommits').length > 0)
+  expect(sleeps).toBe(2)
+  expect(s.log.map((l) => l.msg)).toContain('preflight : cpt-1-1 vu au repos sans compte rendu, attente de la fin réelle')
+})

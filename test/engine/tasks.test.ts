@@ -239,6 +239,66 @@ test("un agent sans réponse bloque la mission", async () => {
   expect(s.blockedReason).toContain('agent ct-1-t1 sans réponse')
 })
 
+// herdr voit un cursor-agent au repos pendant une longue commande (vitest…) : seul le compte rendu prouve la fin.
+test("un implémenteur vu au repos sans compte rendu n'est pas contrôlé avant d'avoir écrit son compte rendu", async () => {
+  let sleeps = 0
+  const states = seq('working', 'idle', 'idle')
+  const { fx, eng } = await setup({
+    over: {
+      agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) },
+      herdr: { agentGet: async (name: string) => (name.startsWith('c') ? { state: states() } : { state: 'idle' }) },
+      sleep: async () => {
+        // L'agent finit pendant la 3e attente : il écrit son compte rendu.
+        if (++sleeps === 3) await writeFile(join(taskDir(), 'rapport.md'), 'fichiers : a.ts\ncommit sha-head\n')
+      },
+      git: {
+        controlCommits: async () => {
+          expect(await readFile(join(taskDir(), 'rapport.md'), 'utf8')).toContain('commit sha-head')
+          return { ok: true, commits: 1 }
+        },
+      },
+    },
+  })
+  const s = await until(eng, () => fx.callsOf('git.controlCommits').length > 0)
+  expect(sleeps).toBe(3)
+  expect(fx.callsOf('sleep')[0]).toEqual([15_000])
+  expect(fx.callsOf('git.controlCommits')).toHaveLength(1)
+  expect(s.log.map((l) => l.msg)).toContain('tâche 1 : ct-1-t1 vu au repos sans compte rendu, attente de la fin réelle')
+})
+
+test('au repos sans compte rendu pendant 10 min : contrôle comme avant', async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+  const s = await until(eng, () => fx.callsOf('git.controlCommits').length > 0)
+  // Le compte d'attente repart de zéro quand l'agent travaille : ici toujours au repos, 40 × 15 s.
+  expect(fx.callsOf('sleep')).toHaveLength(40)
+  expect(fx.callsOf('git.controlCommits')).toHaveLength(1)
+  expect(s.log.map((l) => l.msg)).toContain('tâche 1 : ct-1-t1 au repos depuis 10 min sans compte rendu, contrôle du travail')
+})
+
+test("un compte rendu déjà complété à l'issue de la consigne : aucune attente", async () => {
+  const { fx, eng } = await setup({
+    over: {
+      agents: {
+        ask: async (name: string, file: string) => {
+          if (name.startsWith('c')) await writeFile(join(taskDir(), 'rapport.md'), 'fait\n')
+          return scriptedAsk(['VERDICT: APPROUVÉ'])(name, file)
+        },
+      },
+    },
+  })
+  await until(eng, (x) => x.tasks[0]!.phase === 'done')
+  expect(fx.callsOf('sleep')).toEqual([])
+})
+
+test("un agent qui passe en blocked pendant l'attente du compte rendu ouvre une porte agent-bloque", async () => {
+  const { eng } = await setup({
+    over: { herdr: { agentGet: async () => ({ state: 'blocked' }), agentRead: async () => 'Autoriser ? (o/n)' } },
+  })
+  const s = await until(eng, (x) => x.gates.length > 0)
+  expect(s.gates[0]).toMatchObject({ kind: 'agent-bloque', status: 'pending' })
+  expect(s.tasks[0]!.pendingAsk).toMatchObject({ agent: 'ct-1-t1' })
+})
+
 test('une porte arbitrage en attente suspend la correction, sa note entre dans les correctifs', async () => {
   const { fx, eng } = await setup({
     patch: {

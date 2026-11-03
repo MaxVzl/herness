@@ -40,6 +40,8 @@ export const PendingAskSchema = z.object({
   fromSha: z.string().optional(),
   out: z.string().optional(),
   head: z.string().optional(),
+  /** Implémenteur : son compte rendu et sa taille à l'envoi ; la consigne n'est finie qu'une fois qu'il a grossi. */
+  report: z.object({ path: z.string(), size: z.number() }).optional(),
 })
 export type PendingAsk = z.infer<typeof PendingAskSchema>
 

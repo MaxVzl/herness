@@ -202,7 +202,42 @@ export async function askAgent(s: MissionState, e: Effects, h: AskHolder, what: 
   h.pendingAsk = pending
   await saveState(s)
   const r = await e.agents.ask(pending.agent, pending.file, ASK_TIMEOUT_MS[role])
-  return settle(s, e, h, what, pending.agent, r)
+  return settle(s, e, h, what, pending.agent, await proven(s, e, what, pending, r))
+}
+
+/** Attente d'une consigne déjà envoyée (reprise après un redémarrage du moteur ou un déblocage), sans renvoi. */
+export async function awaitAgent(s: MissionState, e: Effects, h: AskHolder, what: string, role: Role, pa: PendingAsk): Promise<'done' | StepResult> {
+  const r = await e.agents.wait(pa.agent, ASK_TIMEOUT_MS[role])
+  return settle(s, e, h, what, pa.agent, await proven(s, e, what, pa, r))
+}
+
+/** Attente d'un compte rendu : intervalle de vérification, et durée au repos sans compte rendu avant de contrôler quand même. */
+export const PROOF = { pollMs: 15_000, idleGraceMs: 10 * 60_000 }
+
+/**
+ * herdr juge la fin d'un agent sur son écran : un cursor-agent paraît au repos pendant une longue commande (une
+ * suite vitest, par exemple). Pour un implémenteur, `done` ne vaut donc fin qu'une fois son compte rendu complété
+ * (son brief l'exige avant `TERMINÉ`). Sinon le moteur revérifie ; après `idleGraceMs` au repos sans compte rendu
+ * (le compte repart quand l'agent travaille), il contrôle quand même, comme avant.
+ */
+async function proven(s: MissionState, e: Effects, what: string, pa: PendingAsk, r: 'done' | 'blocked' | 'timeout'): Promise<'done' | 'blocked' | 'timeout'> {
+  const report = pa.report
+  if (r !== 'done' || !report) return r
+  let idle = 0
+  for (;;) {
+    if ((await fileSize(report.path)) > report.size) return 'done'
+    if (idle >= PROOF.idleGraceMs) {
+      log(s, e, `${what} : ${pa.agent} au repos depuis ${PROOF.idleGraceMs / 60_000} min sans compte rendu, contrôle du travail`)
+      return 'done'
+    }
+    if (idle === 0) log(s, e, `${what} : ${pa.agent} vu au repos sans compte rendu, attente de la fin réelle`)
+    await e.sleep(PROOF.pollMs)
+    const state = (await e.herdr.agentGet(pa.agent))?.state
+    // Agent disparu : la reprise sait constater son travail.
+    if (state === undefined) return 'done'
+    if (state === 'blocked') return 'blocked'
+    idle = state === 'working' ? 0 : idle + PROOF.pollMs
+  }
 }
 
 /**
@@ -526,7 +561,8 @@ async function stepImplement(s: MissionState, e: Effects, cfg: ProjectConfig, t:
     t.implementer = name
   }
   t.reportSize = await fileSize(join(dir, 'rapport.md'))
-  const r = await askAgent(s, e, t, `tâche ${t.n}`, 'implementer', { agent: name, file: join(dir, 'brief.md'), fromSha: t.baseSha as string })
+  const report = { path: join(dir, 'rapport.md'), size: t.reportSize }
+  const r = await askAgent(s, e, t, `tâche ${t.n}`, 'implementer', { agent: name, file: join(dir, 'brief.md'), fromSha: t.baseSha as string, report })
   if (r !== 'done') return r
   return finishImplement(s, e, t)
 }
@@ -646,7 +682,8 @@ async function stepFix(s: MissionState, e: Effects, cfg: ProjectConfig, t: TaskS
   t.implementer = name
   const fromSha = await e.git.headSha(s.worktree as string)
   t.reportSize = await fileSize(join(dir, 'rapport.md'))
-  const r = await askAgent(s, e, t, `tâche ${t.n}`, 'implementer', { agent: name, file, fromSha })
+  const report = { path: join(dir, 'rapport.md'), size: t.reportSize }
+  const r = await askAgent(s, e, t, `tâche ${t.n}`, 'implementer', { agent: name, file, fromSha, report })
   if (r !== 'done') return r
   return apply(s, e, t, 'fixed')
 }
@@ -661,7 +698,7 @@ async function resumeAsk(s: MissionState, e: Effects, cfg: ProjectConfig, t: Tas
   const headNow = async () => pa.head ?? (await e.git.headSha(s.worktree as string))
   if (await e.herdr.agentGet(pa.agent)) {
     log(s, e, `tâche ${t.n} : reprise, attente de ${pa.agent} sans renvoi de ${pa.file}`)
-    const r = await settle(s, e, t, `tâche ${t.n}`, pa.agent, await e.agents.wait(pa.agent, ASK_TIMEOUT_MS[role]))
+    const r = await awaitAgent(s, e, t, `tâche ${t.n}`, role, pa)
     if (r !== 'done') return r
     if (t.phase === 'implement') return finishImplement(s, e, t)
     if (t.phase === 'fix') return apply(s, e, t, 'fixed')
