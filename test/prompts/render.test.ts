@@ -10,6 +10,7 @@ const SETS: Record<string, string[]> = {
   correction: ['findings', 'failure', 'forbidden', 'reportPath'],
   'global-review': ['baseSha', 'headSha', 'diffPath', 'specPath', 'planPath', 'constraints', 'outPath'],
   diagnostic: ['logPath', 'outPath'],
+  init: ['repoPath', 'configFile', 'configDir'],
   'pr-body': ['ticket', 'contexte', 'changements', 'tests', 'preflight', 'specFile', 'planFile'],
 }
 
