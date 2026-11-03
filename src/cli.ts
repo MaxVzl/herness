@@ -145,10 +145,11 @@ async function lifecycle(fn: (deps: import('./lifecycle.ts').LifecycleDeps) => P
 program
   .command('dev <demande...>')
   .description('Démarrer une mission : lien Wrike, issue GitHub ou texte libre')
-  .action((demande: string[]) =>
+  .option('--note <texte>', 'précisions qui complètent la demande')
+  .action((demande: string[], opts: { note?: string }) =>
     lifecycle(async (deps) => {
       const { startMission } = await import('./lifecycle.ts')
-      await startMission(demande.join(' '), process.cwd(), deps)
+      await startMission(demande.join(' '), process.cwd(), deps, opts.note !== undefined ? { note: opts.note } : {})
     }),
   )
 

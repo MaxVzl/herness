@@ -46,7 +46,7 @@ function fakeActions(over: Partial<CockpitActions> = {}) {
     close: async (id) => { calls.push(['close', id]); return done() },
     remove: async (id) => { calls.push(['remove', id]); return done() },
     open: async (s) => { calls.push(['open', s.id]); return done() },
-    startNew: async (input) => { calls.push(['startNew', input]); return done() },
+    startNew: async (input, note) => { calls.push(note === undefined ? ['startNew', input] : ['startNew', input, note]); return done() },
     ...over,
   }
   return { a, calls }
@@ -176,6 +176,8 @@ test('+ puis texte puis Entrée appelle startNew et affiche son erreur', async (
   await waitFor(lastFrame, 'voir q et a')
   expect(lastFrame()).toContain('voir q et a')
   stdin.write('\r')
+  await waitFor(lastFrame, NOTE_LABEL)
+  stdin.write('\x13')
   await until(() => calls.length === 1)
   await waitFor(lastFrame, 'mission déjà existante')
   await waitGone(lastFrame, 'Lien Wrike, issue GitHub ou texte :')
@@ -198,6 +200,8 @@ test('un échec de startNew garde les KO et l erreur finale', async () => {
   stdin.write('texte')
   await waitFor(lastFrame, 'texte▏')
   stdin.write('\r')
+  await waitFor(lastFrame, NOTE_LABEL)
+  stdin.write('\x13')
   await waitFor(lastFrame, 'environnement incomplet')
   expect(lastFrame()).toContain('KO gh : non connecté')
   expect(lastFrame()).toContain('environnement incomplet')
@@ -243,6 +247,56 @@ test('+ pendant une fermeture est refusé ; la confirmation interne n est jamais
   stdin.write('+')
   await waitFor(lastFrame, 'Lien Wrike')
   expect(lastFrame()).toContain('Lien Wrike')
+})
+
+const NOTE_LABEL = 'Note pour la mission (facultatif)'
+
+test('+ puis lien puis note : startNew reçoit la note ; Échap sur la note annule', async () => {
+  const { a, calls } = fakeActions()
+  const { stdin, lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => []} actions={a} prCache={fakePrCache().cache} columns={140} />,
+  )
+  await waitFor(lastFrame, 'aucune mission')
+  stdin.write('+')
+  await waitFor(lastFrame, 'Lien Wrike')
+  stdin.write('https://www.wrike.com/open.htm?id=1')
+  await waitFor(lastFrame, 'id=1▏')
+  stdin.write('\r')
+  await waitFor(lastFrame, NOTE_LABEL)
+  expect(lastFrame()).not.toContain('Lien Wrike')
+  stdin.write('\u001b')
+  await waitFor(lastFrame, 'lancement annulé')
+  expect(calls).toEqual([])
+
+  stdin.write('+')
+  await waitFor(lastFrame, 'Lien Wrike')
+  stdin.write('https://www.wrike.com/open.htm?id=1')
+  await waitFor(lastFrame, 'id=1▏')
+  stdin.write('\r')
+  await waitFor(lastFrame, NOTE_LABEL)
+  stdin.write('pas le PDF')
+  await waitFor(lastFrame, 'pas le PDF▏')
+  stdin.write('\r')
+  stdin.write('base vide')
+  await waitFor(lastFrame, 'base vide▏')
+  stdin.write('\x13')
+  await until(() => calls.length === 1)
+  expect(calls).toEqual([['startNew', 'https://www.wrike.com/open.htm?id=1', 'pas le PDF\nbase vide']])
+  await waitGone(lastFrame, NOTE_LABEL)
+})
+
+test('+ puis lien vide : pas de champ note', async () => {
+  const { a, calls } = fakeActions()
+  const { stdin, lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => []} actions={a} prCache={fakePrCache().cache} columns={140} />,
+  )
+  await waitFor(lastFrame, 'aucune mission')
+  stdin.write('+')
+  await waitFor(lastFrame, 'Lien Wrike')
+  stdin.write('\r')
+  await waitFor(lastFrame, 'demande vide : rien à démarrer')
+  expect(lastFrame()).not.toContain(NOTE_LABEL)
+  expect(calls).toEqual([])
 })
 
 test('+ puis Échap annule sans démarrer', async () => {
