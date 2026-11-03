@@ -187,6 +187,44 @@ program
   )
 
 program
+  .command('init')
+  .description("Créer la config herness du dépôt courant, puis proposer de l'affiner avec Claude")
+  .action(async () => {
+    try {
+      const { initProject } = await import('./config/init.ts')
+      const { execa } = await import('execa')
+      await initProject(process.cwd(), {
+        isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+        confirm: askYesNo,
+        claude: async (args, cwd) => {
+          await execa('claude', args, { cwd, stdio: 'inherit', reject: false })
+        },
+        log: (line) => console.log(line),
+      })
+    } catch (e) {
+      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      process.exitCode = 1
+    }
+  })
+
+program
+  .command('projet')
+  .description('Config herness du dépôt courant : fichier, dépôt, validité')
+  .action(async () => {
+    try {
+      const { findProjectConfig } = await import('./config/project.ts')
+      const { config, file } = await findProjectConfig(process.cwd())
+      console.log(`projet ${config.name}`)
+      console.log(`config : ${file}`)
+      console.log(`dépôt : ${config.repoPath}`)
+      console.log('config valide')
+    } catch (e) {
+      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      process.exitCode = 1
+    }
+  })
+
+program
   .command('statut [id]')
   .description("État des missions, ou détail d'une mission")
   .action(async (id?: string) => {
