@@ -153,6 +153,15 @@ Le fichier exporte par défaut un objet simple, sans import vers les sources de 
 | `orchestratorPermissionMode` | Optionnel, `auto` par défaut : mode de permissions de l'orchestrateur |
 | `models` | `orchestrator`, `reviewer`, `implementer`, `implementerStrong` |
 
+## Publier une version
+
+Les versions sont gérées par [release-please](https://github.com/googleapis/release-please), à partir des titres de PR au format conventionnel (`feat:` → version mineure, `fix:` → correctif ; avant 1.0, un changement cassant ne monte que la mineure).
+
+1. Fusionner `dev` dans `main` par une PR, avec un commit de fusion (pas de squash).
+2. À chaque arrivée sur `main`, release-please ouvre ou met à jour une PR « chore(main): release x.y.z » qui monte `package.json`, le manifeste et `CHANGELOG.md`.
+3. Fusionner cette PR : release-please crée le tag `vx.y.z` et la release GitHub.
+4. Ramener `main` dans `dev` (`git checkout dev && git pull && git merge origin/main && git push`) pour que `dev` ait la nouvelle version.
+
 ## Limites actuelles
 
 - herdr est indispensable pour mener une mission : seul l'écran `herness cockpit` se lance hors herdr.

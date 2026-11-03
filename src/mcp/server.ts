@@ -9,6 +9,7 @@ import { postInbox } from '../mission/inbox.ts'
 import { checkAmendment, parsePlan } from '../mission/plan.ts'
 import { loadState, type MissionState } from '../mission/state.ts'
 import { missionDir, planPath, specPath } from '../paths.ts'
+import { VERSION } from '../version.ts'
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+){1,5}$/
 
@@ -54,7 +55,7 @@ function guard<A extends unknown[]>(fn: (...a: A) => Promise<ToolResult>): (...a
 
 // Aucun outil ici ne décide une porte : seul l'utilisateur approuve ou refuse.
 export function buildServer(id: string): McpServer {
-  const server = new McpServer({ name: 'herness', version: '0.1.0' })
+  const server = new McpServer({ name: 'herness', version: VERSION })
 
   server.registerTool('statut', { description: 'Résumé de la mission : étape, tâche courante, tours, portes en attente, PR.' }, guard(async () =>
     ok(summarize(await loadState(id)))))
