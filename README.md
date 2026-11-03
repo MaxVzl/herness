@@ -33,7 +33,7 @@ Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, d
 | --- | --- |
 | `herness` | Dans herdr : ouvre (ou crée) l'onglet `herness` du projet, qui affiche le cockpit (voir « Cockpit »). Hors herdr : affiche « hors herdr : lance « herness cockpit » dans un terminal » et ne fait rien d'autre. |
 | `herness cockpit` | Écran du cockpit dans le terminal courant (projet du dossier courant). Hors terminal interactif, affiche une seule image et rend la main. |
-| `herness dev <demande...>` | Démarre une mission : lien Wrike, issue GitHub ou texte libre. Crée l'espace herdr, le worktree et la branche `herness/<id>`, lance moteur, tableau et orchestrateur. |
+| `herness dev <demande...> [--note <texte>]` | Démarre une mission : lien Wrike, issue GitHub ou texte libre ; `--note` ajoute des précisions qui complètent la demande (écrites dans `note.md`, elles l'emportent en cas de contradiction). Crée l'espace herdr, le worktree et la branche `herness/<id>`, lance moteur, tableau et orchestrateur. |
 | `herness reprendre <id> [--redemarrer]` | Rouvre l'espace d'une mission et relance ce qui ne tourne plus (moteur, tableau, visionneuses spec et plan, orchestrateur). Une mission bloquée ouvre une porte de reprise (`reprise-bloquee`) : validée, elle repart de l'étape bloquée avec un budget de tours neuf. Une mission `pr-ouverte` ou `fermée` : affiche son état, ne relance rien. `--redemarrer` : arrête (double ctrl+c) puis relance moteur, tableau et visionneuses même s'ils tournent, sans rien envoyer aux agents. |
 | `herness statut [id]` | État de toutes les missions, ou détail d'une mission. |
 | `herness tasks <id>` | Tableau de bord d'une mission (celui du panneau `tasks`) : tâches, portes, journal, avec les gestes du cockpit sur cette mission (`v`, `r`, `n`, `p`, `R`, `f`, `o`, `←/→` pour choisir la porte), `c` retour au cockpit, `q` quitter. |
@@ -91,7 +91,7 @@ Hors herdr, `herness` n'ouvre rien et indique de lancer `herness cockpit` dans u
 | `f` | Fermer la mission (`herness fermer`) ; confirmation, et une seconde s'il reste du travail |
 | `o` | Ouvrir l'espace herdr de la mission |
 | `x` | Supprimer une mission fermée (`herness supprimer`), après confirmation ; absent du panneau `tasks` |
-| `+` | Nouvelle mission : saisir un lien Wrike, une issue GitHub ou du texte, Entrée valide, Échap annule |
+| `+` | Nouvelle mission : saisir un lien Wrike, une issue GitHub ou du texte, Entrée ; puis une note facultative (plusieurs lignes, `ctrl+e` éditeur), `ctrl+s` démarre, Échap annule |
 | `a` | Afficher ou masquer les missions terminées masquées |
 | `q` | Quitter |
 

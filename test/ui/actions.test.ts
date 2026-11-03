@@ -130,3 +130,11 @@ test('remove supprime sans redemander : la confirmation a eu lieu dans l\'interf
   expect(await remove('m1', d)).toEqual({ ok: true, lines: ['Mission m1 supprimée.'] })
   expect(seen).toEqual([['m1', true]])
 })
+
+test('startNew transmet la note à startMission', async () => {
+  const seen: unknown[] = []
+  const d = mk({ start: (async (input: string, _cwd: string, _deps: unknown, o: { note?: string }) => { seen.push([input, o.note]); return 'm1' }) as never })
+  await startNew('lien', d, 'précision')
+  await startNew('lien', d)
+  expect(seen).toEqual([['lien', 'précision'], ['lien', undefined]])
+})
