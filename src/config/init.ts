@@ -189,7 +189,8 @@ export async function initProject(cwd: string, deps: InitDeps): Promise<FoundCon
   const dir = dirname(found.file)
   const prompt = await render('init', { repoPath: root, configFile: found.file, configDir: dir })
   deps.log('Claude démarre : quitte-le (/exit) quand la config te convient.')
-  await deps.claude(['--model', found.config.models.orchestrator, '--add-dir', dir, prompt], root)
+  // `--add-dir` prend plusieurs dossiers : sans `--`, la consigne serait lue comme un dossier de plus.
+  await deps.claude(['--model', found.config.models.orchestrator, '--add-dir', dir, '--', prompt], root)
   // La config vient d'être réécrite : ce processus l'a déjà importée, on la revalide ailleurs.
   const check = await run('node', [BIN, 'projet'], { cwd: root, reject: false })
   if (check.exitCode !== 0) throw new Error(`config à corriger après Claude : ${(check.stderr || check.stdout).replace(/^herness : /, '').trim()}`)

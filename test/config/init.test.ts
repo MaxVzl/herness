@@ -109,9 +109,11 @@ test('accepté : lance Claude à la racine du dépôt avec le dossier de config 
   expect(d.launches).toHaveLength(1)
   const { args, cwd } = d.launches[0]!
   expect(cwd).toBe(repo)
-  expect(args.slice(0, 4)).toEqual(['--model', 'claude-opus-5-5', '--add-dir', join(dir, found.config.name)])
-  expect(args[4]).toContain(found.file)
-  expect(args[4]).toContain('herness projet')
+  // La consigne vient après `--` : sinon `--add-dir`, qui prend plusieurs dossiers, l'avalerait.
+  expect(args.slice(0, 5)).toEqual(['--model', 'claude-opus-5-5', '--add-dir', join(dir, found.config.name), '--'])
+  expect(args).toHaveLength(6)
+  expect(args[5]).toContain(found.file)
+  expect(args[5]).toContain('herness projet')
   expect(d.lines.at(-1)).toBe(`config valide : ${found.file}`)
 })
 
