@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { render } from '../../src/prompts/render.js'
 
 const SETS: Record<string, string[]> = {
-  orchestrator: ['id', 'demande', 'demandeFile', 'specPath', 'planPath', 'missionDir'],
+  orchestrator: ['id', 'demande', 'demandeFile', 'note', 'specPath', 'planPath', 'missionDir'],
   brief: ['taskBody', 'specPath', 'planPath', 'testCommand', 'commitFormat', 'forbidden', 'reportPath'],
   review: ['briefPath', 'reportPath', 'baseSha', 'headSha', 'diffPath', 'constraints', 'outPath'],
   rereview: ['briefPath', 'reportPath', 'baseSha', 'headSha', 'diffPath', 'constraints', 'findings', 'outPath'],

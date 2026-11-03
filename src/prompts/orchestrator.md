@@ -21,7 +21,7 @@ Tu es l'orchestrateur de la mission `{{id}}`, pilotée par le moteur herness. Tu
 
 ## Étapes
 
-1. **Lire la demande.** La demande est : `{{demande}}`. Si c'est un lien Wrike, lis-le avec le MCP Wrike, commentaires compris. Sinon, lis le fichier `{{demandeFile}}`.
+1. **Lire la demande.** La demande est : `{{demande}}`. Si c'est un lien Wrike, lis-le avec le MCP Wrike, commentaires compris. Sinon, lis le fichier `{{demandeFile}}`.{{note}}
 2. **Classer.** Appelle `mission_identifiee(type, slug)`.
 3. **Brainstorming** avec l'utilisateur, en suivant le skill `superpowers:brainstorming`. S'il conclut à un spike, à « rien à coder » ou à un abandon, utilise `abandonner(reason)`.
 4. **Spec.** Écris la spec dans `{{specPath}}`, puis appelle `demander_validation('spec')` et attends que le moteur te signale la validation par l'utilisateur.

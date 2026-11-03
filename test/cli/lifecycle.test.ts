@@ -103,6 +103,22 @@ test('dev avec un texte libre : id du jour et demande écrite telle quelle', asy
   expect((await loadState(id)).source).toEqual({ kind: 'text', ref: 'ajoute un export CSV' })
 })
 
+test('dev avec une note : note.md écrite et signalée à l\'orchestrateur', async () => {
+  const { d } = deps()
+  await startMission('https://github.com/o/r/issues/12', repo, d, { note: '  ne touche pas à l\'export PDF\n' })
+  const note = join(missionDir('gh12'), 'note.md')
+  expect(await readFile(note, 'utf8')).toBe("ne touche pas à l'export PDF\n")
+  const prompt = await readFile(join(missionDir('gh12'), 'orchestrator.md'), 'utf8')
+  expect(prompt).toContain(`Lis aussi la note de l'utilisateur, \`${note}\``)
+})
+
+test('dev sans note (ou note vide) : ni note.md ni mention dans le prompt', async () => {
+  const { d } = deps()
+  await startMission('https://github.com/o/r/issues/12', repo, d, { note: '   ' })
+  expect(await exists(join(missionDir('gh12'), 'note.md'))).toBe(false)
+  expect(await readFile(join(missionDir('gh12'), 'orchestrator.md'), 'utf8')).not.toContain('note de l\'utilisateur')
+})
+
 test('dev refuse un id de mission déjà existant', async () => {
   await mkdir(missionDir('gh12'), { recursive: true })
   const { fx, d } = deps()

@@ -5,13 +5,13 @@ import type { MissionState } from '../mission/state.ts'
 import * as act from './actions.ts'
 import type { ActionResult } from './actions.ts'
 import { HelpLine, MissionDetail, missionActions, resultLines, useMissionKeys, type HelpItem, type MissionActions, type Timer } from './detail.tsx'
-import { LineInput } from './inputs.tsx'
+import { LineInput, NoteInput } from './inputs.tsx'
 import { bucketOf, isHidden, needsPrRefresh, projectMissions, shortId, sortMissions, statusLabel, type Bucket, type PrInfo } from './model.ts'
 import { PrCache } from './pr-cache.ts'
 
 /** Gestes du cockpit : ceux d'une mission, plus le démarrage d'une nouvelle mission. */
 export interface CockpitActions extends MissionActions {
-  startNew(input: string): Promise<ActionResult>
+  startNew(input: string, note?: string): Promise<ActionResult>
 }
 
 /** Ce que le cockpit utilise du cache des PR (injectable pour les tests). */
@@ -22,6 +22,7 @@ export interface PrLookup {
 
 const NARROW_COLUMNS = 100
 const NEW_MISSION_LABEL = 'Lien Wrike, issue GitHub ou texte :'
+const NOTE_LABEL = 'Note pour la mission (facultatif)'
 
 const BUCKET_COLOR: Record<Bucket, string | undefined> = {
   decision: 'yellow',
@@ -148,7 +149,8 @@ export function Cockpit({
   const [unreadable, setUnreadable] = useState(false)
   const [selectedId, setSelectedId] = useState<string | undefined>()
   const [showAll, setShowAll] = useState(false)
-  const [adding, setAdding] = useState(false)
+  // `+` : d'abord la demande (une ligne), puis une note facultative qui la complète.
+  const [adding, setAdding] = useState<false | 'line' | { input: string }>(false)
   const starting = useRef(false)
   const [, bump] = useState(0)
 
@@ -159,7 +161,7 @@ export function Cockpit({
     if (actions) return actions
     const deps = act.realActionDeps(repoPath, log)
     // p/R ne quittent pas le cockpit : `o` est le geste explicite pour ouvrir l'espace de la mission.
-    return { ...missionActions(deps, undefined, { focus: false }), startNew: (input) => act.startNew(input, deps) }
+    return { ...missionActions(deps, undefined, { focus: false }), startNew: (input, note) => act.startNew(input, deps, note) }
   }, [actions, repoPath, log])
   const prs = useMemo<PrLookup>(() => prCache ?? new PrCache(), [prCache])
   const read = useMemo(() => load ?? (() => projectMissions(repoPath)), [load, repoPath])
@@ -241,15 +243,23 @@ export function Cockpit({
   }, [overlayOpen])
   const inputOpen = adding && !overlayOpen
 
-  const startNew = (raw: string): void => {
-    setAdding(false)
+  const askNote = (raw: string): void => {
     const input = raw.trim()
-    if (input === '') return keys.say('demande vide : rien à démarrer', false)
+    if (input === '') {
+      setAdding(false)
+      return keys.say('demande vide : rien à démarrer', false)
+    }
+    setAdding({ input })
+  }
+
+  const startNew = (input: string, rawNote: string): void => {
+    setAdding(false)
+    const note = rawNote.trim()
     if (starting.current) return keys.say('démarrage déjà en cours', false)
     starting.current = true
     keys.say('démarrage de la mission…')
     void acts
-      .startNew(input)
+      .startNew(input, note === '' ? undefined : note)
       .then(
         (r) => keys.say((r.ok && r.lines.length === 0 ? ['mission lancée'] : resultLines(r)).join('\n'), r.ok),
         (e: unknown) => keys.say(e instanceof Error ? e.message : String(e), false),
@@ -265,7 +275,7 @@ export function Cockpit({
       setSelectedId(visible[next]!.id)
       return
     }
-    if (input === '+') return keys.busy ? keys.say('action en cours', false) : setAdding(true)
+    if (input === '+') return keys.busy ? keys.say('action en cours', false) : setAdding('line')
     if (input === 'a') return setShowAll((v) => !v)
     if (input === 'q') exit()
   }, { isActive: !adding && keys.overlay === null })
@@ -283,7 +293,21 @@ export function Cockpit({
       {unreadable ? <Text color="red">lecture des missions impossible, nouvel essai…</Text> : null}
       {inputOpen ? (
         <Box marginTop={1}>
-          <LineInput label={NEW_MISSION_LABEL} onSubmit={startNew} onCancel={() => setAdding(false)} />
+          {adding === 'line' ? (
+            <LineInput label={NEW_MISSION_LABEL} onSubmit={askNote} onCancel={() => setAdding(false)} />
+          ) : adding ? (
+            <Box flexDirection="column">
+              <Text color="yellow">{`${NOTE_LABEL} : ${adding.input}`}</Text>
+              <NoteInput
+                key={`note:${adding.input}`}
+                onSubmit={(note) => startNew(adding.input, note)}
+                onCancel={() => {
+                  setAdding(false)
+                  keys.say('lancement annulé')
+                }}
+              />
+            </Box>
+          ) : null}
         </Box>
       ) : null}
       {keys.overlay ? <Box marginTop={1}>{keys.overlay}</Box> : null}

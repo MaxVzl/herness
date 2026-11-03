@@ -53,7 +53,7 @@ async function demandeText(d: Demande, e: Effects): Promise<string> {
 }
 
 /** Prompt système de l'orchestrateur ; le slug (et donc les chemins exacts) n'est connu qu'après classement. */
-async function orchestratorPrompt(s: MissionState, d: Demande): Promise<string> {
+async function orchestratorPrompt(s: MissionState, d: Demande, hasNote: boolean): Promise<string> {
   // Valeur placée entre accents graves par le gabarit : aucun accent grave ici.
   const pattern = (dir: 'specs' | 'plans'): string =>
     `${(dir === 'specs' ? specPath : planPath)({ ...s, slug: '<slug>' })} — chemin déterminé après classement : ` +
@@ -62,6 +62,9 @@ async function orchestratorPrompt(s: MissionState, d: Demande): Promise<string> 
     id: s.id,
     demande: d.kind === 'text' ? 'une demande écrite (texte libre)' : d.ref,
     demandeFile: join(missionDir(s.id), 'demande.md'),
+    note: hasNote
+      ? ` Lis aussi la note de l'utilisateur, \`${join(missionDir(s.id), 'note.md')}\` : elle complète la demande et l'emporte en cas de contradiction.`
+      : '',
     specPath: pattern('specs'),
     planPath: pattern('plans'),
     missionDir: missionDir(s.id),
@@ -101,8 +104,11 @@ function applySpace(s: MissionState, space: MissionSpace): void {
   s.herdr = { workspace: space.workspace, tabs: { ...space.tabs }, panes: { ...space.panes } }
 }
 
-/** `herness dev <demande>` : crée la mission (espace herdr, worktree, état) et lance moteur, tableau et orchestrateur. */
-export async function startMission(input: string, cwd: string, deps: LifecycleDeps): Promise<string> {
+/**
+ * `herness dev <demande> [--note]` : crée la mission (espace herdr, worktree, état) et lance moteur, tableau et
+ * orchestrateur. La note complète la demande (précisions en plus d'un lien Wrike, par exemple).
+ */
+export async function startMission(input: string, cwd: string, deps: LifecycleDeps, opts: { note?: string } = {}): Promise<string> {
   const { e } = deps
   const out = deps.out ?? console.log
   const cfg = await (deps.loadConfig ?? loadProjectConfig)(cwd)
@@ -135,7 +141,9 @@ export async function startMission(input: string, cwd: string, deps: LifecycleDe
 
   const dir = missionDir(id)
   await writeFile(join(dir, 'demande.md'), demande)
-  await writeFile(join(dir, 'orchestrator.md'), await orchestratorPrompt(s, d))
+  const note = opts.note?.trim() ?? ''
+  if (note) await writeFile(join(dir, 'note.md'), `${note}\n`)
+  await writeFile(join(dir, 'orchestrator.md'), await orchestratorPrompt(s, d, note !== ''))
 
   await e.herdr.paneRun(space.panes.engine, `node ${shq(BIN)} engine ${id}`)
   await e.herdr.paneRun(space.panes.tasks, `node ${shq(BIN)} tasks ${id}`)
