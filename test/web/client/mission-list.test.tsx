@@ -282,6 +282,34 @@ test('à chaque ouverture le hook oublie le détail et le chat précédents', as
   expect(result.current.details.ancienne).toBeUndefined()
 })
 
+test('une reconnexion garde les confirmations en attente', async () => {
+  const { result } = renderHook(() => useServerEvents({ agents: false }, sourceOf))
+  await act(async () => {})
+  const es = flux()
+  act(() => {
+    es.onopen?.({})
+    send(es, { type: 'confirmation', confirmId: 'c1', missionId: '26110301-1', question: 'Fermer ?' })
+  })
+  expect(result.current.confirmations).toEqual([
+    { confirmId: 'c1', missionId: '26110301-1', question: 'Fermer ?' },
+  ])
+
+  act(() => { es.onopen?.({}) })
+  expect(result.current.confirmations).toEqual([
+    { confirmId: 'c1', missionId: '26110301-1', question: 'Fermer ?' },
+  ])
+  expect(result.current.connected).toBe(true)
+  expect(result.current.missions).toEqual([])
+
+  act(() => {
+    send(es, { type: 'missions', missions: [mission({ id: '26110301-1' })], hiddenCount: 0, projects: [] })
+  })
+  expect(result.current.missions.map((item) => item.id)).toEqual(['26110301-1'])
+  expect(result.current.confirmations).toEqual([
+    { confirmId: 'c1', missionId: '26110301-1', question: 'Fermer ?' },
+  ])
+})
+
 test('changer de mission rouvre le flux avec le nouvel abonnement', async () => {
   const { rerender } = renderHook(
     ({ missionId, agents }: { missionId?: string; agents: boolean }) => useServerEvents({ mission: missionId, agents }, sourceOf),

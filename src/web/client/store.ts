@@ -68,7 +68,7 @@ function eventsUrl(mission: string | undefined, agents: boolean): string {
   return `/api/evenements?${params.toString()}`
 }
 
-/** Rouvre le flux quand l'abonnement change. Chaque `open` repart d'un état vide. */
+/** Rouvre le flux quand l'abonnement change. Chaque `open` remplace l'instantané, sauf les confirmations : le serveur ne les renvoie pas. */
 export function useServerEvents(sub: { mission?: string; agents: boolean }, source?: (url: string) => EventSource): ClientState {
   const [state, setState] = useState(initialState)
   const sourceRef = useRef(source)
@@ -80,7 +80,7 @@ export function useServerEvents(sub: { mission?: string; agents: boolean }, sour
     const open = sourceRef.current ?? ((url: string) => new EventSource(url))
     const es = open(eventsUrl(mission, agents))
     es.onopen = () => {
-      setState({ ...initialState, connected: true })
+      setState((current) => ({ ...initialState, confirmations: current.confirmations, connected: true }))
     }
     es.onerror = () => {
       setState((current) => reduce(current, { type: 'connexion', connected: false }))
