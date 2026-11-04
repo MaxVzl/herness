@@ -55,6 +55,9 @@ export function projectDirs(): string[] {
 /** Aucune config ne couvre le dossier (les autres erreurs : config invalide, import cassé…). */
 export class NoProjectError extends Error {}
 
+/** Le fichier `config.ts` est là, mais son contenu n'est pas une config de projet valide. */
+export class InvalidConfigError extends Error {}
+
 export interface FoundConfig {
   config: ProjectConfig
   file: string
@@ -69,7 +72,8 @@ async function importProjectConfig(file: string): Promise<ProjectConfig | undefi
   try {
     mtimeMs = (await stat(file)).mtimeMs
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    const code = (e as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return undefined
     throw e
   }
   let mod: { default?: unknown }
@@ -81,7 +85,7 @@ async function importProjectConfig(file: string): Promise<ProjectConfig | undefi
     throw e
   }
   const parsed = ProjectConfigSchema.safeParse(mod.default)
-  if (!parsed.success) throw new Error(`config de projet invalide (${file}) : ${parsed.error.message}`)
+  if (!parsed.success) throw new InvalidConfigError(`config de projet invalide (${file}) : ${parsed.error.message}`)
   return parsed.data
 }
 
@@ -118,12 +122,9 @@ export async function listProjects(): Promise<FoundConfig[]> {
       try {
         config = await importProjectConfig(file)
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e)
-        if (msg.startsWith('config de projet invalide')) {
-          console.error(msg)
-          continue
-        }
-        throw e
+        const detail = e instanceof Error ? e.message : String(e)
+        console.error(`${file} : ${detail}`)
+        continue
       }
       if (!config || byName.has(config.name)) continue
       byName.set(config.name, { config, file })

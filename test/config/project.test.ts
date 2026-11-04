@@ -1,10 +1,10 @@
 import { mkdir, mkdtemp, realpath, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import exemple from '../../projects/exemple/config.ts'
 import demo from '../fixtures/demo/config.ts'
-import { fill, listProjects, loadProjectConfig, projectDirs, ProjectConfigSchema } from '../../src/config/project.ts'
+import { fill, InvalidConfigError, listProjects, loadProjectConfig, projectDirs, ProjectConfigSchema } from '../../src/config/project.ts'
 
 let dir: string
 let repo: string
@@ -87,6 +87,33 @@ test('listProjects rend toutes les configs triées par nom, sans exemple', async
   await writeConfig('a', { ...rest, name: 'a', repoPath: repo })
   await writeConfig('exemple', { ...rest, name: 'exemple', repoPath: repo })
   expect((await listProjects()).map((f) => f.config.name)).toEqual(['a', 'b'])
+})
+
+test('un fichier à la racine du dossier de projets est ignoré', async () => {
+  const { prepare: _p, ...rest } = demo
+  await writeConfig('a', { ...rest, name: 'a', repoPath: repo })
+  await writeFile(join(dir, 'README.md'), 'note\n')
+  expect((await loadProjectConfig(repo)).name).toBe('a')
+  expect((await listProjects()).map((f) => f.config.name)).toEqual(['a'])
+})
+
+test('listProjects ignore une config invalide et un import cassé, findProjectConfig lève', async () => {
+  const { prepare: _p, ...rest } = demo
+  const { models: _m, ...sansModels } = rest
+  await writeConfig('ok', { ...rest, name: 'ok', repoPath: repo })
+  await writeConfig('cassee', { ...sansModels, name: 'cassee', repoPath: repo })
+  await mkdir(join(dir, 'syntaxe'), { recursive: true })
+  await writeFile(join(dir, 'syntaxe', 'config.ts'), 'export default {\n')
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    expect((await listProjects()).map((f) => f.config.name)).toEqual(['ok'])
+    const logged = spy.mock.calls.map((c) => String(c[0])).join('\n')
+    expect(logged).toContain('cassee')
+    expect(logged).toContain('syntaxe')
+  } finally {
+    spy.mockRestore()
+  }
+  await expect(loadProjectConfig(repo)).rejects.toBeInstanceOf(InvalidConfigError)
 })
 
 test('une config modifiée est relue sans redémarrer', async () => {
