@@ -239,7 +239,7 @@ test('Entrée sur Non ou dans un champ ne valide pas la confirmation', () => {
   expect(onYes).not.toHaveBeenCalled()
 })
 
-test('une confirmation en échec s affiche et la question reste posée', async () => {
+test('une confirmation inconnue s affiche et la question disparaît', async () => {
   installFetch(() => ({ ok: false, lines: ['confirmation inconnue'] }))
   setHash('#/26110301-1')
   render(<App source={sourceOf} />)
@@ -258,8 +258,32 @@ test('une confirmation en échec s affiche et la question reste posée', async (
     fireEvent.click(screen.getByRole('button', { name: 'Oui' }))
   })
   expect(await screen.findByText('confirmation inconnue')).toBeTruthy()
-  expect(screen.getByText('Il reste du travail, fermer quand même ?')).toBeTruthy()
+  expect(screen.queryByText('Il reste du travail, fermer quand même ?')).toBeNull()
   expect(calls).toContainEqual({ url: '/api/confirmations/c9', body: JSON.stringify({ oui: true }) })
+})
+
+test('un serveur injoignable laisse la confirmation à renvoyer', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    throw new Error('réseau')
+  }))
+  setHash('#/26110301-1')
+  render(<App source={sourceOf} />)
+  await act(async () => {})
+  const es = flux()
+  act(() => {
+    es.onopen?.({})
+    send(es, {
+      type: 'confirmation',
+      confirmId: 'c9',
+      missionId: '26110301-1',
+      question: 'Il reste du travail, fermer quand même ?',
+    })
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Oui' }))
+  })
+  expect(await screen.findByText('serveur injoignable')).toBeTruthy()
+  expect(screen.getByText('Il reste du travail, fermer quand même ?')).toBeTruthy()
 })
 
 test('pendant une action son bouton est désactivé et indique en cours', async () => {

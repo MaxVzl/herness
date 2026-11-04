@@ -79,7 +79,11 @@ export function App({ source }: { source?: (url: string) => EventSource } = {}) 
         return
       }
       setResult(response)
-      setAnswered((ids) => ids.filter((id) => id !== confirmId))
+      // Seul un échec de transport peut être retenté : le serveur attend encore.
+      // Une confirmation inconnue ou expirée le resterait, et le dialogue ne se fermerait plus.
+      if (response.lines.length === 1 && response.lines[0] === 'serveur injoignable') {
+        setAnswered((ids) => ids.filter((id) => id !== confirmId))
+      }
     })
   }
 
