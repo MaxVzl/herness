@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { checkRequest, hostAllowed, tokensEqual } from './auth.ts'
 import { actionRoutes, type WebActionDeps } from './actions.ts'
 import { buildClient } from './bundle.ts'
+import { fileRoutes } from './files.ts'
 import type { Hub } from './hub.ts'
 import type { ServerEvent } from './protocol.ts'
 
@@ -47,7 +48,7 @@ interface ClientBundle {
 
 export async function startWebServer(o: WebServerOptions): Promise<{ port: number; url: string; close(): Promise<void> }> {
   const client = await buildClient()
-  const routes = [...(o.actions ? actionRoutes(o.actions) : []), ...(o.routes ?? [])]
+  const routes = [...fileRoutes(), ...(o.actions ? actionRoutes(o.actions) : []), ...(o.routes ?? [])]
   let port = o.port
   const server = createServer((req, res) => {
     void handle(req, res, { ...o, port, routes }, client).catch((err: unknown) => {
