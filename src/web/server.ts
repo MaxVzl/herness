@@ -2,6 +2,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net'
 import { checkRequest, hostAllowed, tokensEqual } from './auth.ts'
 import { buildClient } from './bundle.ts'
+import type { Hub } from './hub.ts'
+import type { ServerEvent } from './protocol.ts'
 
 export interface Route {
   method: 'GET' | 'POST'
@@ -13,6 +15,7 @@ export interface WebServerOptions {
   port: number
   token: string
   routes?: Route[]
+  hub?: Hub
 }
 
 const MAX_BODY = 1024 * 1024
@@ -146,6 +149,11 @@ async function handle(req: IncomingMessage, res: ServerResponse, o: WebServerOpt
     return
   }
 
+  if (o.hub && method === 'GET' && url.pathname === '/api/evenements') {
+    await serveEvents(req, res, url, o.hub)
+    return
+  }
+
   for (const route of o.routes ?? []) {
     if (route.method !== method) continue
     const match = url.pathname.match(route.pattern)
@@ -156,6 +164,36 @@ async function handle(req: IncomingMessage, res: ServerResponse, o: WebServerOpt
 
   res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
   res.end('introuvable')
+}
+
+function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL, hub: Hub): Promise<void> {
+  const mission = url.searchParams.get('mission') || undefined
+  const agents = url.searchParams.get('agents') === '1'
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+  })
+  const detach = hub.attach((event: ServerEvent) => {
+    if (res.writableEnded) return
+    res.write(`data: ${JSON.stringify(event)}\n\n`)
+  }, { mission, agents })
+  const ping = setInterval(() => {
+    if (!res.writableEnded) res.write(': ping\n\n')
+  }, 15_000)
+  ping.unref()
+  return new Promise((resolve) => {
+    let settled = false
+    const close = () => {
+      if (settled) return
+      settled = true
+      clearInterval(ping)
+      detach()
+      resolve()
+    }
+    res.on('close', close)
+    res.on('error', close)
+  })
 }
 
 function readJson(req: IncomingMessage): Promise<unknown> {
