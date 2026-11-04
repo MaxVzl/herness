@@ -60,6 +60,8 @@ function bus(): BroadcastChannel | undefined {
   return channel
 }
 
+bus()
+
 function bindActivity(): void {
   if (bound) return
   bound = true

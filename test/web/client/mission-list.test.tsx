@@ -583,6 +583,31 @@ test('un done déjà publié par un autre onglet empêche une seconde notificati
   }
 })
 
+test('un done publié avant la première notification de cet onglet n’est pas notifié ici', async () => {
+  vi.resetModules()
+  stubNotification('granted')
+  Object.defineProperty(host.document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+  const { deliverNotification: deliver } = await import('../../../src/web/client/notifications.ts')
+  const before = Noted.notes.length
+  const peer = new BroadcastChannel('herness-notifications')
+  peer.postMessage({ type: 'done', key: 'porte:froid:1' })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  try {
+    deliver({
+      key: 'porte:froid:1',
+      missionId: '26110301-7',
+      title: 'Première',
+      body: 'corps',
+    }, undefined)
+    await settleNotes()
+    expect(Noted.notes).toHaveLength(before)
+  } finally {
+    peer.close()
+  }
+})
+
 test('un autre onglet visible empêche une seconde notification du même événement', async () => {
   stubNotification('granted')
   Object.defineProperty(host.document, 'visibilityState', { configurable: true, get: () => 'hidden' })
