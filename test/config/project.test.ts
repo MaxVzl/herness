@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, realpath, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { execa } from 'execa'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import exemple from '../../projects/exemple/config.ts'
 import demo from '../fixtures/demo/config.ts'
@@ -114,6 +115,32 @@ test('listProjects ignore une config invalide et un import cassé, findProjectCo
     spy.mockRestore()
   }
   await expect(loadProjectConfig(repo)).rejects.toBeInstanceOf(InvalidConfigError)
+})
+
+test('herness projet charge et recharge une config hors paquet module', async () => {
+  const { prepare: _p, ...rest } = demo
+  const file = join(dir, 'a', 'config.ts')
+  const run = () => execa('node', [resolve('bin/herness.js'), 'projet'], {
+    cwd: repo,
+    reject: false,
+    stdin: 'ignore',
+    env: { HERNESS_PROJECTS_DIR: dir },
+  })
+  await writeConfig('a', { ...rest, name: 'alpha', repoPath: repo })
+  const first = await run()
+  expect(first.stderr).toBe('')
+  expect(first.exitCode).toBe(0)
+  expect(first.stdout).toContain('projet alpha')
+  expect(first.stdout).toContain('config valide')
+
+  await writeConfig('a', { ...rest, name: 'beta', repoPath: repo })
+  const later = new Date(Date.now() + 2000)
+  await utimes(file, later, later)
+  const second = await run()
+  expect(second.stderr).toBe('')
+  expect(second.exitCode).toBe(0)
+  expect(second.stdout).toContain('projet beta')
+  expect(second.stdout).toContain('config valide')
 })
 
 test('une config modifiée est relue sans redémarrer', async () => {
