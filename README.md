@@ -35,6 +35,7 @@ Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, `
 | `herness init` | Crée la config herness du dépôt courant (voir « Ajouter un projet »), puis demande s'il faut l'affiner avec Claude. Sur un dépôt déjà configuré, ne réécrit rien et pose seulement la question. |
 | `herness projet` | Affiche la config qui s'applique au dépôt courant (nom, fichier, dépôt) et vérifie qu'elle est valide. |
 | `herness cockpit` | Écran du cockpit dans le terminal courant (projet du dossier courant). Hors terminal interactif, affiche une seule image et rend la main. |
+| `herness web [--arreter] [--redemarrer] [--premier-plan] [--sans-navigateur] [--port <n>]` | Ouvre l'interface web locale (voir « Interface web »). Démarre le serveur s'il ne tourne pas. À lancer depuis un panneau herdr. |
 | `herness dev <demande...> [--note <texte>]` | Démarre une mission : lien Wrike, issue GitHub ou texte libre ; `--note` ajoute des précisions qui complètent la demande (écrites dans `note.md`, elles l'emportent en cas de contradiction). Crée l'espace herdr, le worktree et la branche `herness/<id>`, lance moteur, tableau et orchestrateur. |
 | `herness reprendre <id> [--redemarrer]` | Rouvre l'espace d'une mission et relance ce qui ne tourne plus (moteur, tableau, visionneuses spec et plan, orchestrateur). Une mission bloquée ouvre une porte de reprise (`reprise-bloquee`) : validée, elle repart de l'étape bloquée avec un budget de tours neuf. Une mission `pr-ouverte` ou `fermée` : affiche son état, ne relance rien. `--redemarrer` : arrête (double ctrl+c) puis relance moteur, tableau et visionneuses même s'ils tournent, sans rien envoyer aux agents. |
 | `herness statut [id]` | État de toutes les missions, ou détail d'une mission. |
@@ -109,6 +110,22 @@ Les touches inutilisables (pas de porte en attente, mission terminée…) sont g
 
 **Missions terminées masquées.** Par défaut, le cockpit cache : une mission `pr-ouverte` dont la PR est fusionnée ; une mission `fermée` avec PR dont la PR est fusionnée ; une mission `fermée` sans PR ou dont la PR est fermée sans fusion, sept jours après sa fermeture (une `pr-ouverte` dont la PR est fermée reste affichée). Une ligne « N missions terminées masquées (a) » le rappelle ; `a` montre tout. L'état des PR vient de `gh`, rafraîchi au plus toutes les 5 minutes par PR, et seulement pour les missions affichées dont la PR n'est ni fusionnée, ni fermée d'une mission masquée ; un `gh` en échec n'est pas rappelé avant 5 minutes.
 
+## Interface web
+
+`herness web`, lancé depuis un panneau herdr (`HERDR_ENV`), démarre si besoin un serveur local détaché et ouvre l'interface dans le navigateur (`xdg-open`). Hors herdr, la commande affiche « lance herness web depuis un panneau herdr » et ne fait rien d'autre. Le serveur survit à la fermeture du terminal. Son journal va dans `~/.local/state/herness/logs/web.log` (`HERNESS_HOME` remplace ce dossier).
+
+| Option | Effet |
+| --- | --- |
+| `--arreter` | Arrête le serveur. |
+| `--redemarrer` | Arrête puis relance. À lancer après une mise à jour de herness, pour que l'interface prenne le nouveau code. |
+| `--premier-plan` | Tourne au premier plan dans le terminal courant (journal à l'écran). |
+| `--sans-navigateur` | N'ouvre pas le navigateur et affiche l'adresse. |
+| `--port <n>` | Port d'écoute, 4747 par défaut. |
+
+L'adresse ouverte est `http://localhost:<port>/?cle=<jeton>`. Le jeton est tiré au démarrage. Le serveur l'écrit, avec le pid, le port et la version, dans `~/.local/state/herness/web.json` (mode `0600`), et le retire à l'arrêt. Il n'écoute que sur `127.0.0.1`. Si un serveur tourne déjà, la commande ouvre seulement le navigateur. S'il date d'une autre version de herness, elle le signale : `herness web --redemarrer`.
+
+La page a trois colonnes : les missions de tous les projets, la conversation avec l'orchestrateur, et un panneau de contexte (spec, plan, agents, checks). Les portes en attente, les missions bloquées et les attentes portent un badge (« attend ta réponse », « attend dans herdr ») ; le navigateur peut les notifier, seulement après un clic pour autoriser les notifications. Les agents et les checks sont en lecture seule. La conversation est celle du transcript de l'orchestrateur : on y lit ses messages et on lui écrit. herdr continue de faire tourner les missions en dessous.
+
 ## Disposition herdr
 
 Un espace par mission, avec les onglets (en plus de l'onglet `herness` du cockpit, créé dans l'espace où tu lances `herness`) :
@@ -176,5 +193,6 @@ Les versions sont gérées par [release-please](https://github.com/googleapis/re
 
 ## Limites actuelles
 
-- herdr est indispensable pour mener une mission : seul l'écran `herness cockpit` se lance hors herdr.
+- herdr est indispensable pour mener une mission : seul l'écran `herness cockpit` se lance hors herdr. L'interface web se lance depuis un panneau herdr, et herdr reste nécessaire en dessous : elle pilote les missions, elle ne les fait pas tourner.
+- L'interface web n'est accessible que depuis ce poste (localhost).
 - Le premier jalon (un vrai ticket jusqu'à la PR) n'a pas encore été exécuté.

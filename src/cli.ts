@@ -1,4 +1,5 @@
 import { Command } from 'commander'
+import type { Spawner } from './web/launcher.ts'
 import { VERSION } from './version.ts'
 
 const program = new Command()
@@ -255,6 +256,57 @@ program
         return
       }
       await render(React.createElement(TasksDashboard, { id })).waitUntilExit()
+    } catch (e) {
+      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      process.exitCode = 1
+    }
+  })
+
+program
+  .command('web')
+  .description('Interface web locale : démarre le serveur si besoin et ouvre le navigateur')
+  .option('--arreter', 'arrêter le serveur')
+  .option('--redemarrer', 'arrêter puis relancer le serveur')
+  .option('--premier-plan', 'tourner au premier plan dans ce terminal (journal à l\'écran)')
+  .option('--sans-navigateur', "afficher l'adresse sans ouvrir le navigateur")
+  .option('--port <n>', "port d'écoute", (value: string) => Number(value), 4747)
+  .action(async (opts: { arreter?: boolean; redemarrer?: boolean; premierPlan?: boolean; sansNavigateur?: boolean; port: number }) => {
+    try {
+      const { spawn } = await import('node:child_process')
+      const { runForeground, webCommand } = await import('./web/launcher.ts')
+      if (opts.premierPlan === true && opts.arreter !== true && opts.redemarrer !== true) {
+        if (process.env.HERDR_ENV !== '1') {
+          console.log('lance herness web depuis un panneau herdr')
+          process.exitCode = 1
+          return
+        }
+        await runForeground(opts.port)
+        return
+      }
+      const code = await webCommand({
+        arreter: opts.arreter === true,
+        redemarrer: opts.redemarrer === true,
+        premierPlan: opts.premierPlan === true,
+        sansNavigateur: opts.sansNavigateur === true,
+        port: opts.port,
+      }, {
+        spawn: spawn as unknown as Spawner,
+        isAlive(pid: number): boolean {
+          try {
+            process.kill(pid, 0)
+            return true
+          } catch (err) {
+            return typeof err === 'object' && err !== null && 'code' in err && err.code === 'EPERM'
+          }
+        },
+        kill(pid: number, sig: NodeJS.Signals): void {
+          process.kill(pid, sig)
+        },
+        sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
+        out: (line: string) => console.log(line),
+        env: process.env,
+      })
+      if (code !== 0) process.exitCode = code
     } catch (e) {
       console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
       process.exitCode = 1
