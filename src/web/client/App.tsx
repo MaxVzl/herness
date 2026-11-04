@@ -96,7 +96,7 @@ export function App({ source }: { source?: (url: string) => EventSource } = {}) 
     }
   }
 
-  const state = useServerEvents({ mission: selected, agents: false }, source)
+  const state = useServerEvents({ mission: selected, agents: ongletActif === 'agents' }, source)
   const summary = state.missions.find((item) => item.id === selected)
   const missionDetail = selected ? state.details[selected] : undefined
   const pending = selected
@@ -188,6 +188,9 @@ export function App({ source }: { source?: (url: string) => EventSource } = {}) 
             ouvert={demande}
             onTab={choisirOnglet}
             onLayout={reglerColonne}
+            agents={state.agents[selected] ?? []}
+            checks={state.checks[selected] ?? []}
+            preflight={state.projects.find((item) => item.name === summary.project)?.preflight ?? []}
           />
         ) : null}
       </section>
