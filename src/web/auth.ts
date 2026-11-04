@@ -29,6 +29,11 @@ function cookieValue(raw: string | undefined, name: string): string | undefined 
   return undefined
 }
 
+export function hostAllowed(headers: Record<string, string | string[] | undefined>, port: number): boolean {
+  const host = header(headers, 'host')
+  return host === `localhost:${port}` || host === `127.0.0.1:${port}`
+}
+
 export function checkRequest(
   req: { method: string; headers: Record<string, string | string[] | undefined> },
   token: string,
@@ -36,9 +41,7 @@ export function checkRequest(
 ): { ok: true } | { ok: false; status: 401 | 403 } {
   const presented = cookieValue(header(req.headers, 'cookie'), 'herness_web')
   if (presented === undefined || !tokensEqual(presented, token)) return { ok: false, status: 401 }
-  const host = header(req.headers, 'host')
-  const allowedHost = host === `localhost:${port}` || host === `127.0.0.1:${port}`
-  if (!allowedHost) return { ok: false, status: 403 }
+  if (!hostAllowed(req.headers, port)) return { ok: false, status: 403 }
   if (req.method === 'POST') {
     const origin = header(req.headers, 'origin')
     const allowedOrigin = origin === `http://localhost:${port}` || origin === `http://127.0.0.1:${port}`
