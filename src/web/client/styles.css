@@ -263,3 +263,97 @@ body {
   white-space: pre-wrap;
   margin: 4px 0;
 }
+
+.panneau {
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--panel);
+}
+
+.panneau-corps {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+.poignee {
+  cursor: col-resize;
+  flex: 0 0 6px;
+  background: var(--line);
+}
+
+.panneau [role='tablist'],
+.tiroir [role='tablist'] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.onglet.point::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
+.pastille {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--done);
+}
+
+.pastille.faite {
+  background: #15803d;
+}
+
+.pastille.en-cours {
+  background: #2563eb;
+}
+
+.pastille.a-faire {
+  background: var(--done);
+}
+
+.pastille.echec {
+  background: var(--red);
+}
+
+.diff-ajout {
+  color: #15803d;
+}
+
+.diff-retrait {
+  color: var(--red);
+}
+
+.tiroir {
+  position: fixed;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(600px, 100vw);
+  overflow: auto;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+}
+
+.contexte-ouvrir {
+  position: fixed;
+  z-index: 2;
+  top: 8px;
+  right: 8px;
+}
+
+.journal {
+  margin: 0;
+  padding-left: 1.2rem;
+}

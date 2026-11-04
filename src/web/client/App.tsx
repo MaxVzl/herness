@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Gate } from '../../mission/state.ts'
 import type { ActionResponse, ChatItem } from '../protocol.ts'
 import { ActionBanner } from './ActionBanner.tsx'
@@ -10,6 +10,7 @@ import { GateCards } from './GateCards.tsx'
 import { MissionHeader } from './MissionHeader.tsx'
 import { MissionList } from './MissionList.tsx'
 import { NewMissionForm } from './NewMissionForm.tsx'
+import { SidePanel, type Onglet } from './SidePanel.tsx'
 import { useServerEvents } from './store.ts'
 
 function browser() {
@@ -58,7 +59,26 @@ export function App({ source }: { source?: (url: string) => EventSource } = {}) 
   const [defaultProject, setDefaultProject] = useState('')
   const [result, setResult] = useState<ActionResponse | null>(null)
   const [answered, setAnswered] = useState<string[]>([])
-  const [onglet, setOnglet] = useState<'spec' | 'plan' | null>(null)
+  const [ongletActif, setOngletActif] = useState<Onglet | ''>('')
+  const [demande, setDemande] = useState<{ tab: 'spec' | 'plan'; seq: number } | null>(null)
+  const [colonne, setColonne] = useState(360)
+  const [tiroir, setTiroir] = useState(() => {
+    try {
+      return window.innerWidth < 1100
+    } catch {
+      return false
+    }
+  })
+  const demandeSeq = useRef(0)
+  const choisirOnglet = useCallback((tab: Onglet) => setOngletActif(tab), [])
+  const ouvrirDoc = useCallback((tab: 'spec' | 'plan') => {
+    demandeSeq.current += 1
+    setDemande({ tab, seq: demandeSeq.current })
+  }, [])
+  const reglerColonne = useCallback((layout: { width: number; drawer: boolean }) => {
+    setColonne((largeur) => largeur === layout.width ? largeur : layout.width)
+    setTiroir((ouvert) => ouvert === layout.drawer ? ouvert : layout.drawer)
+  }, [])
   useEffect(() => {
     const onHash = () => setSelected(missionFromHash())
     const root = browser()
@@ -100,7 +120,7 @@ export function App({ source }: { source?: (url: string) => EventSource } = {}) 
   }
 
   return (
-    <div className="shell">
+    <div className="shell" style={{ gridTemplateColumns: tiroir ? '230px 1fr 0px' : `230px 1fr ${colonne}px` }}>
       <section className="missions">
         <ConnectionBanner connected={state.connected} />
         <MissionList
@@ -152,13 +172,25 @@ export function App({ source }: { source?: (url: string) => EventSource } = {}) 
             <GateCards
               missionId={summary.id}
               gates={gatesOf(missionDetail.state)}
-              onOpenDoc={setOnglet}
+              onOpenDoc={ouvrirDoc}
               onResult={setResult}
             />
           </div>
         ) : null}
       </section>
-      <section className="contexte" data-onglet={onglet ?? ''} />
+      <section className="contexte" data-onglet={ongletActif}>
+        {!creating && summary && missionDetail && selected ? (
+          <SidePanel
+            missionId={selected}
+            state={missionDetail}
+            spec={state.docs[selected]?.spec}
+            plan={state.docs[selected]?.plan}
+            ouvert={demande}
+            onTab={choisirOnglet}
+            onLayout={reglerColonne}
+          />
+        ) : null}
+      </section>
     </div>
   )
 }
