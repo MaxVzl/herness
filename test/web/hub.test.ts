@@ -1,3 +1,4 @@
+import { appendFileSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -685,6 +686,82 @@ test('transcript et spec sont poussés sans attendre herdr, et le chat n envoie 
   } finally {
     release()
     await rm(work, { recursive: true, force: true })
+  }
+})
+
+test('un second abonné reçoit le delta manquant avant que le nouvel onglet ne fige la conversation', async () => {
+  const herdr = scriptedHerdr()
+  const id = 'm-deux'
+  await saveState(mk({
+    id,
+    step: 'tasks',
+    orchestrator: { agent: 'orch-deux', sessionId: 'sess-deux' },
+  }))
+  const path = await transcript('sess-deux', line('user', 'u1', 'bonjour'))
+  const hub = new Hub({ ...deps(herdr), tickMs: 60_000 })
+  hubs.push(hub)
+  await hub.start()
+  const first: ServerEvent[] = []
+  const second: ServerEvent[] = []
+  hub.attach((event) => first.push(event), { mission: id, agents: false })
+  await waitFor(() => first.some((event) => event.type === 'chat' && event.items.length === 1))
+  appendFileSync(path, line('assistant', 'a1', 'suite'))
+  hub.attach((event) => second.push(event), { mission: id, agents: false })
+  await waitFor(() => second.some((event) => (
+    event.type === 'chat' && event.items.some((item) => item.kind === 'assistant' && item.text === 'suite')
+  )))
+  const opening = second.find((event) => event.type === 'chat')
+  expect(opening).toMatchObject({ from: 0 })
+  await waitFor(() => first.some((event) => (
+    event.type === 'chat' && event.items.some((item) => item.kind === 'assistant' && item.text === 'suite')
+  )))
+  await writeFile(path, line('assistant', 'a2', 'fin'), { flag: 'a' })
+  const full = (events: ServerEvent[]) => {
+    let chat: Extract<ServerEvent, { type: 'chat' }>['items'] = []
+    for (const event of events) {
+      if (event.type !== 'chat') continue
+      chat = event.from ? [...chat.slice(0, event.from), ...event.items] : event.items
+    }
+    return chat.map((item) => item.kind === 'user' || item.kind === 'assistant' ? item.text : item.kind)
+  }
+  await waitFor(() => full(first).includes('fin') && full(second).includes('fin'))
+  expect(full(first)).toEqual(['bonjour', 'suite', 'fin'])
+  expect(full(second)).toEqual(['bonjour', 'suite', 'fin'])
+})
+
+test('un herdr lent laisse passer le contrôle de secours du transcript', async () => {
+  let now = new Date('2026-11-04T10:00:00.000Z')
+  let release: () => void = () => {}
+  const hung = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const herdr = scriptedHerdr()
+  let entered = false
+  herdr.agentGet = async () => {
+    entered = true
+    await hung
+    return { state: 'idle' }
+  }
+  const id = 'm-secours'
+  await saveState(mk({
+    id,
+    step: 'tasks',
+    orchestrator: { agent: 'orch-secours', sessionId: 'sess-secours' },
+  }))
+  const hub = new Hub({ ...deps(herdr, () => now), tickMs: 40 })
+  hubs.push(hub)
+  try {
+    await hub.start()
+    const events: ServerEvent[] = []
+    hub.attach((event) => events.push(event), { mission: id, agents: false })
+    await waitFor(() => entered)
+    await transcript('sess-secours', line('user', 'u1', 'tard'))
+    now = new Date('2026-11-04T10:00:06.000Z')
+    await waitFor(() => events.some((event) => (
+      event.type === 'chat' && event.items.some((item) => item.kind === 'user' && item.text === 'tard')
+    )), 800)
+  } finally {
+    release()
   }
 })
 

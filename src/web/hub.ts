@@ -86,6 +86,7 @@ export class Hub {
   private stopped = false
   private lastPr = 0
   private tickRunning = false
+  private herdrRunning = false
   private prRunning = false
   private readonly extraWatchers: FSWatcher[] = []
   private readonly watched = new Set<string>()
@@ -169,22 +170,29 @@ export class Hub {
   }
 
   private async tick(): Promise<void> {
-    if (this.stopped || this.tickRunning) return
-    this.tickRunning = true
-    this.kickPr()
+    if (this.stopped) return
+    if (!this.tickRunning) {
+      this.tickRunning = true
+      this.kickPr()
+      try {
+        await this.exclusive(async () => {
+          if (this.stopped) return
+          await this.scanStates()
+          if (this.clients.length === 0) return
+          await this.pollTranscripts()
+          await this.pollDocs()
+        })
+      } finally {
+        this.tickRunning = false
+      }
+    }
+    if (this.stopped || this.clients.length === 0 || this.herdrRunning) return
+    this.herdrRunning = true
     try {
-      await this.exclusive(async () => {
-        if (this.stopped) return
-        await this.scanStates()
-        if (this.clients.length === 0) return
-        await this.pollTranscripts()
-        await this.pollDocs()
-      })
-      if (this.stopped || this.clients.length === 0) return
       await this.pollOrchestrators()
       await this.pollAgents()
     } finally {
-      this.tickRunning = false
+      this.herdrRunning = false
     }
   }
 
@@ -314,10 +322,9 @@ export class Hub {
       if (!id) return
       const live = this.live.get(id)
       if (!live) return
-      await this.readTranscript(live)
+      await this.pushTranscript(live, client)
       client.send(await this.missionEvent(live))
       client.send({ type: 'chat', id, from: 0, items: live.items })
-      live.chatSent = live.items
       this.armDocs(live)
       for (const kind of ['spec', 'plan'] as const) {
         const doc = await readDoc(live.state, kind)
@@ -385,14 +392,14 @@ export class Hub {
     }
   }
 
-  private async pushTranscript(live: Live): Promise<void> {
+  private async pushTranscript(live: Live, skip?: Client): Promise<void> {
     await this.readTranscript(live)
     const from = chatDelta(live.chatSent ?? [], live.items)
     if (from < 0) return
     const badgeChanged = live.orchKnown && this.observeBadge(live)
     const items = live.items.slice(from)
     live.chatSent = live.items
-    this.sendSub(live.state.id, { type: 'chat', id: live.state.id, from, items })
+    this.sendSub(live.state.id, { type: 'chat', id: live.state.id, from, items }, skip)
     if (badgeChanged) {
       await this.sendMission(live.state.id)
       await this.broadcastMissions()
@@ -749,9 +756,10 @@ export class Hub {
     for (const client of [...this.clients]) client.send(event)
   }
 
-  private sendSub(id: string, event: ServerEvent): void {
+  private sendSub(id: string, event: ServerEvent, skip?: Client): void {
     for (const client of this.clients) {
-      if (client.sub.mission === id) client.send(event)
+      if (client === skip || client.sub.mission !== id) continue
+      client.send(event)
     }
   }
 }

@@ -42,6 +42,11 @@ test('reduce range missions, détail, chat, document, agents et checks sans réo
   const suite = [{ kind: 'assistant' as const, uuid: 'a1', at: '2026-11-03T10:02:00.000Z', text: 'je commence' }]
   state = reduce(state, { type: 'chat', id: '26110301-1', from: 1, items: suite })
   expect(state.chats['26110301-1']).toEqual([...items, ...suite])
+  const tropLoin = [{ kind: 'assistant' as const, uuid: 'a2', at: '2026-11-03T10:03:00.000Z', text: 'trou' }]
+  const avantTrou = state
+  state = reduce(state, { type: 'chat', id: '26110301-1', from: 5, items: tropLoin })
+  expect(state).toBe(avantTrou)
+  expect(state.chats['26110301-1']).toEqual([...items, ...suite])
 
   const spec = { source: 'worktree' as const, text: '# spec' }
   state = reduce(state, { type: 'doc', id: '26110301-1', kind: 'spec', doc: spec })

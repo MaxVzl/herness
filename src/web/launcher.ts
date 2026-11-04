@@ -1,5 +1,5 @@
 import { closeSync, mkdirSync, openSync } from 'node:fs'
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Herdr } from '../herdr/client.ts'
@@ -126,9 +126,10 @@ async function stop(d: LauncherDeps, quiet: boolean): Promise<number> {
   return 0
 }
 
-async function lastLogLine(log: string): Promise<string> {
+async function addedLogLine(log: string, from: number): Promise<string> {
   try {
-    const line = (await readFile(log, 'utf8')).trim().split('\n').at(-1)?.trim()
+    const text = (await readFile(log)).subarray(from).toString('utf8').trim()
+    const line = text.split('\n').at(-1)?.trim()
     if (line) return line
   } catch {
     // journal absent
@@ -148,6 +149,12 @@ async function waitForStart(d: LauncherDeps): Promise<WebInfo | null> {
 async function launch(o: { sansNavigateur?: boolean; port: number }, d: LauncherDeps): Promise<number> {
   const log = webLogPath()
   mkdirSync(dirname(log), { recursive: true })
+  let from = 0
+  try {
+    from = (await stat(log)).size
+  } catch {
+    from = 0
+  }
   const fd = openSync(log, 'a')
   try {
     const child = d.spawn(process.execPath, [
@@ -160,7 +167,7 @@ async function launch(o: { sansNavigateur?: boolean; port: number }, d: Launcher
   }
   const info = await waitForStart(d)
   if (!info) {
-    d.out(`le serveur n'a pas démarré : ${await lastLogLine(log)}`)
+    d.out(`le serveur n'a pas démarré : ${await addedLogLine(log, from)}`)
     return 1
   }
   return show(info, o, d)

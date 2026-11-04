@@ -38,6 +38,7 @@ export function reduce(s: ClientState, e: ClientEvent): ClientState {
       return { ...s, details: { ...s.details, [e.id]: e.detail } }
     case 'chat': {
       const prev = s.chats[e.id] ?? []
+      if (e.from !== undefined && e.from > prev.length) return s
       const items = e.from ? [...prev.slice(0, e.from), ...e.items] : e.items
       return { ...s, chats: { ...s.chats, [e.id]: items } }
     }
@@ -82,12 +83,21 @@ function prune<T>(rec: Record<string, T>, ids: Set<string>): Record<string, T> {
 /** Rouvre le flux quand l'abonnement change. L'état affiché reste jusqu'au premier `missions` : les confirmations et le détail des missions encore listées sont conservés. */
 export function useServerEvents(sub: { mission?: string; agents: boolean }, source?: (url: string) => EventSource): ClientState {
   const [state, setState] = useState(initialState)
+  const [epoch, setEpoch] = useState(0)
   const sourceRef = useRef(source)
   sourceRef.current = source
   const mission = sub.mission
   const agents = sub.agents
 
   useEffect(() => {
+    if (!agents && mission) {
+      setState((current) => {
+        if (current.agents[mission] === undefined) return current
+        const rest = { ...current.agents }
+        delete rest[mission]
+        return { ...current, agents: rest }
+      })
+    }
     const open = sourceRef.current ?? ((url: string) => new EventSource(url))
     const es = open(eventsUrl(mission, agents))
     let awaiting = true
@@ -107,6 +117,13 @@ export function useServerEvents(sub: { mission?: string; agents: boolean }, sour
       }
       if (event.type === 'notification') deliverNotification(event, mission)
       setState((current) => {
+        if (event.type === 'chat') {
+          const prev = current.chats[event.id] ?? []
+          if (event.from !== undefined && event.from > prev.length) {
+            queueMicrotask(() => setEpoch((n) => n + 1))
+            return current
+          }
+        }
         if (!awaiting || event.type !== 'missions') return reduce(current, event)
         awaiting = false
         const ids = new Set(event.missions.map((item) => item.id))
@@ -124,7 +141,7 @@ export function useServerEvents(sub: { mission?: string; agents: boolean }, sour
     return () => {
       es.close()
     }
-  }, [mission, agents])
+  }, [mission, agents, epoch])
 
   return state
 }

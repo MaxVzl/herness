@@ -310,11 +310,25 @@ test('SIGTERM ferme le serveur même si un client SSE est connecté', async () =
   }
 }, 20_000)
 
-test('un démarrage détaché raté affiche la dernière ligne du journal', async () => {
+test('un démarrage raté ignore les lignes écrites avant ce lancement', async () => {
   const { lines, deps } = harness()
   const log = join(home, 'logs', 'web.log')
   await mkdir(join(home, 'logs'), { recursive: true })
-  await writeFile(log, 'écoute impossible\nport 4747 déjà utilisé par un autre programme\n')
+  await writeFile(log, 'herness web écoute sur http://localhost:1\n')
+  expect(await webCommand({ port: 4747 }, deps)).toBe(1)
+  expect(lines).toEqual([`le serveur n'a pas démarré : voir ${log}`])
+})
+
+test('un démarrage détaché raté affiche la dernière ligne du journal', async () => {
+  const log = join(home, 'logs', 'web.log')
+  await mkdir(join(home, 'logs'), { recursive: true })
+  await writeFile(log, 'herness web écoute sur http://localhost:1\n')
+  const { lines, deps } = harness({
+    spawn() {
+      writeFileSync(log, 'écoute impossible\nport 4747 déjà utilisé par un autre programme\n', { flag: 'a' })
+      return { unref() {}, once() {} }
+    },
+  })
   expect(await webCommand({ port: 4747 }, deps)).toBe(1)
   expect(lines).toEqual(["le serveur n'a pas démarré : port 4747 déjà utilisé par un autre programme"])
 })

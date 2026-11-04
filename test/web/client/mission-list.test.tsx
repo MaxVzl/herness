@@ -330,6 +330,48 @@ test('une reconnexion garde les confirmations en attente', async () => {
   ])
 })
 
+test('un delta au-delà de la conversation connue rouvre le flux sans creuser un trou', async () => {
+  const { result } = renderHook(() => useServerEvents({ mission: '26110301-1', agents: false }, sourceOf))
+  await act(async () => {})
+  const item = { kind: 'user' as const, uuid: 'u1', at: '2026-11-03T10:00:00.000Z', text: 'bonjour' }
+  act(() => {
+    send(flux(), { type: 'chat', id: '26110301-1', items: [item] })
+  })
+  expect(result.current.chats['26110301-1']).toEqual([item])
+  act(() => {
+    send(flux(), {
+      type: 'chat',
+      id: '26110301-1',
+      from: 4,
+      items: [{ kind: 'assistant' as const, uuid: 'a9', at: '2026-11-03T10:01:00.000Z', text: 'trop loin' }],
+    })
+  })
+  await act(async () => {})
+  expect(result.current.chats['26110301-1']).toEqual([item])
+  expect(FakeSource.all[0]?.close).toHaveBeenCalled()
+  expect(FakeSource.all).toHaveLength(2)
+  expect(FakeSource.all[1]?.url).toBe('/api/evenements?mission=26110301-1&agents=0')
+})
+
+test('quitter l abonnement agents oublie leur liste', async () => {
+  const { result, rerender } = renderHook(
+    ({ agents }: { agents: boolean }) => useServerEvents({ mission: '26110301-1', agents }, sourceOf),
+    { initialProps: { agents: true } },
+  )
+  await act(async () => {})
+  act(() => {
+    send(flux(), {
+      type: 'agents',
+      id: '26110301-1',
+      agents: [{ name: 'impl', role: 'implémenteur', tool: 'Cursor', state: 'blocked', tail: '' }],
+    })
+  })
+  expect(result.current.agents['26110301-1']).toHaveLength(1)
+  rerender({ agents: false })
+  await act(async () => {})
+  expect(result.current.agents['26110301-1']).toBeUndefined()
+})
+
 test('changer de mission rouvre le flux avec le nouvel abonnement', async () => {
   const { rerender } = renderHook(
     ({ missionId, agents }: { missionId?: string; agents: boolean }) => useServerEvents({ mission: missionId, agents }, sourceOf),
@@ -509,6 +551,36 @@ test('page masquée : la mission sélectionnée est quand même notifiée', asyn
   await settleNotes()
   expect(Noted.notes).toHaveLength(1)
   expect(Noted.notes[0]?.options).toEqual({ body: 'motif', tag: 'bloquee:26110301-1' })
+})
+
+test('un done déjà publié par un autre onglet empêche une seconde notification', async () => {
+  stubNotification('granted')
+  Object.defineProperty(host.document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+  deliverNotification({
+    key: 'porte:init:1',
+    missionId: '26110301-8',
+    title: 'Init',
+    body: 'corps',
+  }, undefined)
+  await settleNotes()
+  const before = Noted.notes.length
+  const peer = new BroadcastChannel('herness-notifications')
+  peer.postMessage({ type: 'done', key: 'porte:deja:1' })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  try {
+    deliverNotification({
+      key: 'porte:deja:1',
+      missionId: '26110301-9',
+      title: 'Déjà faite',
+      body: 'corps',
+    }, undefined)
+    await settleNotes()
+    expect(Noted.notes).toHaveLength(before)
+  } finally {
+    peer.close()
+  }
 })
 
 test('un autre onglet visible empêche une seconde notification du même événement', async () => {

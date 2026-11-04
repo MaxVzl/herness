@@ -47,7 +47,13 @@ let channel: BroadcastChannel | undefined
 function bus(): BroadcastChannel | undefined {
   if (typeof BroadcastChannel !== 'function') return undefined
   try {
-    channel ??= new BroadcastChannel(CHANNEL)
+    if (!channel) {
+      channel = new BroadcastChannel(CHANNEL)
+      channel.addEventListener('message', (ev: MessageEvent) => {
+        const data = ev.data as Wire | undefined
+        if (data?.type === 'done' && typeof data.key === 'string') seen.add(data.key)
+      })
+    }
   } catch {
     return undefined
   }
