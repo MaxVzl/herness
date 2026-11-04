@@ -1,10 +1,10 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import exemple from '../../projects/exemple/config.ts'
 import demo from '../fixtures/demo/config.ts'
-import { fill, loadProjectConfig, projectDirs, ProjectConfigSchema } from '../../src/config/project.ts'
+import { fill, listProjects, loadProjectConfig, projectDirs, ProjectConfigSchema } from '../../src/config/project.ts'
 
 let dir: string
 let repo: string
@@ -79,6 +79,25 @@ test("la config d'exemple est valide et ne vise pas un vrai dépôt", () => {
   const c = ProjectConfigSchema.parse(exemple)
   expect(c.name).toBe('exemple')
   expect(c.repoPath).toBe('/chemin/vers/ton-projet')
+})
+
+test('listProjects rend toutes les configs triées par nom, sans exemple', async () => {
+  const { prepare: _p, ...rest } = demo
+  await writeConfig('b', { ...rest, name: 'b', repoPath: repo })
+  await writeConfig('a', { ...rest, name: 'a', repoPath: repo })
+  await writeConfig('exemple', { ...rest, name: 'exemple', repoPath: repo })
+  expect((await listProjects()).map((f) => f.config.name)).toEqual(['a', 'b'])
+})
+
+test('une config modifiée est relue sans redémarrer', async () => {
+  const { prepare: _p, ...rest } = demo
+  await writeConfig('a', { ...rest, name: 'a', repoPath: repo, mainBranch: 'main' })
+  expect((await loadProjectConfig(repo)).mainBranch).toBe('main')
+  await writeConfig('a', { ...rest, name: 'a', repoPath: repo, mainBranch: 'dev' })
+  const file = join(dir, 'a', 'config.ts')
+  const later = new Date(Date.now() + 2000)
+  await utimes(file, later, later)
+  expect((await loadProjectConfig(repo)).mainBranch).toBe('dev')
 })
 
 test('fill remplace les variables', () => {

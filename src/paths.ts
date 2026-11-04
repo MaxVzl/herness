@@ -1,9 +1,12 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+export function hernessHome(): string {
+  return process.env.HERNESS_HOME ?? join(homedir(), '.local', 'state', 'herness')
+}
+
 export function missionsRoot(): string {
-  const home = process.env.HERNESS_HOME ?? join(homedir(), '.local', 'state', 'herness')
-  return join(home, 'missions')
+  return join(hernessHome(), 'missions')
 }
 
 const MISSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { readdir, realpath } from 'node:fs/promises'
+import { readdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -61,8 +61,33 @@ export interface FoundConfig {
 }
 
 /**
- * Config du projet dont `repoPath` contient `cwd`, avec son fichier. Un fichier déjà
- * importé ne se recharge pas : pour revalider après modification, passer par un autre processus.
+ * Importe un `config.ts`. L'URL porte la date de modification (`?v=<mtimeMs>`), donc un
+ * fichier déjà importé est rechargé s'il a changé. `undefined` si le fichier est absent.
+ */
+async function importProjectConfig(file: string): Promise<ProjectConfig | undefined> {
+  let mtimeMs: number
+  try {
+    mtimeMs = (await stat(file)).mtimeMs
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw e
+  }
+  let mod: { default?: unknown }
+  try {
+    mod = await import(`${pathToFileURL(file).href}?v=${mtimeMs}`)
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code
+    if ((code === 'ERR_MODULE_NOT_FOUND' || code === 'ENOENT') && !existsSync(file)) return undefined
+    throw e
+  }
+  const parsed = ProjectConfigSchema.safeParse(mod.default)
+  if (!parsed.success) throw new Error(`config de projet invalide (${file}) : ${parsed.error.message}`)
+  return parsed.data
+}
+
+/**
+ * Config du projet dont `repoPath` contient `cwd`, avec son fichier.
+ * Un fichier modifié est réimporté : sa date de modification entre dans l'URL du module.
  */
 export async function findProjectConfig(cwd: string): Promise<FoundConfig> {
   const real = await realpath(cwd)
@@ -72,21 +97,39 @@ export async function findProjectConfig(cwd: string): Promise<FoundConfig> {
     for (const name of names.sort()) {
       if (name === EXAMPLE) continue
       const file = join(projectsDir, name, 'config.ts')
-      let mod: { default?: unknown }
-      try {
-        mod = await import(pathToFileURL(file).href)
-      } catch (e) {
-        const code = (e as NodeJS.ErrnoException).code
-        if ((code === 'ERR_MODULE_NOT_FOUND' || code === 'ENOENT') && !existsSync(file)) continue
-        throw e
-      }
-      const parsed = ProjectConfigSchema.safeParse(mod.default)
-      if (!parsed.success) throw new Error(`config de projet invalide (${file}) : ${parsed.error.message}`)
-      const config = parsed.data
+      const config = await importProjectConfig(file)
+      if (!config) continue
       if (real === config.repoPath || real.startsWith(config.repoPath + sep)) return { config, file }
     }
   }
   throw new NoProjectError(`aucun projet herness pour ${cwd} (dossiers cherchés : ${dirs.join(', ')})`)
+}
+
+/** Toutes les configs valides, une par `name` (la première trouvée gagne), triées par `name`. */
+export async function listProjects(): Promise<FoundConfig[]> {
+  const dirs = [...new Set(projectDirs())]
+  const byName = new Map<string, FoundConfig>()
+  for (const projectsDir of dirs) {
+    const names = await readdir(projectsDir).catch(() => [] as string[])
+    for (const name of names.sort()) {
+      if (name === EXAMPLE) continue
+      const file = join(projectsDir, name, 'config.ts')
+      let config: ProjectConfig | undefined
+      try {
+        config = await importProjectConfig(file)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        if (msg.startsWith('config de projet invalide')) {
+          console.error(msg)
+          continue
+        }
+        throw e
+      }
+      if (!config || byName.has(config.name)) continue
+      byName.set(config.name, { config, file })
+    }
+  }
+  return [...byName.values()].sort((a, b) => a.config.name.localeCompare(b.config.name))
 }
 
 export async function loadProjectConfig(cwd: string): Promise<ProjectConfig> {

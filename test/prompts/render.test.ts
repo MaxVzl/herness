@@ -78,6 +78,12 @@ describe('render', () => {
 })
 
 describe('orchestrator.md', () => {
+  it('le rendu du prompt orchestrator contient AskUserQuestion et interface web', async () => {
+    const out = await render('orchestrator', full(SETS.orchestrator!))
+    expect(out).toContain('AskUserQuestion')
+    expect(out).toContain('interface web')
+  })
+
   it("décrit l'implémenteur comme brief.md : il peut lire la spec et le plan", async () => {
     const out = await render('orchestrator', full(SETS.orchestrator!))
     expect(out).not.toContain('ne voit ni la conversation ni la spec')
