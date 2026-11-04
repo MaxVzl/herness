@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -385,6 +385,123 @@ test('aucun client connecté : aucun appel agentGet', async () => {
   herdr.gets.length = 0
   await new Promise((resolve) => setTimeout(resolve, 200))
   expect(herdr.gets).toEqual([])
+})
+
+test('un badge déjà présent sur la mission abonnée n\'est pas notifié', async () => {
+  const herdr = scriptedHerdr()
+  herdr.set('orch-bloque', 'blocked', '')
+  const id = 'm-bloque'
+  await saveState(mk({
+    id,
+    slug: 'bloque',
+    step: 'tasks',
+    orchestrator: { agent: 'orch-bloque', sessionId: 'sess-bloque' },
+  }))
+  await transcript('sess-bloque', line('assistant', 'a1', 'j\'attends'))
+  const hub = new Hub(deps(herdr))
+  hubs.push(hub)
+  await hub.start()
+  const events: ServerEvent[] = []
+  hub.attach((event) => events.push(event), { mission: id, agents: false })
+  await waitFor(() => events.some((event) => event.type === 'missions'
+    && event.missions.some((mission) => mission.id === id && mission.badge === 'attend-herdr')))
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  expect(events.filter((event) => event.type === 'notification')).toEqual([])
+})
+
+test('un tour lent n\'empile pas les suivants', async () => {
+  const herdr = scriptedHerdr()
+  let calls = 0
+  herdr.agentGet = async (name) => {
+    calls += 1
+    herdr.gets.push(name)
+    if (calls === 1) await new Promise((resolve) => setTimeout(resolve, 400))
+    return { state: 'idle' }
+  }
+  await saveState(mk({
+    id: 'm-lent',
+    step: 'tasks',
+    orchestrator: { agent: 'orch-lent' },
+  }))
+  const hub = new Hub(deps(herdr))
+  hubs.push(hub)
+  await hub.start()
+  hub.attach(() => {}, { mission: 'm-lent', agents: false })
+  await new Promise((resolve) => setTimeout(resolve, 550))
+  expect(calls).toBeLessThanOrEqual(3)
+})
+
+test('un rafraîchissement de PR lent ne retarde pas une porte', async () => {
+  const herdr = scriptedHerdr()
+  let releaseRefresh!: () => void
+  const refreshing = new Promise<void>((resolve) => {
+    releaseRefresh = resolve
+  })
+  let started!: () => void
+  const refreshStarted = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const prCache = {
+    get: () => undefined,
+    refresh: async () => {
+      started()
+      await refreshing
+    },
+  }
+  const id = 'm-pr'
+  const state = mk({ id, slug: 'pr', step: 'spec', prUrl: 'https://github.com/o/r/pull/4' })
+  await saveState(state)
+  const hub = new Hub({ ...deps(herdr), prCache })
+  hubs.push(hub)
+  await hub.start()
+  const events: ServerEvent[] = []
+  hub.attach((event) => events.push(event), { mission: id, agents: false })
+  await waitFor(() => events.some((event) => event.type === 'checks'))
+  await refreshStarted
+  const t0 = Date.now()
+  state.gates.push({
+    id: 'g9',
+    kind: 'spec',
+    status: 'pending',
+    summary: 'relire',
+    createdAt: '2026-11-04T10:02:00.000Z',
+  })
+  await saveState(state)
+  try {
+    await waitFor(() => events.some((event) => event.type === 'notification' && event.key === `porte:${id}:g9`), 900)
+    expect(Date.now() - t0).toBeLessThan(1000)
+  } finally {
+    releaseRefresh()
+  }
+})
+
+test('un journal disparu ne provoque pas de rejet non traité', async () => {
+  const herdr = scriptedHerdr()
+  const id = 'm-casse'
+  await saveState(mk({ id, slug: 'casse', step: 'tasks' }))
+  const logs = join(missionDir(id), 'logs')
+  await mkdir(logs, { recursive: true })
+  await symlink(join(logs, 'absent.log'), join(logs, '1700000000000-T1-tests.log'))
+  const rejections: unknown[] = []
+  const onRejection = (err: unknown) => {
+    rejections.push(err)
+  }
+  process.on('unhandledRejection', onRejection)
+  try {
+    const hub = new Hub(deps(herdr))
+    hubs.push(hub)
+    await hub.start()
+    const events: ServerEvent[] = []
+    hub.attach((event) => events.push(event), { mission: id, agents: false })
+    await waitFor(() => events.some((event) => event.type === 'checks'))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(rejections).toEqual([])
+    const checks = events.find((event) => event.type === 'checks')
+    expect(checks?.type).toBe('checks')
+    if (checks?.type === 'checks') expect(checks.checks).toEqual([])
+  } finally {
+    process.off('unhandledRejection', onRejection)
+  }
 })
 
 test('GET /api/evenements pousse les événements en flux SSE', async () => {

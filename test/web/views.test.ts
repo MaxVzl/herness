@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
@@ -238,6 +238,17 @@ test('checksOf : en cours, vert, rouge, redémarrage ignoré, tri et libellé', 
     lastOutputAt: logAncien.toISOString(),
     errorTail: ['l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'l9', 'l10'].join('\n'),
   })
+})
+
+test('checksOf ignore un journal disparu entre la liste et la lecture', async () => {
+  const id = 'm-disparu'
+  await saveState(mk({ id }))
+  const logs = join(missionDir(id), 'logs')
+  await mkdir(logs, { recursive: true })
+  await writeFile(join(logs, '1700000001000-T1-tests.log'), 'ok\n')
+  await symlink(join(logs, 'plus-la.log'), join(logs, '1700000002000-T2-tests.log'))
+  const checks = await checksOf(id, new Date(1700000003000))
+  expect(checks.map((check) => check.file)).toEqual(['1700000001000-T1-tests.log'])
 })
 
 test('agentRefs : rôles reconnus, le plus récent en premier, panneaux fixes exclus', () => {

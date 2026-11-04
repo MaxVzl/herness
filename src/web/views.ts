@@ -55,6 +55,14 @@ async function isFile(path: string): Promise<boolean> {
   }
 }
 
+async function readText(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, 'utf8')
+  } catch {
+    return undefined
+  }
+}
+
 async function isDir(path: string): Promise<boolean> {
   try {
     return (await stat(path)).isDirectory()
@@ -96,16 +104,23 @@ export async function readDoc(s: MissionState, kind: 'spec' | 'plan'): Promise<D
     ? join(s.worktree, (kind === 'spec' ? specPath : planPath)(s))
     : undefined
   if (await isFile(proposed)) {
-    const current = worktreeFile && await isFile(worktreeFile) ? await readFile(worktreeFile, 'utf8') : null
-    return { source: 'proposition', text: await readFile(proposed, 'utf8'), current }
+    const text = await readText(proposed)
+    if (text !== undefined) {
+      const current = worktreeFile && await isFile(worktreeFile) ? await readText(worktreeFile) ?? null : null
+      return { source: 'proposition', text, current }
+    }
   }
   const worktreeGone = Boolean(s.worktree) && !(await isDir(s.worktree as string))
   if (worktreeFile && !worktreeGone && await isFile(worktreeFile)) {
-    return { source: 'worktree', text: await readFile(worktreeFile, 'utf8') }
+    const text = await readText(worktreeFile)
+    if (text !== undefined) return { source: 'worktree', text }
   }
   if (worktreeGone && kind === 'plan') {
     const approved = join(dir, 'plan.approved.md')
-    if (await isFile(approved)) return { source: 'approuve', text: await readFile(approved, 'utf8') }
+    if (await isFile(approved)) {
+      const text = await readText(approved)
+      if (text !== undefined) return { source: 'approuve', text }
+    }
   }
   if (worktreeGone && kind === 'spec') {
     return { source: 'absent', reason: 'worktree supprimé : spec plus disponible ici' }
@@ -126,30 +141,34 @@ export async function checksOf(id: string, now: Date): Promise<CheckView[]> {
     if (!slug || !stampRaw) continue
     const stamp = Number(stampRaw)
     const logPath = join(dir, file)
-    const logStat = await stat(logPath)
-    const exitPath = join(dir, `${file.slice(0, -4)}.exit`)
-    let status: CheckView['status'] = 'en-cours'
-    let end = now.getTime()
-    let errorTail: string | undefined
-    if (await isFile(exitPath)) {
-      const code = (await readFile(exitPath, 'utf8')).trim()
-      end = Math.round((await stat(exitPath)).mtimeMs)
-      if (code === '0') status = 'vert'
-      else {
-        status = 'rouge'
-        const lines = (await readFile(logPath, 'utf8')).split('\n').filter((line) => line.trim() !== '')
-        errorTail = lines.slice(-8).join('\n')
+    try {
+      const logStat = await stat(logPath)
+      const exitPath = join(dir, `${file.slice(0, -4)}.exit`)
+      let status: CheckView['status'] = 'en-cours'
+      let end = now.getTime()
+      let errorTail: string | undefined
+      if (await isFile(exitPath)) {
+        const code = (await readFile(exitPath, 'utf8')).trim()
+        end = Math.round((await stat(exitPath)).mtimeMs)
+        if (code === '0') status = 'vert'
+        else {
+          status = 'rouge'
+          const lines = (await readFile(logPath, 'utf8')).split('\n').filter((line) => line.trim() !== '')
+          errorTail = lines.slice(-8).join('\n')
+        }
       }
+      checks.push({
+        file,
+        label: slug.replace(/-/g, ' '),
+        status,
+        startedAt: new Date(stamp).toISOString(),
+        durationMs: Math.max(0, Math.round(end) - stamp),
+        lastOutputAt: new Date(Math.round(logStat.mtimeMs)).toISOString(),
+        ...(errorTail !== undefined ? { errorTail } : {}),
+      })
+    } catch {
+      // journal disparu entre la liste et la lecture
     }
-    checks.push({
-      file,
-      label: slug.replace(/-/g, ' '),
-      status,
-      startedAt: new Date(stamp).toISOString(),
-      durationMs: Math.max(0, Math.round(end) - stamp),
-      lastOutputAt: new Date(Math.round(logStat.mtimeMs)).toISOString(),
-      ...(errorTail !== undefined ? { errorTail } : {}),
-    })
   }
   checks.sort((a, b) => Number(/^(\d+)/.exec(b.file)?.[1] ?? 0) - Number(/^(\d+)/.exec(a.file)?.[1] ?? 0))
   return checks

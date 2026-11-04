@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { listProjects } from '../config/project.ts'
 import type { EngineHerdr } from '../engine/effects.ts'
 import { loadState, type MissionState } from '../mission/state.ts'
-import { missionDir, missionsRoot } from '../paths.ts'
+import { missionDir, missionsRoot, planPath, specPath } from '../paths.ts'
 import { needsPrRefresh, type PrInfo } from '../ui/model.ts'
 import type { PrCache } from '../ui/pr-cache.ts'
 import type { Badge, DocView, MissionSummary, ServerEvent } from './protocol.ts'
@@ -35,6 +35,7 @@ interface Live {
   state: MissionState
   stateMtime: number
   orch: string | null
+  orchKnown: boolean
   items: ChatItem[]
   badge?: Badge
   badgeSeen: boolean
@@ -42,6 +43,7 @@ interface Live {
   readerPath?: string
   transcriptMark?: string
   docs: Map<'spec' | 'plan', string>
+  docMarks: Map<'spec' | 'plan', string>
   activity: Map<string, { tail: string; lastActivityAt: string }>
   agentsJson?: string
 }
@@ -64,6 +66,8 @@ export class Hub {
   private ready = false
   private stopped = false
   private lastPr = 0
+  private tickRunning = false
+  private prRunning = false
 
   constructor(private readonly d: HubDeps) {
     this.tickMs = d.tickMs ?? 1000
@@ -76,7 +80,9 @@ export class Hub {
     this.watcher = watch(missionsRoot(), { recursive: true }, (_event, filename) => {
       this.onWatch(filename?.toString() ?? null)
     })
-    this.watcher.on('error', () => {})
+    this.watcher.on('error', (err) => {
+      console.error(err)
+    })
     this.interval = setInterval(() => {
       void this.tick()
     }, this.tickMs)
@@ -114,7 +120,13 @@ export class Hub {
   }
 
   private exclusive(fn: () => Promise<void>): Promise<void> {
-    const run = this.chain.then(fn, fn)
+    const run = this.chain.then(async () => {
+      try {
+        await fn()
+      } catch (err) {
+        console.error(err)
+      }
+    })
     this.chain = run.then(() => {}, () => {})
     return run
   }
@@ -131,16 +143,22 @@ export class Hub {
   }
 
   private async tick(): Promise<void> {
-    await this.exclusive(async () => {
-      if (this.stopped) return
-      await this.refreshPr()
-      await this.scanStates()
-      if (this.clients.length === 0) return
-      await this.pollOrchestrators()
-      await this.pollTranscripts()
-      await this.pollDocs()
-      await this.pollAgents()
-    })
+    if (this.stopped || this.tickRunning) return
+    this.tickRunning = true
+    this.kickPr()
+    try {
+      await this.exclusive(async () => {
+        if (this.stopped) return
+        await this.scanStates()
+        if (this.clients.length === 0) return
+        await this.pollOrchestrators()
+        await this.pollTranscripts()
+        await this.pollDocs()
+        await this.pollAgents()
+      })
+    } finally {
+      this.tickRunning = false
+    }
   }
 
   private async flush(batch: string[]): Promise<void> {
@@ -158,14 +176,24 @@ export class Hub {
       byMission.set(id, hits)
     }
     for (const [id, hits] of byMission) {
-      await this.reload(id)
-      await this.react(id, hits)
+      try {
+        await this.reload(id)
+        await this.react(id, hits)
+      } catch (err) {
+        console.error(err)
+      }
     }
   }
 
   private async scanStates(): Promise<void> {
     const ids = await readdir(missionsRoot()).catch(() => [] as string[])
-    for (const id of ids) await this.reload(id)
+    for (const id of ids) {
+      try {
+        await this.reload(id)
+      } catch (err) {
+        console.error(err)
+      }
+    }
   }
 
   private async reload(id: string): Promise<void> {
@@ -196,9 +224,11 @@ export class Hub {
         state: next,
         stateMtime: mtime,
         orch: null,
+        orchKnown: false,
         items: [],
         badgeSeen: false,
         docs: new Map(),
+        docMarks: new Map(),
         activity: new Map(),
       }
       this.live.set(id, created)
@@ -217,7 +247,7 @@ export class Hub {
       if (gate.status === 'pending' && !prevGates.has(gate.id)) this.notifyGate(next, gate)
     }
     if (next.step === 'bloquée' && prevStep !== 'bloquée') this.notifyBlocked(next)
-    this.observeBadge(prev)
+    if (prev.orchKnown) this.observeBadge(prev)
     await this.publish(id)
   }
 
@@ -250,46 +280,53 @@ export class Hub {
   }
 
   private async snapshot(client: Client): Promise<void> {
-    if (this.stopped || !this.clients.includes(client)) return
-    client.send(await this.missionsEvent())
-    const id = client.sub.mission
-    if (!id) return
-    const live = this.live.get(id)
-    if (!live) return
-    await this.readTranscript(live)
-    this.observeBadge(live)
-    client.send(await this.missionEvent(live))
-    client.send({ type: 'chat', id, items: live.items })
-    for (const kind of ['spec', 'plan'] as const) {
-      const doc = await readDoc(live.state, kind)
-      live.docs.set(kind, JSON.stringify(doc))
-      client.send({ type: 'doc', id, kind, doc })
+    try {
+      if (this.stopped || !this.clients.includes(client)) return
+      client.send(await this.missionsEvent())
+      const id = client.sub.mission
+      if (!id) return
+      const live = this.live.get(id)
+      if (!live) return
+      await this.readTranscript(live)
+      client.send(await this.missionEvent(live))
+      client.send({ type: 'chat', id, items: live.items })
+      for (const kind of ['spec', 'plan'] as const) {
+        const doc = await readDoc(live.state, kind)
+        live.docs.set(kind, JSON.stringify(doc))
+        live.docMarks.set(kind, await this.docMark(live.state, kind))
+        client.send({ type: 'doc', id, kind, doc })
+      }
+      client.send({ type: 'checks', id, checks: await checksOf(id, this.d.now()) })
+    } catch (err) {
+      console.error(err)
     }
-    client.send({ type: 'checks', id, checks: await checksOf(id, this.d.now()) })
   }
 
   private async pollOrchestrators(): Promise<void> {
-    let changed = false
-    for (const live of this.live.values()) {
-      if (this.clients.length === 0) return
-      if (!isFollowed(live.state)) continue
-      const name = live.state.orchestrator.agent
-      if (!name) continue
-      let state: string | null = null
+    const followed = [...this.live.values()].filter((live) => isFollowed(live.state) && live.state.orchestrator.agent)
+    const changed = await Promise.all(followed.map(async (live) => {
       try {
-        state = (await this.d.herdr.agentGet(name))?.state ?? null
-      } catch {
-        state = null
+        if (this.clients.length === 0) return false
+        const name = live.state.orchestrator.agent as string
+        let state: string | null = null
+        try {
+          state = (await this.d.herdr.agentGet(name))?.state ?? null
+        } catch {
+          state = null
+        }
+        if (this.clients.length === 0) return false
+        const stateChanged = state !== live.orch
+        live.orch = state
+        live.orchKnown = true
+        const badgeChanged = this.observeBadge(live)
+        if (stateChanged || badgeChanged) await this.sendMission(live.state.id)
+        return stateChanged || badgeChanged
+      } catch (err) {
+        console.error(err)
+        return false
       }
-      const stateChanged = state !== live.orch
-      live.orch = state
-      const badgeChanged = this.observeBadge(live)
-      if (stateChanged || badgeChanged) {
-        changed = true
-        await this.sendMission(live.state.id)
-      }
-    }
-    if (changed) await this.broadcastMissions()
+    }))
+    if (changed.some(Boolean)) await this.broadcastMissions()
   }
 
   private async pollTranscripts(): Promise<void> {
@@ -298,14 +335,19 @@ export class Hub {
       if (this.clients.length === 0) return
       const id = live.state.id
       if (!isFollowed(live.state) && !subscribed.has(id)) continue
-      const before = live.items
-      const badgeBefore = live.badge
-      await this.readTranscript(live)
-      if (live.items === before) continue
-      const badgeChanged = this.observeBadge(live)
-      this.sendSub(id, { type: 'chat', id, items: live.items })
-      if (badgeChanged || live.badge !== badgeBefore) await this.sendMission(id)
-      if (badgeChanged) await this.broadcastMissions()
+      try {
+        const before = live.items
+        await this.readTranscript(live)
+        if (live.items === before) continue
+        const badgeChanged = live.orchKnown && this.observeBadge(live)
+        this.sendSub(id, { type: 'chat', id, items: live.items })
+        if (badgeChanged) {
+          await this.sendMission(id)
+          await this.broadcastMissions()
+        }
+      } catch (err) {
+        console.error(err)
+      }
     }
   }
 
@@ -340,8 +382,34 @@ export class Hub {
     for (const id of ids) {
       const live = this.live.get(id)
       if (!live) continue
-      for (const kind of ['spec', 'plan'] as const) await this.sendDoc(id, kind)
+      for (const kind of ['spec', 'plan'] as const) {
+        try {
+          const mark = await this.docMark(live.state, kind)
+          if (live.docMarks.get(kind) === mark) continue
+          live.docMarks.set(kind, mark)
+          await this.sendDoc(id, kind)
+        } catch (err) {
+          console.error(err)
+        }
+      }
     }
+  }
+
+  /** Dates des fichiers qui peuvent fournir la spec ou le plan, pour ne relire que si l'un a changé. */
+  private async docMark(s: MissionState, kind: 'spec' | 'plan'): Promise<string> {
+    const paths = [join(missionDir(s.id), `${kind}.proposed.md`)]
+    if (s.slug && s.worktree) paths.push(join(s.worktree, (kind === 'spec' ? specPath : planPath)(s)))
+    if (kind === 'plan') paths.push(join(missionDir(s.id), 'plan.approved.md'))
+    const parts: string[] = []
+    for (const path of paths) {
+      try {
+        const info = await stat(path)
+        parts.push(`${info.mtimeMs}:${info.size}`)
+      } catch {
+        parts.push('-')
+      }
+    }
+    return parts.join('|')
   }
 
   private async pollAgents(): Promise<void> {
@@ -353,9 +421,8 @@ export class Hub {
       if (this.clients.length === 0) return
       const live = this.live.get(id)
       if (!live) continue
-      const views = []
-      for (const ref of agentRefs(live.state)) {
-        if (!this.clients.some((client) => client.sub.agents && client.sub.mission === id)) break
+      const refs = agentRefs(live.state)
+      const views = await Promise.all(refs.map(async (ref) => {
         let state: string | null = null
         try {
           state = (await this.d.herdr.agentGet(ref.name))?.state ?? null
@@ -374,13 +441,13 @@ export class Hub {
           lastActivityAt = this.d.now().toISOString()
           live.activity.set(ref.name, { tail, lastActivityAt })
         }
-        views.push({
+        return {
           ...ref,
           state,
           tail,
           ...(lastActivityAt ? { lastActivityAt } : {}),
-        })
-      }
+        }
+      }))
       const json = JSON.stringify(views)
       if (json === live.agentsJson) continue
       live.agentsJson = json
@@ -401,10 +468,18 @@ export class Hub {
     return true
   }
 
-  private async refreshPr(): Promise<void> {
+  private kickPr(): void {
+    if (this.prRunning || this.stopped) return
     const t = this.d.now().getTime()
     if (this.lastPr !== 0 && t - this.lastPr < 60_000) return
     this.lastPr = t
+    this.prRunning = true
+    void this.refreshPr().finally(() => {
+      this.prRunning = false
+    })
+  }
+
+  private async refreshPr(): Promise<void> {
     const urls: string[] = []
     for (const live of this.live.values()) {
       const url = live.state.prUrl
@@ -413,10 +488,15 @@ export class Hub {
       if (needsPrRefresh(live.state, pr, this.d.now())) urls.push(url)
     }
     try {
-      await this.d.prCache.refresh(urls)
-    } catch {
-      // le cache de PR ne doit pas couper le flux
+      if (urls.length > 0) await this.d.prCache.refresh(urls)
+    } catch (err) {
+      console.error(err)
     }
+    if (this.stopped || urls.length === 0) return
+    await this.exclusive(async () => {
+      if (this.stopped) return
+      await this.broadcastMissions()
+    })
   }
 
   private titleOf(s: MissionState): string {
