@@ -172,14 +172,34 @@ test('la carte est ambre si l agent est blocked ou cité par une porte agent-blo
     agent({ name: 'diag', state: 'working' }),
   ]
   const gates = [
-    porte({ id: 'g1', status: 'pending', summary: 'relu ne répond plus' }),
-    porte({ id: 'g2', status: 'approved', summary: 'diag était bloqué' }),
+    porte({ id: 'g1', status: 'pending', summary: 'Agent relu (revue) bloqué, à débloquer dans son panneau :\nrelu ne répond plus' }),
+    porte({ id: 'g2', status: 'approved', summary: 'Agent diag (diagnostic) bloqué, à débloquer dans son panneau :\ndiag était bloqué' }),
   ]
   render(<AgentsTab missionId="m1" agents={agents} gates={gates} />)
   const cartes = screen.getAllByRole('article')
   expect(classOf(cartes[0]!)).toContain('ambre')
   expect(classOf(cartes[1]!)).toContain('ambre')
   expect(classOf(cartes[2]!)).not.toContain('ambre')
+})
+
+test('une porte pour c1-t12 ne met pas en ambre c1-t1 ni un nom seulement cité dans la sortie', () => {
+  const agents = [
+    agent({ name: 'c1-t1', state: 'idle' }),
+    agent({ name: 'c1-t1b', state: 'idle' }),
+    agent({ name: 'c1-t12', state: 'idle' }),
+  ]
+  const gates = [
+    porte({
+      id: 'g12',
+      status: 'pending',
+      summary: 'Agent c1-t12 (implémentation) bloqué, à débloquer dans son panneau :\nmention de c1-t1 et de c1-t1b dans la sortie',
+    }),
+  ]
+  render(<AgentsTab missionId="m1" agents={agents} gates={gates} />)
+  const cartes = screen.getAllByRole('article')
+  expect(classOf(cartes[0]!)).not.toContain('ambre')
+  expect(classOf(cartes[1]!)).not.toContain('ambre')
+  expect(classOf(cartes[2]!)).toContain('ambre')
 })
 
 test('un agent terminé est replié et se déplie sur demande', () => {
@@ -212,6 +232,27 @@ test('voir toute la sortie charge 400 lignes et les recharge chaque seconde tant
   expect(screen.queryByText('sortie suivante')).toBeNull()
   await act(async () => { vi.advanceTimersByTime(3000) })
   expect(calls.filter((item) => item.includes('/sortie'))).toEqual([url, url])
+})
+
+test('un échec de chargement garde la dernière sortie et le signale', async () => {
+  const url = '/api/missions/m1/agents/impl/sortie?lignes=400'
+  bodies.set(url, 'sortie complète')
+  render(<AgentsTab missionId="m1" agents={[agent({ name: 'impl', state: 'working', tail: 'ligne impl' })]} gates={[]} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Voir toute la sortie' }))
+  expect(await screen.findByText('sortie complète')).toBeTruthy()
+
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    throw new Error('réseau')
+  }))
+  await act(async () => { vi.advanceTimersByTime(1000) })
+  expect(screen.getByText('sortie complète')).toBeTruthy()
+  expect(screen.getByText('sortie illisible : serveur injoignable')).toBeTruthy()
+
+  vi.stubGlobal('fetch', vi.fn(async () => ({ text: async () => 'sortie reprise', json: async () => ({ ok: true, lines: [] }) })))
+  await act(async () => { vi.advanceTimersByTime(1000) })
+  expect(screen.getByText('sortie reprise')).toBeTruthy()
+  expect(screen.queryByText('sortie complète')).toBeNull()
+  expect(screen.queryByText('sortie illisible : serveur injoignable')).toBeNull()
 })
 
 test('un point marque l onglet Agents quand une carte est ambre', () => {

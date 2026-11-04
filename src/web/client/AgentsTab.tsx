@@ -4,10 +4,11 @@ import type { AgentView } from '../protocol.ts'
 import { getText } from './api.ts'
 import { ago } from './ago.ts'
 
+/** Le moteur ouvre la porte avec `Agent <nom> (<rôle>) bloqué…` puis la sortie. Le nom n'est reconnu qu'à ce préfixe. */
 export function agentAmbre(agent: AgentView, gates: Gate[]): boolean {
   if (agent.state === 'blocked') return true
-  return gates.some((gate) =>
-    gate.kind === 'agent-bloque' && gate.status === 'pending' && gate.summary.includes(agent.name))
+  const prefixe = `Agent ${agent.name} (`
+  return gates.some((gate) => gate.kind === 'agent-bloque' && gate.status === 'pending' && gate.summary.startsWith(prefixe))
 }
 
 function useNow(): Date {
@@ -28,6 +29,7 @@ export function AgentsTab({ missionId, agents, gates }: {
   const [deplies, setDeplies] = useState<string[]>([])
   const [sortieDe, setSortieDe] = useState<string | null>(null)
   const [sortie, setSortie] = useState('')
+  const [sortieIllisible, setSortieIllisible] = useState(false)
 
   useEffect(() => {
     if (!sortieDe) return
@@ -36,10 +38,13 @@ export function AgentsTab({ missionId, agents, gates }: {
     const load = () => {
       void getText(url).then(
         (text) => {
-          if (!cancel) setSortie(text)
+          if (!cancel) {
+            setSortie(text)
+            setSortieIllisible(false)
+          }
         },
         () => {
-          if (!cancel) setSortie('')
+          if (!cancel) setSortieIllisible(true)
         },
       )
     }
@@ -76,12 +81,18 @@ export function AgentsTab({ missionId, agents, gates }: {
                   type="button"
                   onClick={() => {
                     setSortie('')
+                    setSortieIllisible(false)
                     setSortieDe(ouverte ? null : agent.name)
                   }}
                 >
                   {ouverte ? 'Masquer la sortie' : 'Voir toute la sortie'}
                 </button>
-                {ouverte ? <pre>{sortie}</pre> : null}
+                {ouverte ? (
+                  <>
+                    {sortieIllisible ? <p>sortie illisible : serveur injoignable</p> : null}
+                    <pre>{sortie}</pre>
+                  </>
+                ) : null}
               </>
             )}
           </article>
