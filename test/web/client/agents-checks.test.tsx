@@ -255,6 +255,26 @@ test('un échec de chargement garde la dernière sortie et le signale', async ()
   expect(screen.queryByText('sortie illisible : serveur injoignable')).toBeNull()
 })
 
+test('un point marque l onglet Agents quand une porte agent-bloque est en attente, même sans liste d agents', () => {
+  render(
+    <SidePanel
+      missionId="m1"
+      state={{
+        ...detailVide,
+        state: {
+          tasks: [],
+          gates: [porte({ id: 'g1', summary: 'Agent impl (Implémenteur) bloqué', status: 'pending' })],
+          log: [],
+          loops: { preflight: { results: [] }, globalReview: { round: 0 } },
+        },
+      }}
+      agents={[]}
+      onTab={() => {}}
+    />,
+  )
+  expect(classOf(screen.getByRole('tab', { name: 'Agents' }))).toContain('point')
+})
+
 test('un point marque l onglet Agents quand une carte est ambre', () => {
   render(
     <SidePanel
@@ -387,4 +407,26 @@ test('l onglet Agents ouvert abonne le flux aux agents et affiche leurs cartes',
   fireEvent.click(screen.getByRole('tab', { name: 'Journal' }))
   await act(async () => {})
   expect(FakeSource.all[2]?.url).toBe('/api/evenements?mission=m1&agents=0')
+})
+
+test('ouvrir ou quitter l onglet Agents ne vide pas la page', async () => {
+  setHash('#/m1')
+  render(<App source={sourceOf} />)
+  await act(async () => {})
+  const es = FakeSource.all[0]
+  if (!es) throw new Error('flux absent')
+  const detail = { ...detailVide, orchestrator: { state: 'idle' } }
+  act(() => {
+    es.onopen?.({})
+    send(es, { type: 'missions', missions: [mission('m1')], hiddenCount: 0, projects })
+    send(es, { type: 'mission', id: 'm1', detail })
+  })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'brouillon' } })
+  fireEvent.click(screen.getByRole('tab', { name: 'Agents' }))
+  await act(async () => {})
+  const suivant = FakeSource.all[1]
+  act(() => { suivant?.onopen?.({}) })
+  expect(screen.getByText('Titre')).toBeTruthy()
+  expect((screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement).value).toBe('brouillon')
+  expect(screen.getByRole('tab', { name: 'Agents' })).toBeTruthy()
 })

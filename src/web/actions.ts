@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { listProjects } from '../config/project.ts'
 import type { EngineHerdr } from '../engine/effects.ts'
 import type { MissionState } from '../mission/state.ts'
 import {
@@ -23,6 +24,8 @@ export interface WebActionDeps {
   /** `realActionDeps` en production. */
   deps(cwd: string): ActionDeps
   herdr: Pick<EngineHerdr, 'agentPrompt' | 'agentGet' | 'agentRead'>
+  /** Nom de projet → dépôt. Défaut : `listProjects()`. La page n'envoie jamais un chemin. */
+  projects?: () => Promise<readonly { name: string; repoPath: string }[]>
   spawn?: Spawner
   /** Délai avant qu'une confirmation sans réponse vaille non. Défaut : 300000. */
   confirmTimeoutMs?: number
@@ -104,7 +107,17 @@ export function actionRoutes(d: WebActionDeps): Route[] {
         json(res, 200, { ok: false, lines: [STOPPED] })
         return
       }
-      await d.herdr.agentPrompt(name, texte, { wait: false })
+      let outcome: string
+      try {
+        outcome = await d.herdr.agentPrompt(name, texte, { wait: false })
+      } catch (err) {
+        json(res, 200, { ok: false, lines: [err instanceof Error ? err.message : String(err)] })
+        return
+      }
+      if (outcome !== 'sent') {
+        json(res, 200, { ok: false, lines: [promptLine(outcome)] })
+        return
+      }
       json(res, 200, { ok: true, lines: [] })
     }),
     gate(/^\/api\/missions$/, async (_req, res, _match, body) => {
@@ -124,10 +137,15 @@ export function actionRoutes(d: WebActionDeps): Route[] {
         json(res, 400, { ok: false, lines: ['note illisible'] })
         return
       }
+      const repoPath = await repoPathOf(d, projet)
+      if (!repoPath) {
+        json(res, 400, { ok: false, lines: ['projet inconnu'] })
+        return
+      }
       const lines: string[] = []
-      const ad = d.deps(projet)
+      const ad = d.deps(repoPath)
       try {
-        const id = await ad.start(demande, projet, { ...ad.lifecycle, out: (line) => lines.push(line) }, note !== undefined ? { note } : {})
+        const id = await ad.start(demande, repoPath, { ...ad.lifecycle, out: (line) => lines.push(line) }, note !== undefined ? { note } : {})
         json(res, 200, { ok: true, lines, id })
       } catch (err) {
         lines.push(err instanceof Error ? err.message : String(err))
@@ -255,11 +273,25 @@ function knownAgent(s: MissionState, nom: string): boolean {
   return agentRefs(s).some((agent) => agent.name === nom)
 }
 
+function promptLine(outcome: string): string {
+  if (outcome === 'blocked') return 'orchestrateur bloqué dans herdr'
+  if (outcome === 'stalled') return 'orchestrateur sans nouvelle sortie (stalled)'
+  if (outcome === 'timeout') return 'délai dépassé'
+  return `envoi non abouti (${outcome})`
+}
+
+async function repoPathOf(d: WebActionDeps, name: string): Promise<string | undefined> {
+  const projects = d.projects
+    ? await d.projects()
+    : (await listProjects()).map((found) => ({ name: found.config.name, repoPath: found.config.repoPath }))
+  return projects.find((item) => item.name === name)?.repoPath
+}
+
 function lineCount(req: IncomingMessage): number {
   const raw = new URL(req.url ?? '/', 'http://localhost').searchParams.get('lignes')
   const n = raw === null ? 2000 : Number(raw)
   if (!Number.isFinite(n)) return 2000
-  return Math.min(n, 2000)
+  return Math.min(2000, Math.max(1, Math.trunc(n)))
 }
 
 function mission(d: WebActionDeps, res: ServerResponse, match: RegExpMatchArray): MissionState | undefined {

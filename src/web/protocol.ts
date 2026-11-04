@@ -60,7 +60,8 @@ export interface MissionDetail {
 export type ServerEvent =
   | { type: 'missions'; missions: MissionSummary[]; hiddenCount: number; projects: ProjectView[] }
   | { type: 'mission'; id: string; detail: MissionDetail }
-  | { type: 'chat'; id: string; items: ChatItem[] }
+  /** `from` est l'index du premier élément ajouté ou modifié. Absent ou 0 : liste complète. */
+  | { type: 'chat'; id: string; from?: number; items: ChatItem[] }
   | { type: 'doc'; id: string; kind: 'spec' | 'plan'; doc: DocView }
   | { type: 'agents'; id: string; agents: AgentView[] }
   | { type: 'checks'; id: string; checks: CheckView[] }

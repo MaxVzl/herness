@@ -40,6 +40,15 @@ interface Block {
   is_error?: boolean
 }
 
+/** Index du premier élément différent, ou -1 si les deux listes sont identiques. */
+export function chatDelta(prev: readonly ChatItem[], next: readonly ChatItem[]): number {
+  const n = Math.min(prev.length, next.length)
+  for (let i = 0; i < n; i++) {
+    if (JSON.stringify(prev[i]) !== JSON.stringify(next[i])) return i
+  }
+  return next.length === prev.length ? -1 : n
+}
+
 /** Cherche `<sessionId>.jsonl` dans les sous-dossiers de `root` (par défaut `~/.claude/projects`). */
 export async function findTranscript(sessionId: string, root = join(homedir(), '.claude', 'projects')): Promise<string | null> {
   let entries
@@ -72,7 +81,7 @@ export class TranscriptReader {
 
   constructor(private readonly path: string) {}
 
-  async poll(): Promise<{ changed: boolean; items: ChatItem[] }> {
+  async poll(): Promise<{ changed: boolean; from: number; items: ChatItem[] }> {
     const fh = await open(this.path, 'r')
     try {
       const { size } = await fh.stat()
@@ -82,7 +91,7 @@ export class TranscriptReader {
         this.rest = Buffer.alloc(0)
         this.lines = []
       }
-      if (!reset && size === this.offset) return { changed: false, items: this.items }
+      if (!reset && size === this.offset) return { changed: false, from: -1, items: this.items }
 
       if (size > this.offset) {
         const n = size - this.offset
@@ -101,7 +110,7 @@ export class TranscriptReader {
       const nl = this.rest.lastIndexOf(0x0a)
       if (nl < 0) {
         if (reset) return this.publish([])
-        return { changed: false, items: this.items }
+        return { changed: false, from: -1, items: this.items }
       }
       const complete = this.rest.subarray(0, nl).toString('utf8')
       this.rest = Buffer.from(this.rest.subarray(nl + 1))
@@ -112,10 +121,10 @@ export class TranscriptReader {
     }
   }
 
-  private publish(items: ChatItem[]): { changed: boolean; items: ChatItem[] } {
-    const changed = JSON.stringify(items) !== JSON.stringify(this.items)
+  private publish(items: ChatItem[]): { changed: boolean; from: number; items: ChatItem[] } {
+    const from = chatDelta(this.items, items)
     this.items = items
-    return { changed, items }
+    return { changed: from >= 0, from, items }
   }
 }
 

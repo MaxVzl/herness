@@ -7,6 +7,7 @@ import { afterEach, expect, test } from 'vitest'
 import {
   TranscriptReader,
   awaitingReply,
+  chatDelta,
   findTranscript,
   parseTranscript,
   summarizeTool,
@@ -192,6 +193,7 @@ test('TranscriptReader suit les ajouts, ignore une fin de ligne incomplète puis
   await appendFile(file, '"}}\n{cassé\n')
   const after = await reader.poll()
   expect(after.changed).toBe(true)
+  expect(after.from).toBe(1)
   expect(after.items).toEqual([
     { kind: 'user', uuid: 'u1', at: '2026-11-03T12:00:00.000Z', text: 'Bonjour' },
     { kind: 'user', uuid: 'u2', at: '2026-11-03T12:00:00.000Z', text: 'Suite' },
@@ -206,7 +208,7 @@ test('une ligne incomplète seule ne casse pas la lecture, puis compte une fois 
   await writeFile(file, partial)
   const reader = new TranscriptReader(file)
   const pending = await reader.poll()
-  expect(pending).toEqual({ changed: false, items: [] })
+  expect(pending).toEqual({ changed: false, from: -1, items: [] })
   await appendFile(file, entry('user', 'u', 'Seul').slice(-4) + '\n')
   const done = await reader.poll()
   expect(done.changed).toBe(true)
@@ -224,6 +226,14 @@ test('si le fichier rétrécit, la lecture reprend au début', async () => {
   const next = await reader.poll()
   expect(next.changed).toBe(true)
   expect(next.items).toEqual([{ kind: 'assistant', uuid: 'a', at: '2026-11-03T12:00:00.000Z', text: 'Reset' }])
+})
+
+test('chatDelta pointe le premier élément ajouté ou modifié', () => {
+  const premier: ChatItem = { kind: 'user', uuid: 'u', at: '', text: 'bonjour' }
+  const suite: ChatItem = { kind: 'assistant', uuid: 'a', at: '', text: 'je commence' }
+  expect(chatDelta([premier], [premier, suite])).toBe(1)
+  expect(chatDelta([premier, suite], [premier, suite])).toBe(-1)
+  expect(chatDelta([premier], [{ ...premier, text: 'autre' }])).toBe(0)
 })
 
 test('findTranscript trouve la session dans un sous-dossier, sinon null', async () => {

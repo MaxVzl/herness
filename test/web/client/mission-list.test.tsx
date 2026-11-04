@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { MissionSummary, ProjectView } from '../../../src/web/protocol.ts'
 import { App } from '../../../src/web/client/App.tsx'
 import { MissionList } from '../../../src/web/client/MissionList.tsx'
+import { deliverNotification } from '../../../src/web/client/notifications.ts'
 import { useServerEvents, type ClientState } from '../../../src/web/client/store.ts'
 
 const projects: ProjectView[] = [
@@ -142,6 +143,24 @@ test('les missions masquées restent cachées jusqu au clic sur la ligne de déc
   expect(screen.getByText('26110301-4')).toBeTruthy()
 })
 
+test('le décompte des missions masquées suit le filtre et peut se refermer', () => {
+  const missions = [
+    mission({ id: '26110301-1', project: 'alpha', title: 'Alpha visible' }),
+    mission({ id: '26110301-2', project: 'alpha', title: 'Alpha finie', hidden: true, bucket: 'terminee', status: 'fermée' }),
+    mission({ id: '26110301-3', project: 'beta', title: 'Beta finie', hidden: true, bucket: 'terminee', status: 'fermée' }),
+    mission({ id: '26110301-4', project: 'beta', title: 'Beta visible' }),
+  ]
+  render(<MissionList state={state(missions, 99)} selected={undefined} onSelect={() => {}} onNew={() => {}} />)
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'beta' } })
+  expect(screen.getByRole('button', { name: '1 missions terminées masquées · afficher' })).toBeTruthy()
+  expect(screen.queryByText('26110301-2')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '1 missions terminées masquées · afficher' }))
+  expect(screen.getByText('26110301-3')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'masquer les missions terminées' }))
+  expect(screen.queryByText('26110301-3')).toBeNull()
+  expect(screen.getByText('26110301-4')).toBeTruthy()
+})
+
 test('le sélecteur Projet : tous ▾ filtre et mémorise le projet', () => {
   const missions = [
     mission({ id: '26110301-1', project: 'alpha', title: 'Alpha' }),
@@ -241,7 +260,7 @@ test('une coupure de plus de 2 s affiche le bandeau ; un open le retire et le no
 
   act(() => { es.onopen?.({}) })
   expect(screen.queryByText('connexion perdue, reconnexion…')).toBeNull()
-  expect(screen.queryByText('Ancienne')).toBeNull()
+  expect(screen.getByText('Ancienne')).toBeTruthy()
   act(() => {
     send(es, {
       type: 'missions',
@@ -256,7 +275,7 @@ test('une coupure de plus de 2 s affiche le bandeau ; un open le retire et le no
   expect(screen.queryByText('connexion perdue, reconnexion…')).toBeNull()
 })
 
-test('à chaque ouverture le hook oublie le détail et le chat précédents', async () => {
+test('l ouverture garde le détail jusqu au premier instantané, qui oublie les missions absentes', async () => {
   const { result } = renderHook(() => useServerEvents({ agents: false }, sourceOf))
   await act(async () => {})
   const es = flux()
@@ -271,8 +290,8 @@ test('à chaque ouverture le hook oublie le détail et le chat précédents', as
   expect(result.current.chats.ancienne).toEqual(items)
 
   act(() => { es.onopen?.({}) })
-  expect(result.current.details).toEqual({})
-  expect(result.current.chats).toEqual({})
+  expect(result.current.details.ancienne).toEqual(detail)
+  expect(result.current.chats.ancienne).toEqual(items)
   expect(result.current.connected).toBe(true)
 
   act(() => {
@@ -280,6 +299,7 @@ test('à chaque ouverture le hook oublie le détail et le chat précédents', as
   })
   expect(result.current.missions.map((item) => item.id)).toEqual(['nouvelle'])
   expect(result.current.details.ancienne).toBeUndefined()
+  expect(result.current.chats.ancienne).toBeUndefined()
 })
 
 test('une reconnexion garde les confirmations en attente', async () => {
@@ -385,6 +405,12 @@ class Noted {
   }
 }
 
+async function settleNotes(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  })
+}
+
 function stubNotification(permission: 'default' | 'granted' | 'denied') {
   Noted.notes = []
   class FakeNotification extends Noted {
@@ -393,6 +419,26 @@ function stubNotification(permission: 'default' | 'granted' | 'denied') {
   }
   host.Notification = FakeNotification
 }
+
+test('changer de mission ne vide pas la liste avant le prochain instantané', async () => {
+  render(<App source={sourceOf} />)
+  await act(async () => {})
+  const es = flux()
+  act(() => {
+    es.onopen?.({})
+    send(es, {
+      type: 'missions',
+      hiddenCount: 0,
+      projects,
+      missions: [mission({ id: '26110301-1', title: 'Une' }), mission({ id: '26110301-2', title: 'Deux' })],
+    })
+  })
+  fireEvent.click(screen.getByRole('button', { name: /26110301-2/ }))
+  await act(async () => {})
+  act(() => { flux(1).onopen?.({}) })
+  expect(screen.getByText('Une')).toBeTruthy()
+  expect(screen.getByText('Deux')).toBeTruthy()
+})
 
 test('une notification part une seule fois, sauf si la mission sélectionnée est déjà sous les yeux', async () => {
   stubNotification('granted')
@@ -412,6 +458,7 @@ test('une notification part une seule fois, sauf si la mission sélectionnée es
     send(es, event)
     send(es, event)
   })
+  await settleNotes()
   expect(Noted.notes).toHaveLength(1)
   expect(Noted.notes[0]?.title).toBe('Porte spec')
   expect(Noted.notes[0]?.options).toEqual({ body: 'à valider', tag: 'porte:26110301-1:spec' })
@@ -438,6 +485,7 @@ test('page visible et mission sélectionnée : pas de notification', async () =>
       body: '26110301-1',
     })
   })
+  await settleNotes()
   expect(Noted.notes).toHaveLength(0)
 })
 
@@ -458,6 +506,31 @@ test('page masquée : la mission sélectionnée est quand même notifiée', asyn
       body: 'motif',
     })
   })
+  await settleNotes()
   expect(Noted.notes).toHaveLength(1)
   expect(Noted.notes[0]?.options).toEqual({ body: 'motif', tag: 'bloquee:26110301-1' })
+})
+
+test('un autre onglet visible empêche une seconde notification du même événement', async () => {
+  stubNotification('granted')
+  Object.defineProperty(host.document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+  const peer = new BroadcastChannel('herness-notifications')
+  peer.onmessage = (ev: MessageEvent) => {
+    const data = ev.data as { type?: string; key?: string; at?: number }
+    if (data?.type === 'claim' && data.key) {
+      peer.postMessage({ type: 'claim', key: data.key, id: 'autre', at: (data.at ?? 0) + 1, visible: true })
+    }
+  }
+  try {
+    deliverNotification({
+      key: 'porte:autre:1',
+      missionId: '26110301-9',
+      title: 'Porte ailleurs',
+      body: 'corps',
+    }, undefined)
+    await settleNotes()
+    expect(Noted.notes).toHaveLength(0)
+  } finally {
+    peer.close()
+  }
 })

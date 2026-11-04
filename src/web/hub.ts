@@ -1,14 +1,14 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { mkdir, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { listProjects } from '../config/project.ts'
+import { listProjects, projectDirs } from '../config/project.ts'
 import type { EngineHerdr } from '../engine/effects.ts'
 import { loadState, type MissionState } from '../mission/state.ts'
 import { missionDir, missionsRoot, planPath, specPath } from '../paths.ts'
 import { needsPrRefresh, type PrInfo } from '../ui/model.ts'
 import type { PrCache } from '../ui/pr-cache.ts'
 import type { Badge, DocView, MissionSummary, ServerEvent } from './protocol.ts'
-import { findTranscript, TranscriptReader, type ChatItem } from './transcript.ts'
+import { chatDelta, findTranscript, TranscriptReader, type ChatItem } from './transcript.ts'
 import { agentRefs, badgeOf, checksOf, missionFiles, readDoc, sortSummaries, summarize } from './views.ts'
 
 export type HubHerdr = Pick<EngineHerdr, 'agentGet' | 'agentRead'>
@@ -87,6 +87,10 @@ export class Hub {
   private lastPr = 0
   private tickRunning = false
   private prRunning = false
+  private readonly extraWatchers: FSWatcher[] = []
+  private readonly watched = new Set<string>()
+  private readonly transcriptMisses = new Map<string, number>()
+  private projectsCache?: { stamp: string; projects: { name: string; repoPath: string; preflight: string[] }[] }
 
   constructor(private readonly d: HubDeps) {
     this.tickMs = d.tickMs ?? 1000
@@ -112,6 +116,9 @@ export class Hub {
     if (this.interval) clearInterval(this.interval)
     if (this.debounce) clearTimeout(this.debounce)
     this.watcher?.close()
+    for (const watcher of this.extraWatchers) watcher.close()
+    this.extraWatchers.length = 0
+    this.watched.clear()
     this.clients.length = 0
   }
 
@@ -170,11 +177,12 @@ export class Hub {
         if (this.stopped) return
         await this.scanStates()
         if (this.clients.length === 0) return
-        await this.pollOrchestrators()
         await this.pollTranscripts()
         await this.pollDocs()
-        await this.pollAgents()
       })
+      if (this.stopped || this.clients.length === 0) return
+      await this.pollOrchestrators()
+      await this.pollAgents()
     } finally {
       this.tickRunning = false
     }
@@ -308,8 +316,9 @@ export class Hub {
       if (!live) return
       await this.readTranscript(live)
       client.send(await this.missionEvent(live))
-      client.send({ type: 'chat', id, items: live.items })
+      client.send({ type: 'chat', id, from: 0, items: live.items })
       live.chatSent = live.items
+      this.armDocs(live)
       for (const kind of ['spec', 'plan'] as const) {
         const doc = await readDoc(live.state, kind)
         live.docs.set(kind, JSON.stringify(doc))
@@ -323,31 +332,43 @@ export class Hub {
   }
 
   private async pollOrchestrators(): Promise<void> {
-    const followed = [...this.live.values()].filter((live) => isFollowed(live.state) && live.state.orchestrator.agent)
-    const changed = await Promise.all(followed.map(async (live) => {
+    const jobs = [...this.live.values()]
+      .filter((live) => isFollowed(live.state) && live.state.orchestrator.agent)
+      .map((live) => ({ id: live.state.id, agent: live.state.orchestrator.agent as string }))
+    if (jobs.length === 0 || this.clients.length === 0) return
+    const results = await Promise.all(jobs.map(async (job) => {
+      if (this.clients.length === 0) return null
+      let state: string | null = null
       try {
-        if (this.clients.length === 0) return false
-        const name = live.state.orchestrator.agent as string
-        let state: string | null = null
-        try {
-          state = (await this.d.herdr.agentGet(name))?.state ?? null
-        } catch {
-          state = null
-        }
-        if (this.clients.length === 0) return false
-        const stateChanged = state !== live.orch
-        live.orch = state
-        live.orchKnown = true
-        if (!live.badgeSeen) await this.readTranscript(live)
-        const badgeChanged = this.observeBadge(live)
-        if (stateChanged || badgeChanged) await this.sendMission(live.state.id)
-        return stateChanged || badgeChanged
-      } catch (err) {
-        console.error(err)
-        return false
+        state = (await this.d.herdr.agentGet(job.agent))?.state ?? null
+      } catch {
+        state = null
       }
+      return { id: job.id, state }
     }))
-    if (changed.some(Boolean)) await this.broadcastMissions()
+    await this.exclusive(async () => {
+      if (this.stopped) return
+      let any = false
+      for (const result of results) {
+        if (!result || this.clients.length === 0) continue
+        const live = this.live.get(result.id)
+        if (!live) continue
+        try {
+          const stateChanged = result.state !== live.orch
+          live.orch = result.state
+          live.orchKnown = true
+          if (!live.badgeSeen) await this.readTranscript(live)
+          const badgeChanged = this.observeBadge(live)
+          if (stateChanged || badgeChanged) {
+            await this.sendMission(live.state.id)
+            any = true
+          }
+        } catch (err) {
+          console.error(err)
+        }
+      }
+      if (any) await this.broadcastMissions()
+    })
   }
 
   private async pollTranscripts(): Promise<void> {
@@ -357,26 +378,80 @@ export class Hub {
       const id = live.state.id
       if (!isFollowed(live.state) && !subscribed.has(id)) continue
       try {
-        await this.readTranscript(live)
-        if (live.items === live.chatSent) continue
-        const badgeChanged = live.orchKnown && this.observeBadge(live)
-        live.chatSent = live.items
-        this.sendSub(id, { type: 'chat', id, items: live.items })
-        if (badgeChanged) {
-          await this.sendMission(id)
-          await this.broadcastMissions()
-        }
+        await this.pushTranscript(live)
       } catch (err) {
         console.error(err)
       }
     }
   }
 
+  private async pushTranscript(live: Live): Promise<void> {
+    await this.readTranscript(live)
+    const from = chatDelta(live.chatSent ?? [], live.items)
+    if (from < 0) return
+    const badgeChanged = live.orchKnown && this.observeBadge(live)
+    const items = live.items.slice(from)
+    live.chatSent = live.items
+    this.sendSub(live.state.id, { type: 'chat', id: live.state.id, from, items })
+    if (badgeChanged) {
+      await this.sendMission(live.state.id)
+      await this.broadcastMissions()
+    }
+  }
+
+  private async locateTranscript(session: string): Promise<string | null> {
+    const until = this.transcriptMisses.get(session)
+    if (until !== undefined && this.d.now().getTime() < until) return null
+    const path = await findTranscript(session, this.d.transcriptsRoot)
+    if (path) this.transcriptMisses.delete(session)
+    else this.transcriptMisses.set(session, this.d.now().getTime() + 5_000)
+    return path
+  }
+
+  private armWatch(key: string, path: string, recursive: boolean, fn: () => void): void {
+    if (this.watched.has(key) || this.stopped) return
+    let watcher: FSWatcher
+    try {
+      watcher = recursive ? watch(path, { recursive: true }, fn) : watch(path, fn)
+    } catch {
+      return
+    }
+    this.watched.add(key)
+    watcher.on('error', () => {
+      watcher.close()
+      this.watched.delete(key)
+    })
+    this.extraWatchers.push(watcher)
+  }
+
+  private armTranscript(live: Live, path: string): void {
+    this.armWatch(`tr:${path}`, path, false, () => {
+      void this.exclusive(async () => {
+        if (this.stopped) return
+        await this.pushTranscript(live)
+      })
+    })
+  }
+
+  private armDocs(live: Live): void {
+    const root = live.state.worktree
+    if (!root) return
+    const dir = join(root, 'docs', 'superpowers')
+    this.armWatch(`doc:${dir}`, dir, true, () => {
+      void this.exclusive(async () => {
+        if (this.stopped) return
+        await this.sendDoc(live.state.id, 'spec')
+        await this.sendDoc(live.state.id, 'plan')
+      })
+    })
+  }
+
   private async readTranscript(live: Live): Promise<void> {
     const session = live.state.orchestrator.sessionId
     if (!session) return
-    const path = live.readerPath ?? await findTranscript(session, this.d.transcriptsRoot)
+    const path = live.readerPath ?? await this.locateTranscript(session)
     if (!path) return
+    this.armTranscript(live, path)
     let mark: string
     try {
       const info = await stat(path)
@@ -403,6 +478,7 @@ export class Hub {
     for (const id of ids) {
       const live = this.live.get(id)
       if (!live) continue
+      this.armDocs(live)
       for (const kind of ['spec', 'plan'] as const) {
         try {
           const mark = await this.docMark(live.state, kind)
@@ -434,46 +510,67 @@ export class Hub {
   }
 
   private async pollAgents(): Promise<void> {
-    const ids = new Set<string>()
+    const jobs: { id: string; ref: ReturnType<typeof agentRefs>[number] }[] = []
+    const seen = new Set<string>()
     for (const client of this.clients) {
-      if (client.sub.agents && client.sub.mission) ids.add(client.sub.mission)
-    }
-    for (const id of ids) {
-      if (this.clients.length === 0) return
-      const live = this.live.get(id)
+      if (!client.sub.agents || !client.sub.mission) continue
+      const live = this.live.get(client.sub.mission)
       if (!live) continue
-      const refs = agentRefs(live.state)
-      const views = await mapLimit(refs, 8, async (ref) => {
-        let state: string | null = null
-        try {
-          state = (await this.d.herdr.agentGet(ref.name))?.state ?? null
-        } catch {
-          state = null
-        }
-        let tail = ''
-        try {
-          tail = await this.d.herdr.agentRead(ref.name, 5)
-        } catch {
-          tail = ''
-        }
-        const prev = live.activity.get(ref.name)
-        let lastActivityAt = prev?.lastActivityAt
-        if (!prev || prev.tail !== tail) {
-          lastActivityAt = this.d.now().toISOString()
-          live.activity.set(ref.name, { tail, lastActivityAt })
-        }
-        return {
-          ...ref,
-          state,
-          tail,
-          ...(lastActivityAt ? { lastActivityAt } : {}),
-        }
-      })
-      const json = JSON.stringify(views)
-      if (json === live.agentsJson) continue
-      live.agentsJson = json
-      this.sendSub(id, { type: 'agents', id, agents: views })
+      for (const ref of agentRefs(live.state)) {
+        const key = `${client.sub.mission}\0${ref.name}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        jobs.push({ id: client.sub.mission, ref })
+      }
     }
+    if (jobs.length === 0 || this.clients.length === 0) return
+    const fetched = await mapLimit(jobs, 8, async (job) => {
+      let state: string | null = null
+      try {
+        state = (await this.d.herdr.agentGet(job.ref.name))?.state ?? null
+      } catch {
+        state = null
+      }
+      let tail = ''
+      try {
+        tail = await this.d.herdr.agentRead(job.ref.name, 5)
+      } catch {
+        tail = ''
+      }
+      return { id: job.id, ref: job.ref, state, tail }
+    })
+    await this.exclusive(async () => {
+      if (this.stopped || this.clients.length === 0) return
+      const byId = new Map<string, typeof fetched>()
+      for (const row of fetched) {
+        const list = byId.get(row.id) ?? []
+        list.push(row)
+        byId.set(row.id, list)
+      }
+      for (const [id, rows] of byId) {
+        const live = this.live.get(id)
+        if (!live) continue
+        if (!this.clients.some((client) => client.sub.agents && client.sub.mission === id)) continue
+        const views = rows.map((row) => {
+          const prev = live.activity.get(row.ref.name)
+          let lastActivityAt = prev?.lastActivityAt
+          if (!prev || prev.tail !== row.tail) {
+            lastActivityAt = this.d.now().toISOString()
+            live.activity.set(row.ref.name, { tail: row.tail, lastActivityAt })
+          }
+          return {
+            ...row.ref,
+            state: row.state,
+            tail: row.tail,
+            ...(lastActivityAt ? { lastActivityAt } : {}),
+          }
+        })
+        const json = JSON.stringify(views)
+        if (json === live.agentsJson) continue
+        live.agentsJson = json
+        this.sendSub(id, { type: 'agents', id, agents: views })
+      }
+    })
   }
 
   private observeBadge(live: Live): boolean {
@@ -552,6 +649,41 @@ export class Hub {
     this.notify(`badge:${s.id}:${badge}`, s, title)
   }
 
+  private async projectStamp(): Promise<string> {
+    const parts: string[] = []
+    for (const dir of projectDirs()) {
+      let names: string[]
+      try {
+        names = await readdir(dir)
+      } catch {
+        continue
+      }
+      for (const name of names) {
+        const file = join(dir, name, 'config.ts')
+        try {
+          const info = await stat(file)
+          parts.push(`${file}:${info.mtimeMs}:${info.size}`)
+        } catch {
+          parts.push(`${file}:-`)
+        }
+      }
+    }
+    parts.sort()
+    return parts.join('|')
+  }
+
+  private async projectViews(): Promise<{ name: string; repoPath: string; preflight: string[] }[]> {
+    const stamp = await this.projectStamp()
+    if (this.projectsCache?.stamp === stamp) return this.projectsCache.projects
+    const projects = (await listProjects()).map((found) => ({
+      name: found.config.name,
+      repoPath: found.config.repoPath,
+      preflight: found.config.preflight.map((check) => check.label),
+    }))
+    this.projectsCache = { stamp, projects }
+    return projects
+  }
+
   private async missionsEvent(): Promise<Extract<ServerEvent, { type: 'missions' }>> {
     const now = this.d.now()
     const summaries: MissionSummary[] = []
@@ -559,11 +691,7 @@ export class Hub {
       const pr = live.state.prUrl ? this.d.prCache.get(live.state.prUrl) : undefined
       summaries.push(summarize(live.state, pr, live.badge, now))
     }
-    const projects = (await listProjects()).map((found) => ({
-      name: found.config.name,
-      repoPath: found.config.repoPath,
-      preflight: found.config.preflight.map((check) => check.label),
-    }))
+    const projects = await this.projectViews()
     const missions = sortSummaries(summaries)
     return {
       type: 'missions',

@@ -132,9 +132,10 @@ export function SidePanel({ missionId, state, spec, plan, ouvert, onTab, onLayou
     <>
       <div role="tablist" aria-label="Contexte">
         {onglets.map((onglet) => {
+          const agentEnAttente = gates.some((gate) => gate.kind === 'agent-bloque' && gate.status === 'pending')
           const point = (onglet.id === 'spec' && spec?.source === 'proposition')
             || (onglet.id === 'plan' && plan?.source === 'proposition')
-            || (onglet.id === 'agents' && agents.some((agent) => agentAmbre(agent, gates)))
+            || (onglet.id === 'agents' && (agentEnAttente || agents.some((agent) => agentAmbre(agent, gates))))
             || (onglet.id === 'checks' && checkRecentRouge(checks))
           return (
             <button

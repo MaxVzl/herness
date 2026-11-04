@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
+import type { PromptOutcome } from '../../src/herdr/client.ts'
 import type { MissionState } from '../../src/mission/state.ts'
 import { newState } from '../../src/mission/state.ts'
 import { missionDir } from '../../src/paths.ts'
@@ -60,6 +61,8 @@ async function boot(over: {
   state?: MissionState | null
   actionDeps?: Partial<ActionDeps>
   agentGet?: (name: string) => Promise<{ state: string } | null>
+  agentPrompt?: (name: string, text: string, opts: { wait: boolean }) => Promise<PromptOutcome>
+  projects?: () => Promise<{ name: string; repoPath: string }[]>
   spawn?: Spawner
   confirmTimeoutMs?: number
   focused?: string[]
@@ -86,10 +89,12 @@ async function boot(over: {
         depsCwds.push(cwd)
         return { ...actionDeps, cwd }
       },
+      ...(over.projects ? { projects: over.projects } : {}),
       herdr: {
-        agentPrompt: async (name: string, text: string, opts: { wait: boolean }) => {
+        agentPrompt: async (name: string, text: string, opts: { wait: boolean }): Promise<PromptOutcome> => {
           prompts.push({ name, text, wait: opts.wait })
-          return 'sent' as const
+          if (over.agentPrompt) return over.agentPrompt(name, text, opts)
+          return 'sent'
         },
         agentGet: over.agentGet ?? (async (name: string) => (name === 'o-m1' ? { state: 'idle' } : null)),
         agentRead: async (name: string, lines: number) => {
@@ -267,11 +272,38 @@ test('message envoie le texte exact sans attendre ; un agent absent le dit', asy
 
   const empty = await present.post('/api/missions/m1/message', { texte: '  ' })
   expect(empty.status).toBe(400)
+
+  const blocked = await boot({ agentPrompt: async () => 'blocked' })
+  const refused = await blocked.post('/api/missions/m1/message', { texte: 'bonjour' })
+  expect(refused.status).toBe(200)
+  expect(await refused.json()).toEqual({ ok: false, lines: ['orchestrateur bloqué dans herdr'] })
+
+  const stalled = await boot({ agentPrompt: async () => 'stalled' })
+  expect(await (await stalled.post('/api/missions/m1/message', { texte: 'bonjour' })).json()).toEqual({
+    ok: false,
+    lines: ['orchestrateur sans nouvelle sortie (stalled)'],
+  })
+
+  const timed = await boot({ agentPrompt: async () => 'timeout' })
+  expect(await (await timed.post('/api/missions/m1/message', { texte: 'bonjour' })).json()).toEqual({
+    ok: false,
+    lines: ['délai dépassé'],
+  })
+
+  const broken = await boot({
+    agentPrompt: async () => {
+      throw new Error('herdr cassé')
+    },
+  })
+  const failed = await broken.post('/api/missions/m1/message', { texte: 'bonjour' })
+  expect(failed.status).toBe(200)
+  expect(await failed.json()).toEqual({ ok: false, lines: ['herdr cassé'] })
 })
 
-test('créer une mission appelle start avec la demande, le projet et la note, et rend l\'id', async () => {
+test('créer une mission résout le nom du projet et passe son repoPath comme cwd', async () => {
   const seen: unknown[] = []
   const h = await boot({
+    projects: async () => [{ name: 'beta', repoPath: '/depot/beta' }],
     actionDeps: {
       start: (async (input: string, cwd: string, deps: { out: (l: string) => void }, opts?: { note?: string }) => {
         seen.push([input, cwd, opts?.note])
@@ -280,11 +312,17 @@ test('créer une mission appelle start avec la demande, le projet et la note, et
       }) as never,
     },
   })
-  const res = await h.post('/api/missions', { projet: '/repo', demande: 'une demande', note: 'précision' })
+  const res = await h.post('/api/missions', { projet: 'beta', demande: 'une demande', note: 'précision' })
   expect(res.status).toBe(200)
   expect(await res.json()).toEqual({ ok: true, lines: ['Mission m9 lancée'], id: 'm9' })
-  expect(seen).toEqual([['une demande', '/repo', 'précision']])
-  expect(h.depsCwds).toEqual(['/repo'])
+  expect(seen).toEqual([['une demande', '/depot/beta', 'précision']])
+  expect(h.depsCwds).toEqual(['/depot/beta'])
+
+  const before = h.depsCwds.length
+  const unknown = await h.post('/api/missions', { projet: '/depot/beta', demande: 'une demande' })
+  expect(unknown.status).toBe(400)
+  expect(await unknown.json()).toEqual({ ok: false, lines: ['projet inconnu'] })
+  expect(h.depsCwds).toHaveLength(before)
 })
 
 test('ouvrir ajoute la ligne qui demande de basculer sur herdr', async () => {
@@ -314,6 +352,11 @@ test('la sortie d\'un agent hors mission est 404 et lignes est plafonné à 2000
   const orchestrator = await h.get('/api/missions/m1/agents/o-m1/sortie?lignes=3')
   expect(orchestrator.status).toBe(200)
   expect(await orchestrator.text()).toBe('sortie:o-m1:3')
+
+  const negative = await h.get('/api/missions/m1/agents/worker/sortie?lignes=-5')
+  expect(await negative.text()).toBe('sortie:worker:1')
+  const zero = await h.get('/api/missions/m1/agents/worker/sortie?lignes=0')
+  expect(await zero.text()).toBe('sortie:worker:1')
 })
 
 test('une mission inconnue répond 404', async () => {

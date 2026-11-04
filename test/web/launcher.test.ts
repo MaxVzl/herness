@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { readFileSync, readlinkSync, writeFileSync } from 'node:fs'
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer, request } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -183,12 +183,22 @@ test('--arreter envoie SIGTERM, attend la fin et supprime web.json', async () =>
   await expect(stat(webInfoPath())).rejects.toThrow()
 })
 
-test('--arreter attend au plus 5 s puis supprime web.json même si le pid vit encore', async () => {
+test('--arreter attend au plus 5 s et garde web.json si le pid vit encore', async () => {
   await writeWebInfo(info)
-  const { sleeps, deps } = harness({ isAlive: () => true })
-  expect(await webCommand({ port: 4747, arreter: true }, deps)).toBe(0)
+  const { sleeps, lines, deps } = harness({ isAlive: () => true })
+  expect(await webCommand({ port: 4747, arreter: true }, deps)).toBe(1)
   expect(sleeps).toEqual(Array.from({ length: 50 }, () => 100))
-  await expect(stat(webInfoPath())).rejects.toThrow()
+  expect(lines).toEqual(['le serveur tourne encore (pid 4242)'])
+  await expect(stat(webInfoPath())).resolves.toBeTruthy()
+})
+
+test('--redemarrer ne relance pas si le serveur tourne encore', async () => {
+  await writeWebInfo(info)
+  const { calls, lines, deps } = harness({ isAlive: () => true })
+  expect(await webCommand({ port: 4747, redemarrer: true }, deps)).toBe(1)
+  expect(calls).toEqual([])
+  expect(lines).toEqual(['le serveur tourne encore (pid 4242)'])
+  await expect(stat(webInfoPath())).resolves.toBeTruthy()
 })
 
 test('--arreter sans serveur : message et code 0', async () => {
@@ -299,6 +309,15 @@ test('SIGTERM ferme le serveur même si un client SSE est connecté', async () =
     kill()
   }
 }, 20_000)
+
+test('un démarrage détaché raté affiche la dernière ligne du journal', async () => {
+  const { lines, deps } = harness()
+  const log = join(home, 'logs', 'web.log')
+  await mkdir(join(home, 'logs'), { recursive: true })
+  await writeFile(log, 'écoute impossible\nport 4747 déjà utilisé par un autre programme\n')
+  expect(await webCommand({ port: 4747 }, deps)).toBe(1)
+  expect(lines).toEqual(["le serveur n'a pas démarré : port 4747 déjà utilisé par un autre programme"])
+})
 
 test('web.json absent après 10 s : code 1 et le chemin du journal', async () => {
   const { calls, lines, sleeps, deps } = harness()

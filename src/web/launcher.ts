@@ -118,8 +118,22 @@ async function stop(d: LauncherDeps, quiet: boolean): Promise<number> {
   }
   d.kill(info.pid, 'SIGTERM')
   for (let i = 0; i < STOP_STEPS && d.isAlive(info.pid); i++) await d.sleep(WAIT_STEP_MS)
+  if (d.isAlive(info.pid)) {
+    if (!quiet) d.out(`le serveur tourne encore (pid ${info.pid})`)
+    return 1
+  }
   await removeWebInfo()
   return 0
+}
+
+async function lastLogLine(log: string): Promise<string> {
+  try {
+    const line = (await readFile(log, 'utf8')).trim().split('\n').at(-1)?.trim()
+    if (line) return line
+  } catch {
+    // journal absent
+  }
+  return `voir ${log}`
 }
 
 async function waitForStart(d: LauncherDeps): Promise<WebInfo | null> {
@@ -146,7 +160,7 @@ async function launch(o: { sansNavigateur?: boolean; port: number }, d: Launcher
   }
   const info = await waitForStart(d)
   if (!info) {
-    d.out(`le serveur n'a pas démarré : voir ${log}`)
+    d.out(`le serveur n'a pas démarré : ${await lastLogLine(log)}`)
     return 1
   }
   return show(info, o, d)
@@ -161,7 +175,14 @@ export async function webCommand(
     d.out('lance herness web depuis un panneau herdr')
     return 1
   }
-  if (o.redemarrer) await stop(d, true)
+  if (o.redemarrer) {
+    const code = await stop(d, true)
+    if (code !== 0) {
+      const still = await readWebInfo(d.isAlive)
+      d.out(`le serveur tourne encore (pid ${still?.pid ?? '?'})`)
+      return code
+    }
+  }
   if (o.premierPlan) {
     await runForeground(o.port)
     return 0

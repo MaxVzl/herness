@@ -2,11 +2,11 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { implName } from '../../src/agents/names.ts'
 import { listProjects } from '../../src/config/project.ts'
 import { newState, saveState, type MissionState } from '../../src/mission/state.ts'
-import { missionDir, missionsRoot } from '../../src/paths.ts'
+import { missionDir, missionsRoot, specPath } from '../../src/paths.ts'
 import { newToken } from '../../src/web/auth.ts'
 import { Hub, type HubDeps, type HubHerdr } from '../../src/web/hub.ts'
 import type { ServerEvent } from '../../src/web/protocol.ts'
@@ -635,4 +635,115 @@ test('GET /api/evenements pousse les événements en flux SSE', async () => {
   })
   expect(text).toContain('data: ')
   expect(text).toContain('"type":"missions"')
+})
+
+test('transcript et spec sont poussés sans attendre herdr, et le chat n envoie que la nouveauté', async () => {
+  let release: () => void = () => {}
+  const hung = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const herdr = scriptedHerdr()
+  const inner = herdr.agentGet.bind(herdr)
+  let entered = false
+  herdr.agentGet = async (name: string) => {
+    entered = true
+    await hung
+    return inner(name)
+  }
+  const id = 'm-direct'
+  const work = await mkdtemp(join(tmpdir(), 'herness-wt-'))
+  const state = mk({
+    id,
+    slug: 'direct',
+    step: 'tasks',
+    worktree: work,
+    orchestrator: { agent: 'orch-direct', sessionId: 'sess-direct' },
+  })
+  await saveState(state)
+  const path = await transcript('sess-direct', line('user', 'u1', 'bonjour'))
+  await mkdir(join(work, 'docs', 'superpowers', 'specs'), { recursive: true })
+  const hub = new Hub({ ...deps(herdr), tickMs: 20 })
+  hubs.push(hub)
+  try {
+    await hub.start()
+    const events: ServerEvent[] = []
+    hub.attach((event) => events.push(event), { mission: id, agents: false })
+    await waitFor(() => events.some((event) => event.type === 'chat'))
+    await waitFor(() => entered)
+    const before = events.length
+    await writeFile(path, line('assistant', 'a1', 'je commence'), { flag: 'a' })
+    await waitFor(() => events.slice(before).some((event) => (
+      event.type === 'chat' && event.items.some((item) => item.kind === 'assistant' && item.text === 'je commence')
+    )))
+    const chat = events.slice(before).find((event) => event.type === 'chat')
+    expect(chat).toMatchObject({ from: 1 })
+    if (chat?.type === 'chat') expect(chat.items).toHaveLength(1)
+    await writeFile(join(work, specPath(state)), '# Spec live\n')
+    await waitFor(() => events.slice(before).some((event) => (
+      event.type === 'doc' && event.kind === 'spec' && event.doc.source === 'worktree' && event.doc.text.includes('Spec live')
+    )))
+  } finally {
+    release()
+    await rm(work, { recursive: true, force: true })
+  }
+})
+
+test('un transcript encore absent n est pas recherché avant quelques secondes', async () => {
+  let now = new Date('2026-11-04T10:00:00.000Z')
+  const herdr = scriptedHerdr()
+  const id = 'm-absent'
+  await saveState(mk({
+    id,
+    step: 'tasks',
+    orchestrator: { agent: 'orch-absent', sessionId: 'sess-absent' },
+  }))
+  const hub = new Hub(deps(herdr, () => now))
+  hubs.push(hub)
+  await hub.start()
+  const events: ServerEvent[] = []
+  hub.attach((event) => events.push(event), { mission: id, agents: false })
+  await waitFor(() => events.some((event) => event.type === 'checks'))
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  await transcript('sess-absent', line('user', 'u1', 'tard'))
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  const arrived = () => events.some((event) => (
+    event.type === 'chat' && event.items.some((item) => item.kind === 'user' && item.text === 'tard')
+  ))
+  expect(arrived()).toBe(false)
+  now = new Date('2026-11-04T10:00:06.000Z')
+  await waitFor(arrived)
+})
+
+test('une config de projet invalide n est journalisée qu une fois tant qu elle ne change pas', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'herness-proj-'))
+  const previous = process.env.HERNESS_PROJECTS_DIR
+  process.env.HERNESS_PROJECTS_DIR = dir
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await mkdir(join(dir, 'casse'), { recursive: true })
+    await writeFile(join(dir, 'casse', 'config.ts'), 'export default { name: 1 }\n')
+    const herdr = scriptedHerdr()
+    const id = 'm-proj'
+    const state = mk({ id, slug: 'proj', step: 'spec' })
+    await saveState(state)
+    const hub = new Hub(deps(herdr))
+    hubs.push(hub)
+    await hub.start()
+    const events: ServerEvent[] = []
+    hub.attach((event) => events.push(event), { agents: false })
+    await waitFor(() => events.some((event) => event.type === 'missions'))
+    const logs = () => spy.mock.calls.filter((call) => String(call[0]).includes(join(dir, 'casse', 'config.ts'))).length
+    const n = logs()
+    expect(n).toBeGreaterThan(0)
+    state.step = 'bloquée'
+    state.blockedReason = 'tests rouges'
+    await saveState(state)
+    await waitFor(() => events.some((event) => event.type === 'notification' && event.key === `bloquee:${id}`))
+    expect(logs()).toBe(n)
+  } finally {
+    spy.mockRestore()
+    if (previous === undefined) delete process.env.HERNESS_PROJECTS_DIR
+    else process.env.HERNESS_PROJECTS_DIR = previous
+    await rm(dir, { recursive: true, force: true })
+  }
 })

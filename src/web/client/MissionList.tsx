@@ -59,6 +59,7 @@ export function MissionList({ state, selected, onSelect, onNew }: {
   const [project, setProject] = useState(readProject)
   const [showHidden, setShowHidden] = useState(false)
   const label = project || 'tous'
+  const hiddenHere = state.missions.filter((mission) => mission.hidden && (!project || mission.project === project)).length
   const rows = state.missions.filter((mission) => {
     if (project && mission.project !== project) return false
     if (!showHidden && mission.hidden) return false
@@ -103,9 +104,9 @@ export function MissionList({ state, selected, onSelect, onNew }: {
           )
         })}
       </ul>
-      {!showHidden && state.hiddenCount > 0 ? (
-        <button type="button" className="masquees" onClick={() => setShowHidden(true)}>
-          {state.hiddenCount} missions terminées masquées · afficher
+      {hiddenHere > 0 ? (
+        <button type="button" className="masquees" onClick={() => setShowHidden((value) => !value)}>
+          {showHidden ? 'masquer les missions terminées' : `${hiddenHere} missions terminées masquées · afficher`}
         </button>
       ) : null}
       <button type="button" className="nouvelle" onClick={onNew}>+ Nouvelle mission</button>
