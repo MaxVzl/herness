@@ -40,14 +40,21 @@ async function serveMissionFile(req: IncomingMessage, res: ServerResponse, match
     plain(res, 400, '')
     return
   }
+  let realRoot: string
+  try {
+    realRoot = await realpath(root)
+  } catch (err) {
+    plain(res, ioStatus(err), '')
+    return
+  }
   let real: string
   try {
     real = await realpath(resolved)
   } catch (err) {
-    plain(res, code(err) === 'ENOENT' ? 404 : 400, '')
+    plain(res, ioStatus(err), '')
     return
   }
-  if (!real.startsWith(prefix)) {
+  if (!real.startsWith(realRoot + sep)) {
     plain(res, 400, '')
     return
   }
@@ -55,24 +62,34 @@ async function serveMissionFile(req: IncomingMessage, res: ServerResponse, match
   try {
     info = await stat(real)
   } catch (err) {
-    plain(res, code(err) === 'ENOENT' ? 404 : 400, '')
+    plain(res, ioStatus(err), '')
     return
   }
   if (!info.isFile()) {
     plain(res, 404, '')
     return
   }
-  const file = await open(real, 'r')
+  let file: Awaited<ReturnType<typeof open>>
+  try {
+    file = await open(real, 'r')
+  } catch (err) {
+    plain(res, ioStatus(err), '')
+    return
+  }
   try {
     if (info.size <= MAX_BYTES) {
       const buf = Buffer.alloc(info.size)
-      if (info.size > 0) await file.read(buf, 0, info.size, 0)
-      plain(res, 200, buf)
+      if (info.size === 0) {
+        plain(res, 200, buf)
+        return
+      }
+      const { bytesRead } = await file.read(buf, 0, info.size, 0)
+      plain(res, 200, buf.subarray(0, bytesRead))
       return
     }
     const tail = Buffer.alloc(MAX_BYTES)
-    await file.read(tail, 0, MAX_BYTES, info.size - MAX_BYTES)
-    plain(res, 200, Buffer.concat([Buffer.from(TRUNCATED), tail]))
+    const { bytesRead } = await file.read(tail, 0, MAX_BYTES, info.size - MAX_BYTES)
+    plain(res, 200, Buffer.concat([Buffer.from(TRUNCATED), utf8Tail(tail.subarray(0, bytesRead))]))
   } finally {
     await file.close()
   }
@@ -90,6 +107,21 @@ function decode(raw: string | undefined): string | undefined {
 function code(err: unknown): string | undefined {
   if (typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string') return err.code
   return undefined
+}
+
+function ioStatus(err: unknown): 404 | 500 {
+  return code(err) === 'ENOENT' ? 404 : 500
+}
+
+/** Ote les octets de continuation UTF-8 laissés en tête par une coupure au milieu d'un caractère. */
+function utf8Tail(buf: Buffer): Buffer {
+  let start = 0
+  while (start < buf.length) {
+    const byte = buf[start]
+    if (byte === undefined || (byte & 0xc0) !== 0x80) break
+    start++
+  }
+  return start === 0 ? buf : buf.subarray(start)
 }
 
 function plain(res: ServerResponse, status: number, body: string | Buffer): void {
