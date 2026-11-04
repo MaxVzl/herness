@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { ActionResponse } from '../protocol.ts'
+import type { Gate } from '../../mission/state.ts'
+import type { ActionResponse, ChatItem } from '../protocol.ts'
 import { ActionBanner } from './ActionBanner.tsx'
 import { post } from './api.ts'
+import { Chat } from './Chat.tsx'
 import { ConnectionBanner } from './ConnectionBanner.tsx'
 import { ConfirmDialog } from './Dialogs.tsx'
+import { GateCards } from './GateCards.tsx'
 import { MissionHeader } from './MissionHeader.tsx'
 import { MissionList } from './MissionList.tsx'
 import { NewMissionForm } from './NewMissionForm.tsx'
@@ -33,6 +36,14 @@ function missionFromHash(): string | undefined {
   }
 }
 
+const emptyChat: ChatItem[] = []
+
+function gatesOf(state: unknown): Gate[] {
+  if (!state || typeof state !== 'object' || !('gates' in state)) return []
+  const gates = (state as { gates?: unknown }).gates
+  return Array.isArray(gates) ? gates as Gate[] : []
+}
+
 function readProject(): string {
   try {
     return localStorage.getItem('herness.projet') ?? ''
@@ -47,6 +58,7 @@ export function App({ source }: { source?: (url: string) => EventSource } = {}) 
   const [defaultProject, setDefaultProject] = useState('')
   const [result, setResult] = useState<ActionResponse | null>(null)
   const [answered, setAnswered] = useState<string[]>([])
+  const [onglet, setOnglet] = useState<'spec' | 'plan' | null>(null)
   useEffect(() => {
     const onHash = () => setSelected(missionFromHash())
     const root = browser()
@@ -126,8 +138,25 @@ export function App({ source }: { source?: (url: string) => EventSource } = {}) 
             onNo={() => reply(pending.confirmId, false)}
           />
         ) : null}
+        {!creating && summary && missionDetail ? (
+          <div className="conversation-corps">
+            <Chat
+              missionId={summary.id}
+              items={state.chats[summary.id] ?? emptyChat}
+              orchestratorState={missionDetail.orchestrator.state}
+              onOpenHerdr={() => {
+                void post(`/api/missions/${encodeURIComponent(summary.id)}/ouvrir`).then(setResult)
+              }}
+            />
+            <GateCards
+              missionId={summary.id}
+              gates={gatesOf(missionDetail.state)}
+              onOpenDoc={setOnglet}
+            />
+          </div>
+        ) : null}
       </section>
-      <section className="contexte" />
+      <section className="contexte" data-onglet={onglet ?? ''} />
     </div>
   )
 }

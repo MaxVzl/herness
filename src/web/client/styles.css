@@ -160,3 +160,106 @@ body {
 .nouvelle {
   margin-top: auto;
 }
+
+.conversation {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.conversation-corps,
+.chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.fil {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.bulle {
+  max-width: 42rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.bulle p {
+  margin: 0;
+}
+
+.bulle.droite {
+  align-self: flex-end;
+}
+
+.bulle.gauche {
+  align-self: flex-start;
+}
+
+.moteur {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--amber);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.bas {
+  border-top: 1px solid var(--line);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bandeau {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--amber);
+  color: #1c1917;
+}
+
+.nouveaux {
+  align-self: center;
+  margin: 4px;
+}
+
+.saisie textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  resize: vertical;
+}
+
+.porte {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.porte p {
+  margin: 0 0 4px;
+}
+
+.markdown p {
+  margin: 0;
+}
+
+.action-detail pre {
+  white-space: pre-wrap;
+  margin: 4px 0;
+}
