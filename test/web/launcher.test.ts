@@ -1,12 +1,17 @@
+import { spawn } from 'node:child_process'
 import { readFileSync, readlinkSync, writeFileSync } from 'node:fs'
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { createServer, request } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { VERSION } from '../../src/version.ts'
 import {
   readWebInfo,
   removeWebInfo,
+  runForeground,
   webCommand,
   webInfoPath,
   webUrl,
@@ -210,6 +215,90 @@ test('--redemarrer arrête puis démarre', async () => {
   expect(calls[1]?.args).toEqual(['http://localhost:4747/?cle=neuf'])
   expect(JSON.parse(readFileSync(webInfoPath(), 'utf8')).pid).toBe(6000)
 })
+
+test('runForeground refuse si un serveur tourne déjà et laisse son web.json', async () => {
+  const holder = createServer((_req, res) => {
+    res.end('occupe')
+  })
+  await new Promise<void>((resolve) => holder.listen(0, '127.0.0.1', () => resolve()))
+  const port = (holder.address() as AddressInfo).port
+  try {
+    await writeWebInfo({ ...info, pid: process.pid, port })
+    const before = await readFile(webInfoPath(), 'utf8')
+    await expect(runForeground(port)).rejects.toThrow(/serveur herness web tourne déjà/)
+    expect(await readFile(webInfoPath(), 'utf8')).toBe(before)
+  } finally {
+    await new Promise<void>((resolve, reject) => holder.close((err) => (err ? reject(err) : resolve())))
+  }
+})
+
+test('un échec de démarrage ne supprime pas un web.json que ce processus n’a pas écrit', async () => {
+  const holder = createServer((_req, res) => {
+    res.end('occupe')
+  })
+  await new Promise<void>((resolve) => holder.listen(0, '127.0.0.1', () => resolve()))
+  const port = (holder.address() as AddressInfo).port
+  try {
+    await writeWebInfo({ ...info, pid: 2_147_483_647, port })
+    await expect(runForeground(port)).rejects.toThrow(/déjà utilisé/)
+    expect(JSON.parse(await readFile(webInfoPath(), 'utf8')).pid).toBe(2_147_483_647)
+  } finally {
+    await new Promise<void>((resolve, reject) => holder.close((err) => (err ? reject(err) : resolve())))
+  }
+})
+
+test('SIGTERM ferme le serveur même si un client SSE est connecté', async () => {
+  const bin = fileURLToPath(new URL('../../bin/herness.js', import.meta.url))
+  const child = spawn(process.execPath, [bin, 'web', '--premier-plan', '--port', '0'], {
+    env: { ...process.env, HERDR_ENV: '1', HERNESS_HOME: home },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let stderr = ''
+  child.stderr?.on('data', (chunk: Buffer) => {
+    stderr += chunk.toString()
+  })
+  const kill = () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  }
+  try {
+    const started = Date.now()
+    let live: WebInfo | null = null
+    while (Date.now() - started < 15_000) {
+      live = await readWebInfo()
+      if (live || child.exitCode !== null) break
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    expect(live, stderr).not.toBeNull()
+    const current = live as WebInfo
+    await new Promise<void>((resolve, reject) => {
+      const req = request({
+        hostname: '127.0.0.1',
+        port: current.port,
+        path: '/api/evenements',
+        headers: { host: `127.0.0.1:${current.port}`, cookie: `herness_web=${current.token}` },
+      }, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`SSE ${res.statusCode}`))
+          res.resume()
+          return
+        }
+        res.on('data', () => {})
+        resolve()
+      })
+      req.on('error', reject)
+      req.end()
+    })
+    child.kill('SIGTERM')
+    const outcome = await Promise.race([
+      new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code))),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 3_000)),
+    ])
+    expect(outcome, stderr).not.toBe('timeout')
+    await expect(readWebInfo(() => true)).resolves.toBeNull()
+  } finally {
+    kill()
+  }
+}, 20_000)
 
 test('web.json absent après 10 s : code 1 et le chemin du journal', async () => {
   const { calls, lines, sleeps, deps } = harness()

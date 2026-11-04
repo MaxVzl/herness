@@ -87,6 +87,8 @@ export async function startWebServer(o: WebServerOptions): Promise<{ port: numbe
     port,
     url: `http://localhost:${port}/?cle=${o.token}`,
     close: () => new Promise((resolve, reject) => {
+      // Le flux SSE ne se termine pas tout seul : sans cela, close() attend tant qu'un onglet est ouvert.
+      server.closeAllConnections()
       server.close((err) => (err ? reject(err) : resolve()))
     }),
   }

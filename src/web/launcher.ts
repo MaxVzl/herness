@@ -173,11 +173,16 @@ export async function webCommand(
 
 /** Serveur au premier plan : journal sur la sortie standard, `web.json` retiré sur SIGINT ou SIGTERM. */
 export async function runForeground(port: number): Promise<void> {
+  const existing = await readWebInfo()
+  if (existing) {
+    throw new Error(`un serveur herness web tourne déjà (pid ${existing.pid}) : herness web --redemarrer`)
+  }
   const token = newToken()
   const log = (line: string) => console.log(line)
   const herdr = new Herdr(log)
   const hub = new Hub({ herdr, prCache: new PrCache(), now: () => new Date() })
   let server: Awaited<ReturnType<typeof startWebServer>> | undefined
+  let wrote = false
   try {
     await hub.start()
     server = await startWebServer({
@@ -194,6 +199,7 @@ export async function runForeground(port: number): Promise<void> {
       startedAt: new Date().toISOString(),
     }
     await writeWebInfo(info)
+    wrote = true
     console.log(`herness web écoute sur 127.0.0.1:${server.port}`)
     await new Promise<void>((resolve) => {
       const end = () => resolve()
@@ -201,11 +207,14 @@ export async function runForeground(port: number): Promise<void> {
       process.once('SIGTERM', end)
     })
   } finally {
-    await removeWebInfo()
     try {
+      await hub.stop()
       if (server) await server.close()
     } finally {
-      await hub.stop()
+      if (wrote) {
+        const current = await readWebInfo(() => true)
+        if (current?.pid === process.pid) await removeWebInfo()
+      }
     }
   }
 }
