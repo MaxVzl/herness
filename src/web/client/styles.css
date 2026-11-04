@@ -54,3 +54,109 @@ body {
 .conversation {
   border-right: 1px solid var(--line);
 }
+
+.missions {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+}
+
+.connexion {
+  margin: 0;
+  padding: 6px 10px;
+  background: var(--amber);
+  color: #1c1917;
+  font-size: 13px;
+}
+
+.mission-colonne {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.mission-entete {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mission-entete select,
+.mission-entete button,
+.masquees,
+.nouvelle {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mission-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  flex: 1;
+}
+
+.mission-liste li {
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+}
+
+.mission-liste li.ambre {
+  border-left-color: var(--amber);
+}
+
+.mission-liste li.rouge {
+  border-left-color: var(--red);
+}
+
+.mission-liste li.grise {
+  color: var(--done);
+}
+
+.mission-ligne {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mission-ligne[aria-current='true'] {
+  background: var(--bg);
+}
+
+.mission-id,
+.mission-projet,
+.mission-statut,
+.mission-badge {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mission-titre {
+  font-size: 14px;
+}
+
+.masquees,
+.nouvelle {
+  margin: 8px 10px;
+}
+
+.nouvelle {
+  margin-top: auto;
+}
