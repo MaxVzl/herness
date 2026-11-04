@@ -409,6 +409,101 @@ test('un badge déjà présent sur la mission abonnée n\'est pas notifié', asy
   expect(events.filter((event) => event.type === 'notification')).toEqual([])
 })
 
+test('un badge déjà présent sur une mission non abonnée n\'est pas notifié', async () => {
+  const herdr = scriptedHerdr()
+  herdr.set('orch-idle', 'idle', '')
+  const id = 'm-idle'
+  await saveState(mk({
+    id,
+    slug: 'idle',
+    step: 'tasks',
+    orchestrator: { agent: 'orch-idle', sessionId: 'sess-idle' },
+  }))
+  await transcript('sess-idle', line('assistant', 'a1', 'à toi'))
+  const hub = new Hub(deps(herdr))
+  hubs.push(hub)
+  await hub.start()
+  const events: ServerEvent[] = []
+  hub.attach((event) => events.push(event), { agents: false })
+  await waitFor(() => events.some((event) => event.type === 'missions'
+    && event.missions.some((mission) => mission.id === id && mission.badge === 'attend-reponse')))
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  expect(events.filter((event) => event.type === 'notification')).toEqual([])
+})
+
+test('les lectures d\'agents restent bornées', async () => {
+  const herdr = scriptedHerdr()
+  const id = 'm-foule'
+  const panes: Record<string, string> = {}
+  for (let n = 1; n <= 12; n++) {
+    const name = implName(id, n)
+    panes[name] = `p${n}`
+    herdr.set(name, 'idle', 'ligne')
+  }
+  let inFlight = 0
+  let maxInFlight = 0
+  const occupy = async (): Promise<void> => {
+    inFlight += 1
+    maxInFlight = Math.max(maxInFlight, inFlight)
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    inFlight -= 1
+  }
+  herdr.agentGet = async (name) => {
+    herdr.gets.push(name)
+    await occupy()
+    return { state: 'idle' }
+  }
+  herdr.agentRead = async (name) => {
+    herdr.reads.push(name)
+    await occupy()
+    return 'ligne'
+  }
+  await saveState(mk({
+    id,
+    step: 'tasks',
+    herdr: { tabs: {}, panes },
+  }))
+  const hub = new Hub(deps(herdr))
+  hubs.push(hub)
+  await hub.start()
+  const events: ServerEvent[] = []
+  hub.attach((event) => events.push(event), { mission: id, agents: true })
+  await waitFor(() => events.some((event) => event.type === 'agents' && event.agents.length === 12))
+  expect(maxInFlight).toBeGreaterThan(1)
+  expect(maxInFlight).toBeLessThanOrEqual(8)
+})
+
+test('un cache de PR qui lève ne laisse pas un rejet non traité', async () => {
+  const herdr = scriptedHerdr()
+  await saveState(mk({
+    id: 'm-cache',
+    step: 'pr-ouverte',
+    prUrl: 'https://github.com/o/r/pull/9',
+  }))
+  const rejections: unknown[] = []
+  const onRejection = (err: unknown): void => {
+    rejections.push(err)
+  }
+  process.on('unhandledRejection', onRejection)
+  try {
+    const hub = new Hub({
+      ...deps(herdr),
+      prCache: {
+        get: () => {
+          throw new Error('cache cassé')
+        },
+        refresh: async () => {},
+      },
+    })
+    hubs.push(hub)
+    await hub.start()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(rejections).toEqual([])
+  } finally {
+    process.off('unhandledRejection', onRejection)
+  }
+})
+
 test('un tour lent n\'empile pas les suivants', async () => {
   const herdr = scriptedHerdr()
   let calls = 0

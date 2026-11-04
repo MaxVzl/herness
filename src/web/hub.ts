@@ -44,11 +44,30 @@ interface Live {
   transcriptMark?: string
   docs: Map<'spec' | 'plan', string>
   docMarks: Map<'spec' | 'plan', string>
+  /** Dernier transcript déjà envoyé aux abonnés. */
+  chatSent?: ChatItem[]
   activity: Map<string, { tail: string; lastActivityAt: string }>
   agentsJson?: string
 }
 
 const MISSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
+
+async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = []
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next
+      next += 1
+      const item = items[index]
+      if (item === undefined) continue
+      out[index] = await fn(item)
+    }
+  }
+  const workers = Math.min(limit, items.length)
+  if (workers > 0) await Promise.all(Array.from({ length: workers }, () => worker()))
+  return out
+}
 
 function isFollowed(s: MissionState): boolean {
   return s.step !== 'pr-ouverte' && s.step !== 'fermée'
@@ -290,6 +309,7 @@ export class Hub {
       await this.readTranscript(live)
       client.send(await this.missionEvent(live))
       client.send({ type: 'chat', id, items: live.items })
+      live.chatSent = live.items
       for (const kind of ['spec', 'plan'] as const) {
         const doc = await readDoc(live.state, kind)
         live.docs.set(kind, JSON.stringify(doc))
@@ -318,6 +338,7 @@ export class Hub {
         const stateChanged = state !== live.orch
         live.orch = state
         live.orchKnown = true
+        if (!live.badgeSeen) await this.readTranscript(live)
         const badgeChanged = this.observeBadge(live)
         if (stateChanged || badgeChanged) await this.sendMission(live.state.id)
         return stateChanged || badgeChanged
@@ -336,10 +357,10 @@ export class Hub {
       const id = live.state.id
       if (!isFollowed(live.state) && !subscribed.has(id)) continue
       try {
-        const before = live.items
         await this.readTranscript(live)
-        if (live.items === before) continue
+        if (live.items === live.chatSent) continue
         const badgeChanged = live.orchKnown && this.observeBadge(live)
+        live.chatSent = live.items
         this.sendSub(id, { type: 'chat', id, items: live.items })
         if (badgeChanged) {
           await this.sendMission(id)
@@ -422,7 +443,7 @@ export class Hub {
       const live = this.live.get(id)
       if (!live) continue
       const refs = agentRefs(live.state)
-      const views = await Promise.all(refs.map(async (ref) => {
+      const views = await mapLimit(refs, 8, async (ref) => {
         let state: string | null = null
         try {
           state = (await this.d.herdr.agentGet(ref.name))?.state ?? null
@@ -447,7 +468,7 @@ export class Hub {
           tail,
           ...(lastActivityAt ? { lastActivityAt } : {}),
         }
-      }))
+      })
       const json = JSON.stringify(views)
       if (json === live.agentsJson) continue
       live.agentsJson = json
@@ -474,29 +495,31 @@ export class Hub {
     if (this.lastPr !== 0 && t - this.lastPr < 60_000) return
     this.lastPr = t
     this.prRunning = true
-    void this.refreshPr().finally(() => {
+    void this.refreshPr().catch((err: unknown) => {
+      console.error(err)
+    }).finally(() => {
       this.prRunning = false
     })
   }
 
   private async refreshPr(): Promise<void> {
-    const urls: string[] = []
-    for (const live of this.live.values()) {
-      const url = live.state.prUrl
-      if (!url) continue
-      const pr: PrInfo | undefined = this.d.prCache.get(url)
-      if (needsPrRefresh(live.state, pr, this.d.now())) urls.push(url)
-    }
     try {
+      const urls: string[] = []
+      for (const live of this.live.values()) {
+        const url = live.state.prUrl
+        if (!url) continue
+        const pr: PrInfo | undefined = this.d.prCache.get(url)
+        if (needsPrRefresh(live.state, pr, this.d.now())) urls.push(url)
+      }
       if (urls.length > 0) await this.d.prCache.refresh(urls)
+      if (this.stopped || urls.length === 0) return
+      await this.exclusive(async () => {
+        if (this.stopped) return
+        await this.broadcastMissions()
+      })
     } catch (err) {
       console.error(err)
     }
-    if (this.stopped || urls.length === 0) return
-    await this.exclusive(async () => {
-      if (this.stopped) return
-      await this.broadcastMissions()
-    })
   }
 
   private titleOf(s: MissionState): string {
