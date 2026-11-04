@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
+function editableTarget(target: EventTarget | null): boolean {
+  const tag = (target as { tagName?: string } | null)?.tagName
+  return tag === 'BUTTON' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
+
 export function ConfirmDialog({ question, onYes, onNo }: {
   question: string
   onYes: () => void
@@ -10,6 +15,8 @@ export function ConfirmDialog({ question, onYes, onNo }: {
     const onKey = (ev: KeyboardEvent) => {
       if (done.current) return
       if (ev.key !== 'Enter' && ev.key !== 'Escape') return
+      // Le bouton ou le champ qui a le focus gère déjà Entrée (activation, retour à la ligne).
+      if (ev.key === 'Enter' && editableTarget(ev.target)) return
       done.current = true
       if (ev.key === 'Enter') onYes()
       else onNo()

@@ -73,7 +73,14 @@ export function App({ source }: { source?: (url: string) => EventSource } = {}) 
 
   function reply(confirmId: string, oui: boolean) {
     setAnswered((ids) => ids.includes(confirmId) ? ids : [...ids, confirmId])
-    void post(`/api/confirmations/${encodeURIComponent(confirmId)}`, { oui })
+    void post(`/api/confirmations/${encodeURIComponent(confirmId)}`, { oui }).then((response) => {
+      if (response.ok) {
+        if (response.lines.length > 0) setResult(response)
+        return
+      }
+      setResult(response)
+      setAnswered((ids) => ids.filter((id) => id !== confirmId))
+    })
   }
 
   return (

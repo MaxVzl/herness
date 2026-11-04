@@ -219,6 +219,49 @@ test('Échap sur une confirmation vaut non', () => {
   expect(onYes).toHaveBeenCalledTimes(1)
 })
 
+test('Entrée sur Non ou dans un champ ne valide pas la confirmation', () => {
+  const onYes = vi.fn()
+  const onNo = vi.fn()
+  render(
+    <>
+      <textarea aria-label="Demande" />
+      <ConfirmDialog question="Fermer 26110301-1 ?" onYes={onYes} onNo={onNo} />
+    </>,
+  )
+  const non = screen.getByRole('button', { name: 'Non' })
+  non.focus()
+  fireEvent.keyDown(non, { key: 'Enter' })
+  expect(onYes).not.toHaveBeenCalled()
+
+  const demande = screen.getByRole('textbox', { name: 'Demande' })
+  demande.focus()
+  fireEvent.keyDown(demande, { key: 'Enter' })
+  expect(onYes).not.toHaveBeenCalled()
+})
+
+test('une confirmation en échec s affiche et la question reste posée', async () => {
+  installFetch(() => ({ ok: false, lines: ['confirmation inconnue'] }))
+  setHash('#/26110301-1')
+  render(<App source={sourceOf} />)
+  await act(async () => {})
+  const es = flux()
+  act(() => {
+    es.onopen?.({})
+    send(es, {
+      type: 'confirmation',
+      confirmId: 'c9',
+      missionId: '26110301-1',
+      question: 'Il reste du travail, fermer quand même ?',
+    })
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Oui' }))
+  })
+  expect(await screen.findByText('confirmation inconnue')).toBeTruthy()
+  expect(screen.getByText('Il reste du travail, fermer quand même ?')).toBeTruthy()
+  expect(calls).toContainEqual({ url: '/api/confirmations/c9', body: JSON.stringify({ oui: true }) })
+})
+
 test('pendant une action son bouton est désactivé et indique en cours', async () => {
   let release: () => void = () => {}
   vi.stubGlobal('fetch', vi.fn(() => new Promise((resolve) => {
