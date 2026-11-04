@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Gate } from '../../mission/state.ts'
+import type { ActionResponse } from '../protocol.ts'
 import { post } from './api.ts'
 import { ConfirmDialog, NoteDialog } from './Dialogs.tsx'
 
@@ -28,10 +29,11 @@ function usePortesSlot(): HTMLElement | null {
   return slot
 }
 
-export function GateCards({ missionId, gates, onOpenDoc }: {
+export function GateCards({ missionId, gates, onOpenDoc, onResult }: {
   missionId: string
   gates: Gate[]
   onOpenDoc: (tab: 'spec' | 'plan') => void
+  onResult?: (result: ActionResponse) => void
 }) {
   const [flow, setFlow] = useState<Flow | null>(null)
   const [busy, setBusy] = useState<Set<string>>(new Set())
@@ -65,6 +67,7 @@ export function GateCards({ missionId, gates, onOpenDoc }: {
       return next
     })
     if (res.ok) setHeld((prev) => new Set(prev).add(gate.id))
+    else onResult?.(res)
   }
 
   function question(current: Extract<Flow, { kind: 'confirm' }>): string {

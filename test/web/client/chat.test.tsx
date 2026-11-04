@@ -425,3 +425,100 @@ test('la colonne centrale epingle les portes au-dessus de la saisie', async () =
   expect(slot.querySelector('.porte')).toBeTruthy()
   expect(slot.compareDocumentPosition(saisie) & 4).toBe(4)
 })
+
+function missionDetail(id: string, summary: string, orchestrator: string | null = 'idle') {
+  return detail({
+    state: {
+      id,
+      branch: 'feat/tache',
+      step: 'tasks',
+      paused: false,
+      gates: [gate({ id: 'g1', summary })],
+    },
+    orchestrator: { state: orchestrator },
+  })
+}
+
+async function pageWith(ids: string[]) {
+  render(<App source={sourceOf} />)
+  await act(async () => {})
+  const es = FakeSource.all[0]
+  if (!es) throw new Error('flux absent')
+  act(() => {
+    es.onopen?.({})
+    send(es, {
+      type: 'missions',
+      hiddenCount: 0,
+      projects,
+      missions: ids.map((id) => mission({ id, title: id })),
+    })
+    for (const id of ids) send(es, { type: 'mission', id, detail: missionDetail(id, `porte ${id}`) })
+  })
+  return es
+}
+
+function showMission(id: string) {
+  setHash(`#/${id}`)
+  act(() => {
+    globalThis.dispatchEvent(new Event('hashchange'))
+  })
+}
+
+test('changer de mission oublie le brouillon, l attente et le verrou des portes', async () => {
+  setHash('#/a')
+  await pageWith(['a', 'b'])
+  fireEvent.change(textbox(), { target: { value: 'pour A' } })
+  fireEvent.keyDown(textbox(), { key: 'Enter' })
+  expect(screen.getByText('en attente')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Valider' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Oui' }))
+  expect(disabled(screen.getByRole('button', { name: 'Valider' }))).toBe(true)
+
+  showMission('b')
+  expect(screen.queryByText('en attente')).toBeNull()
+  expect(screen.queryByText('pour A')).toBeNull()
+  expect(valueOf(textbox())).toBe('')
+  expect(screen.getByText('porte b')).toBeTruthy()
+  expect(disabled(screen.getByRole('button', { name: 'Valider' }))).toBe(false)
+
+  const before = calls.length
+  fireEvent.keyDown(textbox(), { key: 'Enter' })
+  expect(calls).toHaveLength(before)
+  fireEvent.change(textbox(), { target: { value: 'pour B' } })
+  fireEvent.keyDown(textbox(), { key: 'Enter' })
+  expect(calls.at(-1)).toEqual({ url: '/api/missions/b/message', body: JSON.stringify({ texte: 'pour B' }) })
+})
+
+test('un retour a la ligne final est rogne et l attente se leve sur le transcript', () => {
+  const view = renderChat([])
+  fireEvent.change(textbox(), { target: { value: 'salut\n' } })
+  fireEvent.keyDown(textbox(), { key: 'Enter' })
+  expect(calls).toEqual([{ url: '/api/missions/m1/message', body: JSON.stringify({ texte: 'salut' }) }])
+  expect(screen.getByText('en attente')).toBeTruthy()
+  view.rerender(<Chat missionId="m1" items={[user('salut')]} orchestratorState="idle" onOpenHerdr={() => {}} />)
+  expect(screen.queryByText('en attente')).toBeNull()
+  expect(screen.getAllByText('salut')).toHaveLength(1)
+})
+
+test('un message refuse revient dans la saisie et la raison s affiche', async () => {
+  installFetch(() => ({ ok: false, lines: ['orchestrateur arrêté'] }))
+  setHash('#/a')
+  await pageWith(['a'])
+  fireEvent.change(textbox(), { target: { value: 'salut' } })
+  fireEvent.keyDown(textbox(), { key: 'Enter' })
+  const reason = await screen.findByText('orchestrateur arrêté')
+  expect(conversation().contains(reason)).toBe(true)
+  expect(screen.queryByText('en attente')).toBeNull()
+  expect(valueOf(textbox())).toBe('salut')
+})
+
+test('une decision de porte refusee affiche la raison et reactive les boutons', async () => {
+  installFetch(() => ({ ok: false, lines: ['porte déjà décidée'] }))
+  setHash('#/a')
+  await pageWith(['a'])
+  fireEvent.click(screen.getByRole('button', { name: 'Valider' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Oui' }))
+  const reason = await screen.findByText('porte déjà décidée')
+  expect(conversation().contains(reason)).toBe(true)
+  expect(disabled(screen.getByRole('button', { name: 'Valider' }))).toBe(false)
+})

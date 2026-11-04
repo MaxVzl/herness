@@ -1,16 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
-import type { ChatItem } from '../protocol.ts'
+import type { ActionResponse, ChatItem } from '../protocol.ts'
 import type { ToolAction } from '../transcript.ts'
 import { post } from './api.ts'
 import { Markdown } from './Markdown.tsx'
 
 const RESULT_LINES = 20
 
-export function Chat({ missionId, items, orchestratorState, onOpenHerdr }: {
+export function Chat({ missionId, items, orchestratorState, onOpenHerdr, onResult }: {
   missionId: string
   items: ChatItem[]
   orchestratorState: string | null
   onOpenHerdr: () => void
+  onResult?: (result: ActionResponse) => void
 }) {
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<{ text: string; before: number } | null>(null)
@@ -63,13 +64,14 @@ export function Chat({ missionId, items, orchestratorState, onOpenHerdr }: {
   }
 
   async function send() {
-    const texte = draft
-    if (texte.trim() === '') return
+    const texte = draft.trim()
+    if (texte === '') return
     const before = items.filter((item) => item.kind === 'user' && item.text === texte).length
     setDraft('')
     setPending({ text: texte, before })
     const res = await post(`/api/missions/${encodeURIComponent(missionId)}/message`, { texte })
     if (!res.ok) {
+      onResult?.(res)
       setPending((current) => (current?.text === texte ? null : current))
       setDraft((current) => (current === '' ? texte : current))
     }

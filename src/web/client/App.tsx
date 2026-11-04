@@ -139,7 +139,7 @@ export function App({ source }: { source?: (url: string) => EventSource } = {}) 
           />
         ) : null}
         {!creating && summary && missionDetail ? (
-          <div className="conversation-corps">
+          <div className="conversation-corps" key={summary.id}>
             <Chat
               missionId={summary.id}
               items={state.chats[summary.id] ?? emptyChat}
@@ -147,11 +147,13 @@ export function App({ source }: { source?: (url: string) => EventSource } = {}) 
               onOpenHerdr={() => {
                 void post(`/api/missions/${encodeURIComponent(summary.id)}/ouvrir`).then(setResult)
               }}
+              onResult={setResult}
             />
             <GateCards
               missionId={summary.id}
               gates={gatesOf(missionDetail.state)}
               onOpenDoc={setOnglet}
+              onResult={setResult}
             />
           </div>
         ) : null}
