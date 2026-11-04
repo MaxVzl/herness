@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { render } from '../../src/prompts/render.js'
 
 const SETS: Record<string, string[]> = {
-  orchestrator: ['id', 'demande', 'demandeFile', 'note', 'specPath', 'planPath', 'missionDir'],
+  orchestrator: ['id', 'demande', 'demandeFile', 'note', 'specPath', 'planPath', 'missionDir', 'branch', 'mainBranch', 'preflight'],
   brief: ['taskBody', 'specPath', 'planPath', 'testCommand', 'commitFormat', 'forbidden', 'reportPath'],
   review: ['briefPath', 'reportPath', 'baseSha', 'headSha', 'diffPath', 'constraints', 'outPath'],
   rereview: ['briefPath', 'reportPath', 'baseSha', 'headSha', 'diffPath', 'constraints', 'findings', 'outPath'],
@@ -78,6 +78,17 @@ describe('render', () => {
 })
 
 describe('orchestrator.md', () => {
+  it('lève l\'interdiction de modifier le dépôt seulement une fois la PR ouverte, sur demande', async () => {
+    const out = await render('orchestrator', full(SETS.orchestrator!))
+    expect(out).toContain('sauf une fois la PR ouverte')
+    const after = out.slice(out.indexOf("## Après l'ouverture de la PR"))
+    expect(after).toContain('pr-ouverte')
+    expect(after).toContain('demande explicite')
+    expect(after).toContain('git push --force-with-lease origin <<branch>>')
+    expect(after).toContain('<<preflight>>')
+    expect(after).toMatch(/Toujours interdit.*git stash.*--no-verify/s)
+  })
+
   it("décrit l'implémenteur comme brief.md : il peut lire la spec et le plan", async () => {
     const out = await render('orchestrator', full(SETS.orchestrator!))
     expect(out).not.toContain('ne voit ni la conversation ni la spec')

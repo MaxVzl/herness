@@ -53,7 +53,7 @@ async function demandeText(d: Demande, e: Effects): Promise<string> {
 }
 
 /** Prompt système de l'orchestrateur ; le slug (et donc les chemins exacts) n'est connu qu'après classement. */
-async function orchestratorPrompt(s: MissionState, d: Demande, hasNote: boolean): Promise<string> {
+async function orchestratorPrompt(s: MissionState, d: Demande, hasNote: boolean, cfg: ProjectConfig): Promise<string> {
   // Valeur placée entre accents graves par le gabarit : aucun accent grave ici.
   const pattern = (dir: 'specs' | 'plans'): string =>
     `${(dir === 'specs' ? specPath : planPath)({ ...s, slug: '<slug>' })} — chemin déterminé après classement : ` +
@@ -68,6 +68,11 @@ async function orchestratorPrompt(s: MissionState, d: Demande, hasNote: boolean)
     specPath: pattern('specs'),
     planPath: pattern('plans'),
     missionDir: missionDir(s.id),
+    branch: s.branch ?? `herness/${s.id}`,
+    mainBranch: cfg.mainBranch,
+    preflight: cfg.preflight.length
+      ? cfg.preflight.map((p) => `  - ${p.label} : \`${p.command.join(' ')}\``).join('\n')
+      : '  - (aucune étape de preflight dans la config du projet)',
   })
 }
 
@@ -143,7 +148,7 @@ export async function startMission(input: string, cwd: string, deps: LifecycleDe
   await writeFile(join(dir, 'demande.md'), demande)
   const note = opts.note?.trim() ?? ''
   if (note) await writeFile(join(dir, 'note.md'), `${note}\n`)
-  await writeFile(join(dir, 'orchestrator.md'), await orchestratorPrompt(s, d, note !== ''))
+  await writeFile(join(dir, 'orchestrator.md'), await orchestratorPrompt(s, d, note !== '', cfg))
 
   await e.herdr.paneRun(space.panes.engine, `node ${shq(BIN)} engine ${id}`)
   await e.herdr.paneRun(space.panes.tasks, `node ${shq(BIN)} tasks ${id}`)

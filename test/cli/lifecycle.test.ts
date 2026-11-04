@@ -73,6 +73,10 @@ test('dev crée l\'espace, enregistre l\'état puis lance moteur, tableau et orc
   expect(prompt).toContain('docs/superpowers/plans/')
   expect(prompt).toContain('<AAAA-MM-JJ>-<id>-<slug>.md')
   expect(prompt).toContain(join(missionDir('gh12'), 'demande.md'))
+  // Après la PR : branche de la mission, main du projet et preflight de la config, en clair.
+  expect(prompt).toContain('git push --force-with-lease origin herness/gh12')
+  expect(prompt).toContain(`git rebase origin/${cfg.mainBranch}`)
+  for (const p of cfg.preflight) expect(prompt).toContain(`  - ${p.label} : \`${p.command.join(' ')}\``)
 
   const runs = fx.herdr.runs.filter((r) => !r.cmd.startsWith('lazygit'))
   expect(runs).toEqual([

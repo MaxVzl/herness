@@ -54,7 +54,8 @@ Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, `
 3. Les implémenteurs (Cursor) codent en TDD par tâche, les relecteurs (Claude) relisent, avec des tours de correction bornés.
 4. Le preflight local complet tourne dans le worktree, avec une base de test dédiée.
 5. Preflight vert : le moteur rebase si besoin sur la branche principale (un rebase automatique au plus, preflight rejoué), pousse la branche et ouvre la Pull Request automatiquement, sans porte. Seul un check rouge aussi sur la branche principale demande une décision (porte `pr-malgre-main`).
-6. `herness fermer` nettoie.
+6. PR ouverte (`pr-ouverte`) : le moteur s'arrête. Sur ta demande explicite, l'orchestrateur peut alors toucher à la branche de la mission : rebaser sur la branche principale en résolvant les conflits (code adapté si besoin), faire une correction ciblée (retour de revue), relancer les tests et le preflight, puis pousser en `--force-with-lease` après t'avoir résumé les changements. Jamais de `git stash`, de `--no-verify` ni de push sur la branche principale. Ces retouches ne passent ni par un implémenteur ni par une revue : pour un changement de fond, lance une nouvelle mission. Ne vaut que pour les missions lancées après cette règle (le prompt de l'orchestrateur est figé au lancement).
+7. `herness fermer` nettoie.
 
 ## Portes
 
