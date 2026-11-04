@@ -63,7 +63,9 @@ export function SidePanel({ missionId, state, spec, plan, ouvert, onTab, onLayou
   onLayoutRef.current = onLayout
 
   useEffect(() => {
-    if (ouvert) setTab(ouvert.tab)
+    if (!ouvert) return
+    setTab(ouvert.tab)
+    setTiroirOuvert(true)
   }, [ouvert])
 
   useEffect(() => {
@@ -87,11 +89,11 @@ export function SidePanel({ missionId, state, spec, plan, ouvert, onTab, onLayou
 
   const mission = missionDe(state.state)
   const contenu = tab === 'taches' && mission
-    ? <TasksTab missionId={missionId} mission={mission} files={state.files} />
+    ? <TasksTab key={missionId} missionId={missionId} mission={mission} files={state.files} />
     : tab === 'spec'
-      ? <DocTab doc={spec} />
+      ? <DocTab key="spec" doc={spec} />
       : tab === 'plan'
-        ? <DocTab doc={plan} />
+        ? <DocTab key="plan" doc={plan} />
         : tab === 'journal' && mission
           ? <JournalTab log={mission.log} />
           : null
@@ -126,7 +128,12 @@ export function SidePanel({ missionId, state, spec, plan, ouvert, onTab, onLayou
         <button type="button" className="contexte-ouvrir" onClick={() => setTiroirOuvert(true)}>Contexte</button>
       )
     }
-    return <div className="tiroir">{corps}</div>
+    return (
+      <div className="tiroir">
+        <button type="button" onClick={() => setTiroirOuvert(false)}>Fermer</button>
+        {corps}
+      </div>
+    )
   }
 
   return (

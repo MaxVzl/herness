@@ -256,26 +256,49 @@ test('un point marque le plan quand sa proposition est en attente', () => {
   expect(classOf(screen.getByRole('tab', { name: 'Spec' })).includes('point')).toBe(false)
 })
 
-test('le journal montre toutes les entrées, la plus récente en haut, avec l heure', () => {
+function heureLocale(at: string): string {
+  const date = new Date(at)
+  if (Number.isNaN(date.getTime())) return at
+  return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+}
+
+test('le journal montre toutes les entrées, la plus récente en haut, avec l heure locale', () => {
   renderPanel(etat({
     log: [
+      { at: 'pas une date', msg: 'brouillon' },
       { at: '2026-11-03T09:15:00.000Z', msg: 'mission créée' },
       { at: '2026-11-03T14:30:00.000Z', msg: 'tâche 2 en revue' },
     ],
   }))
   fireEvent.click(screen.getByRole('tab', { name: 'Journal' }))
   const lignes = document.querySelectorAll('.journal li')
-  expect(lignes).toHaveLength(2)
-  expect(lignes[0]?.textContent).toContain('14:30')
+  expect(lignes).toHaveLength(3)
+  expect(lignes[0]?.textContent).toContain(heureLocale('2026-11-03T14:30:00.000Z'))
   expect(lignes[0]?.textContent).toContain('tâche 2 en revue')
-  expect(lignes[1]?.textContent).toContain('09:15')
+  expect(lignes[1]?.textContent).toContain(heureLocale('2026-11-03T09:15:00.000Z'))
   expect(lignes[1]?.textContent).toContain('mission créée')
+  expect(lignes[2]?.textContent).toContain('pas une date')
+  expect(lignes[2]?.textContent).toContain('brouillon')
+})
+
+test('deux entrées identiques du journal restent deux lignes', () => {
+  const erreur = vi.spyOn(console, 'error').mockImplementation(() => {})
+  renderPanel(etat({
+    log: [
+      { at: '2026-11-03T14:30:00.000Z', msg: 'même' },
+      { at: '2026-11-03T14:30:00.000Z', msg: 'même' },
+    ],
+  }))
+  fireEvent.click(screen.getByRole('tab', { name: 'Journal' }))
+  expect(document.querySelectorAll('.journal li')).toHaveLength(2)
+  const doublon = erreur.mock.calls.some((args) => args.map(String).join(' ').includes('same key'))
+  expect(doublon).toBe(false)
 })
 
 test('les onglets Agents et Checks sont vides, et l onglet est mémorisé', () => {
   localStorage.setItem('herness.onglet', 'journal')
   const onTab = vi.fn()
-  const view = render(<SidePanel missionId="m1" state={detail(etat(), files)} onTab={onTab} />)
+  render(<SidePanel missionId="m1" state={detail(etat(), files)} onTab={onTab} />)
   const journal = screen.getByRole('tab', { name: 'Journal' })
   expect(journal.getAttribute('aria-selected')).toBe('true')
   expect(onTab).toHaveBeenCalledWith('journal')
@@ -294,10 +317,11 @@ test('les onglets Agents et Checks sont vides, et l onglet est mémorisé', () =
   fireEvent.click(screen.getByRole('tab', { name: 'Tâches' }))
   expect(screen.getByRole('tab', { name: 'Tâches' }).getAttribute('aria-selected')).toBe('true')
 
+  cleanup()
   vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
     throw new Error('bloque')
   })
-  view.rerender(<SidePanel missionId="m2" state={detail(etat(), files)} onTab={() => {}} />)
+  render(<SidePanel missionId="m2" state={detail(etat(), files)} onTab={() => {}} />)
   expect(screen.getByRole('tab', { name: 'Tâches' }).getAttribute('aria-selected')).toBe('true')
 })
 
@@ -328,13 +352,78 @@ test('le panneau se redimensionne entre 280 et 600 px', () => {
   expect(panneau.style.width).toBe('280px')
 })
 
-test('sous 1100 px le panneau devient un tiroir ouvert par Contexte', () => {
+test('sous 1100 px le panneau devient un tiroir ouvert par Contexte et refermé par Fermer', () => {
   setLargeur(1000)
   renderPanel()
   expect(screen.queryByRole('tab', { name: 'Tâches' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Contexte' }))
   expect(screen.getByRole('tab', { name: 'Tâches' })).toBeTruthy()
   expect(document.querySelector('.tiroir')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Fermer' }))
+  expect(screen.queryByRole('tab', { name: 'Tâches' })).toBeNull()
+  expect(document.querySelector('.tiroir')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Contexte' })).toBeTruthy()
+})
+
+test('un lien vers Spec ou Plan ouvre le tiroir quand l écran est étroit', () => {
+  setLargeur(1000)
+  const view = render(
+    <SidePanel
+      missionId="m1"
+      state={detail(etat(), files)}
+      spec={{ source: 'worktree', text: '# Spec\n\ntexte du worktree' }}
+      onTab={() => {}}
+    />,
+  )
+  expect(screen.queryByRole('tab', { name: 'Spec' })).toBeNull()
+  view.rerender(
+    <SidePanel
+      missionId="m1"
+      state={detail(etat(), files)}
+      spec={{ source: 'worktree', text: '# Spec\n\ntexte du worktree' }}
+      ouvert={{ tab: 'spec', seq: 1 }}
+      onTab={() => {}}
+    />,
+  )
+  expect(document.querySelector('.tiroir')).toBeTruthy()
+  expect(screen.getByRole('tab', { name: 'Spec' }).getAttribute('aria-selected')).toBe('true')
+  expect(screen.getByRole('heading', { name: 'Spec' })).toBeTruthy()
+})
+
+test('un échec de lecture annonce que le fichier est illisible', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    throw new Error('reseau')
+  }))
+  renderPanel()
+  fireEvent.click(screen.getByRole('button', { name: /2 · Corriger/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'brief.md' }))
+  expect(await screen.findByText('fichier illisible : serveur injoignable')).toBeTruthy()
+})
+
+test('un fichier ouvert ne se rouvre pas sur la mission suivante', async () => {
+  const view = render(<SidePanel missionId="m1" state={detail(etat(), files)} onTab={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: /2 · Corriger/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'brief.md' }))
+  expect(await screen.findByRole('heading', { name: 'Brief' })).toBeTruthy()
+  calls.length = 0
+  view.rerender(<SidePanel missionId="m2" state={detail(etat(), files)} onTab={() => {}} />)
+  await act(async () => {})
+  expect(screen.queryByRole('heading', { name: 'Brief' })).toBeNull()
+  expect(calls.some((url) => url.includes('/missions/m2/'))).toBe(false)
+})
+
+test('la bascule des différences repart de la proposition en revenant sur l onglet', () => {
+  renderPanel(etat(), {
+    spec: { source: 'proposition', text: 'ligne a\nligne c\n', current: 'ligne a\nligne b\n' },
+    plan: { source: 'worktree', text: '# Plan\n\nversion du plan' },
+  })
+  fireEvent.click(screen.getByRole('tab', { name: 'Spec' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Différences avec la version actuelle' }))
+  expect(document.querySelector('.diff-retrait')?.textContent).toContain('ligne b')
+  fireEvent.click(screen.getByRole('tab', { name: 'Plan' }))
+  fireEvent.click(screen.getByRole('tab', { name: 'Spec' }))
+  expect(screen.getByText(/ligne c/)).toBeTruthy()
+  expect(document.querySelector('.diff-ajout')).toBeNull()
 })
 
 test('la colonne de droite affiche le panneau et une porte ouvre Spec ou Plan', () => {
