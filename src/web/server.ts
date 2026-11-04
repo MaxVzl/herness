@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { checkRequest, hostAllowed, tokensEqual } from './auth.ts'
+import { actionRoutes, type WebActionDeps } from './actions.ts'
 import { buildClient } from './bundle.ts'
 import type { Hub } from './hub.ts'
 import type { ServerEvent } from './protocol.ts'
@@ -16,6 +17,7 @@ export interface WebServerOptions {
   token: string
   routes?: Route[]
   hub?: Hub
+  actions?: WebActionDeps
 }
 
 const MAX_BODY = 1024 * 1024
@@ -45,9 +47,10 @@ interface ClientBundle {
 
 export async function startWebServer(o: WebServerOptions): Promise<{ port: number; url: string; close(): Promise<void> }> {
   const client = await buildClient()
+  const routes = [...(o.actions ? actionRoutes(o.actions) : []), ...(o.routes ?? [])]
   let port = o.port
   const server = createServer((req, res) => {
-    void handle(req, res, { ...o, port }, client).catch((err: unknown) => {
+    void handle(req, res, { ...o, port, routes }, client).catch((err: unknown) => {
       const status = clientStatus(err)
       if (status === undefined) console.error(err)
       if (res.headersSent) {
