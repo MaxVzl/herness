@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.6.0](https://github.com/MaxVzl/herness/compare/v0.5.0...v0.6.0) (2026-11-05)
+
+
+### Features
+
+* installation par install.sh et herness mise-a-jour ([#27](https://github.com/MaxVzl/herness/issues/27)) ([#28](https://github.com/MaxVzl/herness/issues/28)) ([42251ed](https://github.com/MaxVzl/herness/commit/42251edebc5e9932a7fcc4c75310c8670469a3e2))
+
+## [0.5.0](https://github.com/MaxVzl/herness/compare/v0.4.1...v0.5.0) (2026-11-05)
+
+
+### Features
+
+* l'orchestrateur peut rebaser et retoucher la branche une fois la PR ouverte ([1b15675](https://github.com/MaxVzl/herness/commit/1b15675da4ff0d832fc76798c6087a28c3817bb5))
+* l'orchestrateur peut rebaser et retoucher la branche une fois la PR ouverte ([#19](https://github.com/MaxVzl/herness/issues/19)) ([0174b16](https://github.com/MaxVzl/herness/commit/0174b165b5fe8dd61c2cc97b4091fb36dade662d))
+
+## [0.4.1](https://github.com/MaxVzl/herness/compare/v0.4.0...v0.4.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **liberer-agents-termines:** herness — arrêter les agents dès que leur travail est fini ([3741b90](https://github.com/MaxVzl/herness/commit/3741b905bd548b9254fcba8dce82ddea68ce86ae))
+* **liberer-agents-termines:** herness — arrêter les agents dès que leur travail est fini ([3a1b45a](https://github.com/MaxVzl/herness/commit/3a1b45ac6983f08bd21cd4775ed85080e2a777f8))
+
 ## [0.4.0](https://github.com/MaxVzl/herness/compare/v0.3.1...v0.4.0) (2026-11-03)
 
 
