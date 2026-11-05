@@ -1,0 +1,4 @@
+# Hors de l'archive des releases (git archive) : inutile à l'exécution.
+test/ export-ignore
+docs/ export-ignore
+.github/ export-ignore

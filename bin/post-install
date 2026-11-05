@@ -1,0 +1,6 @@
+#!/bin/sh
+# Appelé par install.sh après extraction de l'archive : prépare cette version.
+set -eu
+command -v pnpm >/dev/null 2>&1 || { echo "pnpm introuvable : installe pnpm (node 24) puis relance" >&2; exit 1; }
+cd "$(dirname "$(readlink -f "$0")")/.."
+pnpm install --prod --frozen-lockfile

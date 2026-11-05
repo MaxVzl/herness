@@ -1,0 +1,4 @@
+#!/bin/sh
+# Point d'entrée stable d'une version installée : install.sh n'appelle que lui.
+here=$(dirname "$(readlink -f "$0")")
+exec node "$here/herness.js" "$@"
