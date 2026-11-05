@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createMissionSpace, markDone, paneIsIdle, signals, slot, timing } from '../../src/herdr/layout.js';
+import { createMissionSpace, markDone, paneIsIdle, release, releaseTab, signals, slot, timing } from '../../src/herdr/layout.js';
 import { FakeHerdr } from './fake.js';
 
 // Valeur réelle, lue avant que les tests ne la mettent à zéro.
@@ -175,6 +175,108 @@ describe('markDone', () => {
     h.pane(pane).label = 'T1 ✗';
     await markDone(h, pane, '✓');
     expect(h.pane(pane).label).toBe('T1 ✓');
+  });
+});
+
+describe('release', () => {
+  it('un panneau occupé reçoit deux ctrl+c et revient au shell, libellé inchangé', async () => {
+    const h = new FakeHerdr();
+    const { pane } = h.seedWorkspace('m');
+    const n = h.panes.length;
+    h.pane(pane).label = 'T1 · grok ✓';
+    h.pane(pane).busy = true;
+    h.pane(pane).agent = 'ct-1-t1';
+    expect(await release(h, pane)).toBe(true);
+    expect(h.calls.filter((c) => c === 'paneSendKeys ctrl+c')).toHaveLength(2);
+    expect(h.pane(pane).busy).toBe(false);
+    expect(h.pane(pane).agent).toBeUndefined();
+    expect(h.pane(pane).label).toBe('T1 · grok ✓');
+    expect(h.panes).toHaveLength(n);
+  });
+
+  it('un panneau déjà libre ne reçoit rien', async () => {
+    const h = new FakeHerdr();
+    const { pane } = h.seedWorkspace('m');
+    h.pane(pane).busy = false;
+    expect(await release(h, pane)).toBe(false);
+    expect(h.calls.filter((c) => c.startsWith('paneSendKeys'))).toEqual([]);
+  });
+
+  it('un panneau inconnu rend false', async () => {
+    const h = new FakeHerdr();
+    h.seedWorkspace('m');
+    expect(await release(h, 'w1:p999')).toBe(false);
+    expect(h.calls.filter((c) => c.startsWith('paneSendKeys'))).toEqual([]);
+  });
+
+  it("l'échec final remonte avec le panneau, l'agent et les PID", async () => {
+    const h = new FakeHerdr();
+    const { pane } = h.seedWorkspace('m');
+    h.pane(pane).deaf = true;
+    h.pane(pane).busy = true;
+    h.pane(pane).agent = 'claude';
+    signals.kill = () => {};
+    await expect(release(h, pane)).rejects.toThrow(
+      `le panneau ${pane} (agent claude, PID 2) n'est pas revenu au shell après ctrl+c, SIGTERM et SIGKILL`,
+    );
+  });
+});
+
+describe('releaseTab', () => {
+  it('done : arrête seulement les panneaux ✓, garde les autres', async () => {
+    const h = new FakeHerdr();
+    const { tab, pane } = h.seedWorkspace('m', 'agents');
+    h.pane(pane).label = 'T1 · grok ✓';
+    h.pane(pane).busy = true;
+    h.pane(pane).agent = 'ct-1-t1';
+    const t2 = h.addPane(tab, { x: 0, y: 0, width: 10, height: 10 }, 'T2 · grok');
+    h.pane(t2).busy = true;
+    h.pane(t2).agent = 'ct-1-t2';
+    h.addPane(tab, { x: 0, y: 0, width: 10, height: 10 }, 'T1 · opus ✓');
+    expect(await releaseTab(h, tab, 'done')).toEqual({ released: ['T1 · grok ✓'], failed: [] });
+    expect(h.pane(t2).busy).toBe(true);
+    expect(h.pane(t2).agent).toBe('ct-1-t2');
+  });
+
+  it("all : arrête tous les panneaux occupés de l'onglet, jamais ceux d'un autre onglet", async () => {
+    const h = new FakeHerdr();
+    const { ws, tab, pane } = h.seedWorkspace('m', 'agents');
+    h.pane(pane).label = 'T1 · grok';
+    h.pane(pane).busy = true;
+    h.pane(pane).agent = 'a';
+    const second = h.addPane(tab, { x: 0, y: 0, width: 10, height: 10 }, 'T2 · grok');
+    h.pane(second).busy = true;
+    h.pane(second).agent = 'b';
+    const other = await h.tabCreate({ workspace: ws, cwd: '/wt', label: 'autre' });
+    h.pane(other.rootPaneId).label = 'ailleurs';
+    h.pane(other.rootPaneId).busy = true;
+    h.pane(other.rootPaneId).agent = 'c';
+    const result = await releaseTab(h, tab, 'all');
+    expect(result.failed).toEqual([]);
+    expect(result.released).toEqual(['T1 · grok', 'T2 · grok']);
+    expect(h.pane(pane).busy).toBe(false);
+    expect(h.pane(second).busy).toBe(false);
+    expect(h.pane(other.rootPaneId).busy).toBe(true);
+    expect(h.pane(other.rootPaneId).agent).toBe('c');
+  });
+
+  it("un échec n'empêche pas les suivants", async () => {
+    const h = new FakeHerdr();
+    const { tab, pane } = h.seedWorkspace('m', 'agents');
+    h.pane(pane).label = 'T1 · grok ✓';
+    h.pane(pane).deaf = true;
+    h.pane(pane).busy = true;
+    h.pane(pane).agent = 'claude';
+    const second = h.addPane(tab, { x: 0, y: 0, width: 10, height: 10 }, 'T2 · opus ✓');
+    h.pane(second).busy = true;
+    h.pane(second).agent = 'ct-1-t2';
+    signals.kill = () => {};
+    const result = await releaseTab(h, tab, 'done');
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]).toContain("n'est pas revenu au shell");
+    expect(result.released).toEqual(['T2 · opus ✓']);
+    expect(h.pane(second).busy).toBe(false);
+    expect(h.pane(second).agent).toBeUndefined();
   });
 });
 

@@ -3,7 +3,15 @@ import type * as gitModule from '../src/git/git.ts'
 import type * as forgeModule from '../src/forge/github.ts'
 import type { PromptOutcome } from '../src/herdr/client.ts'
 import type { RunResult } from '../src/exec.ts'
+import { signals, timing } from '../src/herdr/layout.ts'
 import { FakeHerdr } from './herdr/fake.ts'
+
+// Les tests du moteur n'attendent pas et n'envoient jamais de vrai signal.
+timing.retireDelayMs = 0
+timing.pollMs = 0
+signals.kill = () => {
+  throw new Error('signal réel interdit dans les tests')
+}
 
 export type Call = { fn: string; args: unknown[] }
 type Fn = (...a: any[]) => any
@@ -33,6 +41,11 @@ export class FakeEngineHerdr extends FakeHerdr {
     return ''
   }
   async notify(_title: string, _body: string, _sound: 'done' | 'request'): Promise<void> {}
+  override async paneSendKeys(pane: string, ...keys: string[]): Promise<void> {
+    const agent = this.pane(pane).agent
+    await super.paneSendKeys(pane, ...keys)
+    if (keys.includes('ctrl+c') && agent && this.pane(pane).agent === undefined) this.started.delete(agent)
+  }
 }
 
 const HERDR_METHODS = [
@@ -118,8 +131,11 @@ export function fakeEffects(overrides: FakeOverrides = {}): FakeEffects {
   }
   const agents: Agents = {
     // Un agent démarré est visible par `herdr.agentGet`, comme avec le vrai `AgentRunner`.
-    start: async (name: string) => {
+    start: async (name: string, _role: string, pane: string) => {
       herdr.started.add(name)
+      const p = herdr.pane(pane)
+      p.busy = true
+      p.agent = name
     },
     ask: async () => 'done',
     wait: async () => 'done',
