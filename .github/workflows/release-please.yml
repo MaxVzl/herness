@@ -17,6 +17,20 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      # Archive installée par install.sh : contrat « herness-<version>.tar.gz, avec bin/herness ».
+      - uses: actions/checkout@v4
+        if: ${{ steps.release.outputs.release_created }}
+      - name: Archive de la version
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: |
+          v=${TAG#v}
+          git fetch --depth=1 origin tag "$TAG"
+          git archive --format=tar.gz --prefix="herness-$v/" -o "herness-$v.tar.gz" "$TAG"
+          tar -tzf "herness-$v.tar.gz" | grep -qx "herness-$v/bin/herness"
+          gh release upload "$TAG" "herness-$v.tar.gz" --repo "$GITHUB_REPOSITORY" --clobber
       # Les notes de release-please ne nomment personne : on ajoute « by @auteur »
       # à chaque entrée liée à une PR, ce qui fait aussi apparaître la section
       # « Contributors » de la release.

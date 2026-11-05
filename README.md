@@ -17,13 +17,25 @@ herness orchestre des agents de code sur un ticket, de la demande à la Pull Req
 ## Installation
 
 ```sh
-pnpm install
-ln -s "$PWD/bin/herness.js" ~/.local/bin/herness   # ~/.local/bin doit être dans le PATH
+curl -fsSL https://raw.githubusercontent.com/MaxVzl/herness/main/install.sh | sh
 ```
 
-pnpm 12 n'a plus `pnpm link --global` : un lien symbolique vers `bin/herness.js` suffit.
+Le script télécharge l'archive de la dernière release (`herness-<version>.tar.gz`), l'installe dans `~/.local/share/herness/versions/<version>/` (préparation comprise : `pnpm install --prod`), fait pointer `~/.local/share/herness/current` vers elle et crée le lien `~/.local/bin/herness` (`~/.local/bin` doit être dans le `PATH`). Les 3 dernières versions restent sur le disque, ainsi que toute version qu'un processus utilise encore. Variables : `HERNESS_INSTALL_DIR` (à la place de `~/.local/share/herness`), `HERNESS_BIN_DIR` (à la place de `~/.local/bin`).
 
-Après une mise à jour de herness, lance `herness reprendre <id> --redemarrer` sur chaque mission en cours : le moteur, le tableau et les visionneuses tournent sinon avec l'ancien code. L'orchestrateur n'est pas relancé ; son serveur MCP garde l'ancien code jusqu'à ce que sa session soit relancée.
+Le contrat entre le script et les releases ne dépend pas du langage de herness : une archive par version, avec un dossier racine qui contient un exécutable `bin/herness` et, au besoin, `bin/post-install`, lancé une fois après l'extraction. La CI la construit (`git archive`) et l'attache à chaque release créée par release-please.
+
+### Mise à jour
+
+```sh
+herness mise-a-jour                    # dernière version
+herness mise-a-jour --version 0.5.0    # version précise, retour arrière compris
+```
+
+La commande relance le script d'installation, puis liste les missions en cours (ni `pr-ouverte`, ni `fermée`, ni `bloquée`) et propose de les redémarrer (`herness reprendre <id> --redemarrer`, avec la nouvelle version). Sinon, le moteur, le tableau et les visionneuses de ces missions continuent sur l'ancienne version, intacte dans son dossier. L'orchestrateur n'est pas relancé ; son serveur MCP garde l'ancien code jusqu'à ce que sa session soit relancée.
+
+### Développer herness
+
+Depuis un clone : `pnpm install`, puis un lien à un autre nom que `herness`, par exemple `ln -s "$PWD/bin/herness" ~/.local/bin/herness-dev`. Le script d'installation remplace un lien `~/.local/bin/herness` existant (en le signalant), mais refuse d'écraser un vrai fichier.
 
 ## Commandes
 
@@ -37,6 +49,7 @@ Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, `
 | `herness cockpit` | Écran du cockpit dans le terminal courant (projet du dossier courant). Hors terminal interactif, affiche une seule image et rend la main. |
 | `herness dev <demande...> [--note <texte>]` | Démarre une mission : lien Wrike, issue GitHub ou texte libre ; `--note` ajoute des précisions qui complètent la demande (écrites dans `note.md`, elles l'emportent en cas de contradiction). Crée l'espace herdr, le worktree et la branche `herness/<id>`, lance moteur, tableau et orchestrateur. |
 | `herness reprendre <id> [--redemarrer]` | Rouvre l'espace d'une mission et relance ce qui ne tourne plus (moteur, tableau, visionneuses spec et plan, orchestrateur). Une mission bloquée ouvre une porte de reprise (`reprise-bloquee`) : validée, elle repart de l'étape bloquée avec un budget de tours neuf. Une mission `pr-ouverte` ou `fermée` : affiche son état, ne relance rien. `--redemarrer` : arrête (double ctrl+c) puis relance moteur, tableau et visionneuses même s'ils tournent, sans rien envoyer aux agents. |
+| `herness mise-a-jour [--version <x.y.z>]` | Installe la dernière version de herness (ou celle demandée), puis propose de redémarrer les missions en cours sur le nouveau code (voir « Mise à jour »). |
 | `herness statut [id]` | État de toutes les missions, ou détail d'une mission. |
 | `herness tasks <id>` | Tableau de bord d'une mission (celui du panneau `tasks`) : tâches, portes, journal, avec les gestes du cockpit sur cette mission (`v`, `r`, `n`, `p`, `R`, `f`, `o`, `←/→` pour choisir la porte), `c` retour au cockpit, `q` quitter. |
 | `herness voir <spec\|plan> <id>` | Visionneuse du panneau `spec` ou `plan` de l'onglet `docs` : affiche le document avec `bat` (à défaut `less -R`) et le recharge dès qu'il change. Une proposition d'amendement en attente (`<spec\|plan>.proposed.md` du dossier de mission) a la priorité, signalée par un en-tête ; sinon le fichier du worktree ; sinon un message d'attente. `q` quitte l'affichage, Entrée le rouvre. Lecture seule : n'écrit jamais `state.json`. |

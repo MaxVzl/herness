@@ -181,6 +181,9 @@ importers:
       react:
         specifier: ^19.3.1
         version: 19.3.1
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -194,9 +197,6 @@ importers:
       ink-testing-library:
         specifier: ^4.0.0
         version: 4.0.0(@types/react@19.3.0)
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
