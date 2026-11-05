@@ -122,7 +122,11 @@ export class FakeHerdr implements HerdrApi {
   }
   async paneSendKeys(pane: string, ...keys: string[]) {
     this.calls.push(`paneSendKeys ${keys.join(' ')}`);
-    if (keys.includes('ctrl+c') && !this.pane(pane).deaf) this.pane(pane).busy = false;
+    if (keys.includes('ctrl+c') && !this.pane(pane).deaf) {
+      const p = this.pane(pane);
+      p.busy = false;
+      delete p.agent;
+    }
   }
   async paneCurrent() {
     const p = this.panes[0];

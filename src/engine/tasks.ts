@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { agentArgs, type Role } from '../agents/adapters.ts'
 import * as names from '../agents/names.ts'
 import { fill, type ProjectConfig } from '../config/project.ts'
-import { markDone, slot } from '../herdr/layout.ts'
+import { markDone, release, releaseTab, slot } from '../herdr/layout.ts'
 import { nextTaskPhase, type LoopEvent } from '../mission/loop.ts'
 import { proposalHash, proposedPlanPath, proposedSpecPath, readProposal, type Proposal } from '../mission/amendment.ts'
 import { checkAmendment, parsePlan, type PlanTask } from '../mission/plan.ts'
@@ -185,6 +185,32 @@ export async function startAgent(s: MissionState, e: Effects, site: AgentSite, n
   log(s, e, `${site.what} : agent ${name} démarré (${model})`)
 }
 
+const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
+/** Arrête l'agent nommé. Absent du registre : rien. Un échec est journalisé, jamais levé. */
+export async function stopAgent(s: MissionState, e: Effects, what: string, name: string): Promise<void> {
+  const pane = s.herdr.panes[name]
+  if (!pane) return
+  try {
+    if (await release(e.herdr, pane)) log(s, e, `${what} : agent ${name} arrêté`)
+  } catch (err) {
+    log(s, e, `${what} : agent ${name} non arrêté (${errText(err)})`)
+  }
+}
+
+/** Arrête les agents de l'onglet agents : ceux marqués ✓ ou ✗ (`done`), ou tous (`all`). Ne lève jamais. */
+export async function stopAgentsTab(s: MissionState, e: Effects, which: 'done' | 'all', why: string): Promise<void> {
+  const tab = s.herdr.tabs['agents']
+  if (!tab) return
+  try {
+    const { released, failed } = await releaseTab(e.herdr, tab, which)
+    if (released.length > 0) log(s, e, `${why} : agent(s) arrêté(s) dans ${released.join(', ')}`)
+    for (const message of failed) log(s, e, `${why} : arrêt impossible (${message})`)
+  } catch (err) {
+    log(s, e, `${why} : arrêt impossible (${errText(err)})`)
+  }
+}
+
 /** Démarre l'agent s'il n'est pas vivant (premier passage ou redémarrage du moteur). */
 export async function ensureAgent(s: MissionState, e: Effects, site: AgentSite, name: string, role: Role, model: string): Promise<void> {
   if (await e.herdr.agentGet(name)) return
@@ -269,8 +295,9 @@ async function markTaskPanes(s: MissionState, e: Effects, t: TaskState): Promise
     try {
       await markDone(e.herdr, pane, '✓')
     } catch (err) {
-      log(s, e, `marque ✓ non posée sur ${pane} : ${err instanceof Error ? err.message : String(err)}`)
+      log(s, e, `marque ✓ non posée sur ${pane} : ${errText(err)}`)
     }
+    await stopAgent(s, e, `tâche ${t.n}`, name)
   }
 }
 
@@ -297,6 +324,7 @@ export function pendingAmendment(s: MissionState): Gate | undefined {
  * les agents de la boucle précédente, avec leur contexte, ne sont jamais réutilisés.
  */
 async function resetLoops(s: MissionState, e: Effects): Promise<void> {
+  await stopAgentsTab(s, e, 'all', 'nouvelle génération des boucles de fin')
   for (const name of ['global', 'preflight']) {
     const dir = join(missionDir(s.id), name)
     if (!(await exists(dir))) continue
