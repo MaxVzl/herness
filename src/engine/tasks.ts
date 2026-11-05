@@ -324,6 +324,7 @@ export function pendingAmendment(s: MissionState): Gate | undefined {
  * les agents de la boucle précédente, avec leur contexte, ne sont jamais réutilisés.
  */
 async function resetLoops(s: MissionState, e: Effects): Promise<void> {
+  await stopAgentsTab(s, e, 'all', 'nouvelle génération des boucles de fin')
   for (const name of ['global', 'preflight']) {
     const dir = join(missionDir(s.id), name)
     if (!(await exists(dir))) continue

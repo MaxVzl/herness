@@ -383,6 +383,22 @@ test('un amendement approuvé en global-review ajoute la tâche et revient à ta
   expect(fx.callsOf('git.commitFiles')).toEqual([[wt, [planPath(s)], 'docs(T-1): amende le plan']])
 })
 
+test("un amendement appliqué après les tâches arrête les agents de fin de l'ancienne génération", async () => {
+  const { fx, eng } = await setup({
+    proposed: PLAN2,
+    patch: { step: 'global-review', tasks: [task({ phase: 'done' })], gates: [gate({ id: 'g1', hash: proposalHash(PLAN2) })] },
+  })
+  const tab = (await loadState('T-1')).herdr.tabs['agents']!
+  const pane = fx.herdr.addPane(tab, { x: 0, y: 0, width: 10, height: 10 }, 'GR · claude-opus-5-5')
+  fx.herdr.pane(pane).busy = true
+  fx.herdr.pane(pane).agent = 'rgt-1'
+  await eng.tick()
+  const s = await loadState('T-1')
+  expect(fx.herdr.pane(pane).busy).toBe(false)
+  expect(s.loopGeneration).toBe(2)
+  expect(s.log.map((l) => l.msg)).toContain('nouvelle génération des boucles de fin : agent(s) arrêté(s) dans GR · claude-opus-5-5')
+})
+
 test("un amendement qui modifie une tâche validée est écarté et l'orchestrateur prévenu", async () => {
   const changed = PLAN2.replace('faire a', 'faire autre chose')
   const { fx, eng } = await setup({

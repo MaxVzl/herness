@@ -27,6 +27,7 @@ import {
   pendingAmendment,
   settle,
   settleStop,
+  stopAgent,
   stopSection,
   stopWithoutCommit,
   type AgentSite,
@@ -60,6 +61,7 @@ async function markPane(s: MissionState, e: Effects, name: string): Promise<void
   } catch (err) {
     log(s, e, `marque ✓ non posée sur ${pane} : ${errMsg(err)}`)
   }
+  await stopAgent(s, e, 'fin de mission', name)
 }
 
 type Agent = { site: AgentSite; name: string; role: Role; model: string }
