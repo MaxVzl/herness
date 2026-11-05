@@ -91,6 +91,26 @@ test('stepPr pousse, crée la PR et passe en pr-ouverte', async () => {
   expect(await eng.tick()).toBe('stop')
 })
 
+test("l'ouverture de la PR arrête tous les agents restants de l'onglet agents", async () => {
+  const { fx, eng } = await setup({ over: { git: { unpushedCount: async () => 3 } } })
+  const { ws, tab, pane: gr } = fx.herdr.seedWorkspace('T-1', 'agents')
+  await fx.herdr.paneRename(gr, 'GR · claude-opus-5-5')
+  fx.herdr.pane(gr).busy = true
+  const master = await fx.herdr.tabCreate({ workspace: ws, cwd: wt, label: 'master' })
+  await fx.herdr.paneRename(master.rootPaneId, 'orchestrator')
+  fx.herdr.pane(master.rootPaneId).busy = true
+  const s0 = await loadState('T-1')
+  s0.herdr = { workspace: ws, tabs: { ...s0.herdr.tabs, agents: tab, master: master.tabId }, panes: { orchestrator: master.rootPaneId } }
+  await saveState(s0)
+  await eng.tick()
+  const s = await loadState('T-1')
+  expect(s.step).toBe('pr-ouverte')
+  expect(fx.herdr.pane(gr).busy).toBe(false)
+  expect(s.log.map((l) => l.msg).join('\n')).toContain('PR ouverte : agent(s) arrêté(s) dans GR · claude-opus-5-5')
+  expect(fx.callsOf('herdr.paneSendKeys').some((c) => c[0] === master.rootPaneId)).toBe(false)
+  expect(fx.herdr.pane(master.rootPaneId).busy).toBe(true)
+})
+
 test('stepPr : demande écrite citée telle quelle dans le corps', async () => {
   const { fx, eng } = await setup({ patch: { source: { kind: 'text', ref: 'ajoute un export' } } })
   await eng.tick()

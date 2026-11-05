@@ -28,6 +28,7 @@ import {
   settle,
   settleStop,
   stopAgent,
+  stopAgentsTab,
   stopSection,
   stopWithoutCommit,
   type AgentSite,
@@ -748,7 +749,10 @@ async function prBody(s: MissionState, cfg: ProjectConfig, context: string): Pro
  * enregistrée ou déjà ouverte sur GitHub réutilisée, branche déjà poussée non repoussée.
  */
 export async function stepPr(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
-  if (s.prUrl) return goto(s, e, 'pr-ouverte')
+  if (s.prUrl) {
+    await stopAgentsTab(s, e, 'all', 'PR ouverte')
+    return goto(s, e, 'pr-ouverte')
+  }
   const wt = s.worktree
   const branch = s.branch
   if (!wt || !branch || !s.type || !s.slug) return block(s, e, 'PR impossible : worktree, branche, type ou slug inconnu')
@@ -794,6 +798,7 @@ export async function stepPr(s: MissionState, e: Effects, cfg: ProjectConfig): P
   s.prUrl = url
   log(s, e, `PR ouverte : ${url}`)
   await notify(s, e, `PR ouverte : ${url}`)
+  await stopAgentsTab(s, e, 'all', 'PR ouverte')
   await informOrchestrator(s, e, `La PR est ouverte : ${url}. La mission est terminée.`)
   return goto(s, e, 'pr-ouverte')
 }

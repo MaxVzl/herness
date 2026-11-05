@@ -414,15 +414,61 @@ test('au démarrage du moteur, les commandes restées en cours dans checks et pr
   fx.calls.length = 0
   await eng.run()
   const keys = fx.callsOf('herdr.paneSendKeys')
-  expect(keys).toEqual([[c1, 'ctrl+c'], [c1, 'ctrl+c'], [p2, 'ctrl+c'], [p2, 'ctrl+c']])
+  expect(keys).toEqual([[c1, 'ctrl+c'], [c1, 'ctrl+c'], [p2, 'ctrl+c'], [p2, 'ctrl+c'], [a1, 'ctrl+c'], [a1, 'ctrl+c']])
   expect(fx.herdr.pane(c1).label).toBe('preflight · lint ✗')
   expect(fx.herdr.pane(p2).label).toBe('base de test ✗')
   expect(fx.herdr.pane(c2).label).toBe('T1 · tests ✓')
   expect(fx.herdr.pane(proc.rootPaneId).label).toBe('engine')
   expect(fx.herdr.pane(a1).label).toBe('T1 · grok …')
+  expect(fx.herdr.pane(a1).busy).toBe(false)
   // Une seule fois par démarrage du moteur.
   await eng.tick()
-  expect(fx.callsOf('herdr.paneSendKeys')).toHaveLength(4)
+  expect(fx.callsOf('herdr.paneSendKeys')).toHaveLength(6)
+})
+
+test('au démarrage du moteur, une mission bloquée arrête les agents des panneaux ✓ et garde les autres', async () => {
+  const { fx, eng } = engine({
+    sleep: async () => {
+      throw new Error('fin du test')
+    },
+  })
+  const { ws, tab } = fx.herdr.seedWorkspace('T-1', 'agents')
+  const done = fx.herdr.addPane(tab, { x: 0, y: 30, width: 200, height: 30 }, 'T1 · grok ✓')
+  const live = fx.herdr.addPane(tab, { x: 0, y: 30, width: 200, height: 30 }, 'T2 · grok')
+  for (const p of [done, live]) fx.herdr.pane(p).busy = true
+  await mission({
+    step: 'bloquée',
+    blockedFrom: 'tasks',
+    blockedReason: 'contrôle en échec',
+    herdr: { workspace: ws, tabs: { agents: tab }, panes: {} },
+  })
+  await expect(eng.run()).rejects.toThrow('fin du test')
+  expect(fx.herdr.pane(done).busy).toBe(false)
+  expect(fx.herdr.pane(live).busy).toBe(true)
+  const s = await loadState('T-1')
+  expect(s.log.map((l) => l.msg).join('\n')).toContain('démarrage du moteur : agent(s) arrêté(s) dans T1 · grok ✓')
+})
+
+test("un abandon validé arrête tous les agents de l'onglet agents", async () => {
+  const { fx, eng } = engine()
+  const { ws, tab } = fx.herdr.seedWorkspace('T-1', 'agents')
+  const done = fx.herdr.addPane(tab, { x: 0, y: 30, width: 200, height: 30 }, 'T1 · grok ✓')
+  const live = fx.herdr.addPane(tab, { x: 0, y: 30, width: 200, height: 30 }, 'T2 · grok')
+  for (const p of [done, live]) fx.herdr.pane(p).busy = true
+  await mission({
+    step: 'brainstorm',
+    testDbUp: true,
+    herdr: { workspace: ws, tabs: { process: 'w1:t4', checks: 'w1:t3', agents: tab }, panes: {} },
+  })
+  await postInbox('T-1', { type: 'abandon', reason: 'spike' })
+  expect(await eng.tick()).toBe('wait')
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
+  expect(await eng.tick()).toBe('stop')
+  const s = await loadState('T-1')
+  expect(s.step).toBe('fermée')
+  expect(fx.herdr.pane(done).busy).toBe(false)
+  expect(fx.herdr.pane(live).busy).toBe(false)
+  expect(s.log.some((l) => l.msg.startsWith('abandon validé : agent(s) arrêté(s) dans'))).toBe(true)
 })
 
 test("orchestrator-started : le moteur enregistre que le prompt d'ouverture est parti", async () => {
