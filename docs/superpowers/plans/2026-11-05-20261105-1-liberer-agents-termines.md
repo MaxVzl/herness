@@ -20,6 +20,7 @@
 - Journaux en français, style existant. Formats exacts : `<quoi> : agent <nom> arrêté` et `<quoi> : agent <nom> non arrêté (<message d'erreur>)` ; pour un balayage : `<pourquoi> : agent(s) arrêté(s) dans <libellés séparés par « , »>` et `<pourquoi> : arrêt impossible (<message>)` par échec.
 - Le recyclage de `slot()` et la taille de grille (6) ne changent pas.
 - Commits au format du projet (`fix(liberer-agents-termines): …`), sans `--no-verify`, sans `git stash`.
+- Le worktree doit être propre après chaque commit : Vitest écrit un rapport dans `.vitest/` (non suivi) ; ce dossier est ignoré par `.gitignore` (tâche 1), il ne doit jamais être commité.
 
 ## Points d'attention pour la revue
 
@@ -39,6 +40,7 @@
 - Modifier : `src/herdr/layout.ts` (à côté de la fonction privée `retire`)
 - Modifier : `test/herdr/fake.ts` (méthode `paneSendKeys` de `FakeHerdr`)
 - Modifier : `test/fakes.ts` (`FakeEngineHerdr` et en-tête du module)
+- Modifier : `.gitignore` (ajout de la ligne `.vitest/`)
 - Test : `test/herdr/layout.test.ts` (nouveaux `describe('release')` et `describe('releaseTab')`)
 
 **Interfaces :**
@@ -63,6 +65,7 @@
 - [ ] **Étape 3 : implémenter** `release` et `releaseTab` dans `src/herdr/layout.ts` en réutilisant `isFree` et `retire` sans les dupliquer ; adapter `test/herdr/fake.ts` et `test/fakes.ts` comme décrit dans « Interfaces ».
 - [ ] **Étape 4 : lancer les tests et constater le succès** : `pnpm vitest run test/herdr/layout.test.ts` → tout vert. Lancer aussi `pnpm vitest run test/engine` pour vérifier que la doublure modifiée ne casse aucun test existant (aucun appel de production ne change encore) ; si un test existant casse à cause du panneau désormais occupé après `agents.start` (recyclage de `slot` qui envoie maintenant des ctrl+c), corriger l'attente du test, pas le code de production.
 - [ ] **Étape 5 : commit** : `git add src/herdr/layout.ts test/herdr/fake.ts test/fakes.ts test/herdr/layout.test.ts` puis `git commit -m "fix(liberer-agents-termines): exposer l'arrêt d'un panneau et le balayage de l'onglet agents"`.
+- [ ] **Étape 6 : ignorer le rapport de Vitest** : le contrôle du moteur exige un arbre propre, or Vitest laisse un dossier non suivi `.vitest/` (rapport `json/output.json`). Ajouter la ligne `.vitest/` à `.gitignore` (à la suite des entrées existantes, sans les modifier), ne pas supprimer ni commiter le dossier lui-même, vérifier que `git status --porcelain` est vide, puis `git add .gitignore` et `git commit -m "chore(liberer-agents-termines): ignorer le rapport de Vitest"`. Si le commit de l'étape 5 existe déjà, ne pas le refaire : seule cette étape reste à faire.
 
 ### Tâche 2 : Arrêter les agents d'une tâche validée
 
