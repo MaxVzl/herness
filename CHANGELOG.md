@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/MaxVzl/herness/compare/v0.4.1...v0.5.0) (2026-11-05)
+
+
+### Features
+
+* l'orchestrateur peut rebaser et retoucher la branche une fois la PR ouverte ([1b15675](https://github.com/MaxVzl/herness/commit/1b15675da4ff0d832fc76798c6087a28c3817bb5))
+* l'orchestrateur peut rebaser et retoucher la branche une fois la PR ouverte ([#19](https://github.com/MaxVzl/herness/issues/19)) ([0174b16](https://github.com/MaxVzl/herness/commit/0174b165b5fe8dd61c2cc97b4091fb36dade662d))
+
 ## [0.4.1](https://github.com/MaxVzl/herness/compare/v0.4.0...v0.4.1) (2026-11-05)
 
 
