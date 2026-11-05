@@ -156,6 +156,37 @@ async function retire(h: HerdrApi, pane: HerdrPane): Promise<void> {
   throw new Error(`le panneau ${pane.paneId}${who ? ` (${who})` : ''} n'est pas revenu au shell après ctrl+c, SIGTERM et SIGKILL`);
 }
 
+/**
+ * Arrête l'agent d'un panneau et le rend au shell. `false` si le panneau est introuvable ou déjà libre
+ * (aucun appel à `paneSendKeys`). L'erreur de `retire` remonte telle quelle.
+ */
+export async function release(h: HerdrApi, paneId: string): Promise<boolean> {
+  const pane = (await h.paneList(wsOf(paneId))).find((p) => p.paneId === paneId);
+  if (!pane || (await isFree(h, pane))) return false;
+  await retire(h, pane);
+  return true;
+}
+
+/** Arrête les panneaux d'un onglet : ceux marqués ✓ ou ✗ (`done`), ou tous (`all`). Un échec n'arrête pas le balayage. */
+export async function releaseTab(
+  h: HerdrApi,
+  tab: string,
+  which: 'done' | 'all',
+): Promise<{ released: string[]; failed: string[] }> {
+  const panes = (await h.paneList(wsOf(tab))).filter((p) => p.tabId === tab);
+  const targets = which === 'done' ? panes.filter((p) => /[✓✗]/.test(p.label ?? '')) : panes;
+  const released: string[] = [];
+  const failed: string[] = [];
+  for (const pane of targets) {
+    try {
+      if (await release(h, pane.paneId)) released.push(pane.label ?? pane.paneId);
+    } catch (err) {
+      failed.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  return { released, failed };
+}
+
 /** Même règle que `cmd_slot` de herdr-ticket-grid.sh. Rend l'identifiant d'un panneau libre, nommé `label`. */
 export async function slot(h: HerdrApi, tab: string, cwd: string, label: string, max = 6): Promise<string> {
   const ws = wsOf(tab);

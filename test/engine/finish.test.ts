@@ -169,6 +169,18 @@ test('revue globale en corrections démarre un implémenteur neuf puis re-revue 
   expect(rr).toContain('src/a.ts:3 remarque de rgt-1')
   expect(s.loops.globalReview.round).toBe(0)
   expect(fx.herdr.panes.map((p) => p.label)).toContain('CG1 · grok-4.7-medium ✓')
+  // Le correcteur est arrêté au ✓, avant le contrôle de ses commits ; le relecteur global reste vivant jusqu'à la fin du preflight.
+  expect(s.step).toBe('preflight')
+  expect(fx.herdr.pane(s.herdr.panes['cgt-1-1']!).busy).toBe(false)
+  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent cgt-1-1 arrêté')
+  expect(fx.herdr.pane(s.herdr.panes['rgt-1']!).busy).toBe(true)
+})
+
+test('le relecteur global est arrêté quand le preflight est terminé', async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'] }) } } })
+  const s = await until(eng, (x) => x.step === 'pr')
+  expect(fx.herdr.pane(s.herdr.panes['rgt-1']!).busy).toBe(false)
+  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent rgt-1 arrêté')
 })
 
 test('revue globale : des tests rouges après correction lancent un nouveau tour avec la sortie rouge', async () => {
@@ -385,6 +397,25 @@ test('CAUSE: MAIN non reproduite sur main est corrigée comme BRANCHE', async ()
   expect(s.loops.preflight.results.map((r) => r.label)).toEqual(['lint', 'test'])
   expect(s.loops.globalReview.reviewedSha).toBe('sha-head')
   expect(s.testDbUp).toBe(false)
+})
+
+test('un diagnostic et un correcteur de preflight sont arrêtés à la fin de leur tour', async () => {
+  const { fx, eng } = await setup({
+    patch: {
+      step: 'preflight',
+      loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, reviewedSha: 'sha-rev', lastReview: '/x/revue.md' } },
+    },
+    over: {
+      runInPane: panes({ 'preflight · lint': [ko('erreur de lint'), ok] }),
+      agents: { ask: verdicts({ rd: ['CAUSE: BRANCHE'], rg: ['VERDICT: APPROUVÉ'] }) },
+    },
+  })
+  let s = await until(eng, (x) => x.loops.preflight.phase === 'fix')
+  expect(fx.herdr.pane(s.herdr.panes['rdt-1-1']!).busy).toBe(false)
+  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent rdt-1-1 arrêté')
+  s = await until(eng, (x) => x.step !== 'preflight')
+  expect(fx.herdr.pane(s.herdr.panes['cpt-1-1']!).busy).toBe(false)
+  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent cpt-1-1 arrêté')
 })
 
 test('une exception pendant un check supprime quand même la base de test', async () => {

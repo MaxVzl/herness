@@ -11,7 +11,7 @@ import { checkEnv } from './envcheck.ts'
 import { markDone } from '../herdr/layout.ts'
 import { applyDecision, openGate } from './gates.ts'
 import { stepGlobalReview, stepPr, stepPreflight } from './finish.ts'
-import { amendmentWouldResume, applyAmendment, applyPendingAmendment, stepTasks, taskDir, unblocksMission } from './tasks.ts'
+import { amendmentWouldResume, applyAmendment, applyPendingAmendment, stepTasks, stopAgentsTab, taskDir, unblocksMission } from './tasks.ts'
 
 export type StepResult = 'continue' | 'wait' | 'stop'
 /** Une étape lit et modifie l'état en mémoire ; le moteur l'enregistre après chaque appel. */
@@ -304,6 +304,7 @@ async function abandonMission(s: MissionState, e: Effects, cfg: ProjectConfig, g
   }
   log(s, e, `abandon validé (${gateId}) : mission fermée`)
   s.step = 'fermée'
+  await stopAgentsTab(s, e, 'all', 'abandon validé')
   await informOrchestrator(s, e, `L'utilisateur a validé l'abandon (porte ${gateId}) : la mission est fermée.`)
 }
 
@@ -520,11 +521,23 @@ export class Engine {
     await saveState(s)
   }
 
+  /** Démarrage du moteur : arrête les agents déjà terminés ; toute la mission si elle est déjà close. */
+  private async releaseFinishedAgents(): Promise<void> {
+    const s = await loadState(this.id)
+    await stopAgentsTab(s, this.e, s.step === 'pr-ouverte' || s.step === 'fermée' ? 'all' : 'done', 'démarrage du moteur')
+    await saveState(s)
+  }
+
   async run(): Promise<void> {
     try {
       await this.interruptStaleCommands()
     } catch (err) {
       console.error(`herness ${this.id} : nettoyage des panneaux au démarrage impossible : ${errMsg(err)}`)
+    }
+    try {
+      await this.releaseFinishedAgents()
+    } catch (err) {
+      console.error(`herness ${this.id} : arrêt des agents terminés au démarrage impossible : ${errMsg(err)}`)
     }
     for (;;) {
       let r: StepResult

@@ -115,7 +115,7 @@ Un espace par mission, avec les onglets (en plus de l'onglet `herness` du cockpi
 
 - `master` : orchestrator à gauche ; à droite `tasks` en haut et `lazygit` (sur le worktree) en bas
 - `docs` (créé juste après `master`) : `spec` à gauche, `plan` à droite, chacun lançant `herness voir` ; `herness reprendre` recrée l'onglet s'il manque et relance les visionneuses au repos
-- `agents` : implémenteurs et relecteurs
+- `agents` : implémenteurs et relecteurs ; un agent est arrêté dès que son travail est fini (tâche validée, tour terminé, PR ouverte), son panneau reste ouvert avec son historique
 - `checks` : tests et preflight
 - `process` : processus longs (conteneurs, base de test, apps)
 
