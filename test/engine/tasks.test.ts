@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import demo from '../fixtures/demo/config.ts'
 import { Engine } from '../../src/engine/engine.ts'
+import { stopAgent } from '../../src/engine/tasks.ts'
 import { postInbox } from '../../src/mission/inbox.ts'
 import { loadState, newState, saveState, type Gate, type MissionState, type TaskState } from '../../src/mission/state.ts'
 import { missionDir, planPath, specPath } from '../../src/paths.ts'
@@ -999,4 +1000,49 @@ test("M4 : un amendement qui retire la tâche en cours est écarté et l'orchest
   expect(s.appliedAmendments).toEqual(['g1'])
   expect(s.tasks).toHaveLength(2)
   expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain('la tâche 2 en cours a disparu')
+})
+
+const msgs = (s: MissionState) => s.log.map((l) => l.msg)
+
+test('une tâche validée arrête son implémenteur et son relecteur, panneaux gardés avec ✓', async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+  const s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
+  const impl = fx.herdr.pane(s.herdr.panes['ct-1-t1']!)
+  const rev = fx.herdr.pane(s.herdr.panes['rt-1-t1']!)
+  expect(impl.busy).toBe(false)
+  expect(rev.busy).toBe(false)
+  expect(impl.label).toBe('T1 · grok-4.7-medium ✓')
+  expect(rev.label).toBe('T1 · claude-opus-5-5 ✓')
+  expect(await fx.herdr.agentGet('ct-1-t1')).toBeNull()
+  expect(msgs(s)).toEqual(expect.arrayContaining(['tâche 1 : agent ct-1-t1 arrêté', 'tâche 1 : agent rt-1-t1 arrêté']))
+})
+
+test("pendant un tour de correction, l'implémenteur et le relecteur restent vivants", async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ']) } } })
+  let s = await until(eng, (x) => x.tasks[0]!.phase === 'fix')
+  expect(fx.herdr.pane(s.herdr.panes['ct-1-t1']!).busy).toBe(true)
+  expect(fx.herdr.pane(s.herdr.panes['rt-1-t1']!).busy).toBe(true)
+  expect(msgs(s).filter((m) => /agent .+ arrêté/.test(m))).toEqual([])
+  s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
+  expect(fx.herdr.pane(s.herdr.panes['ct-1-t1']!).busy).toBe(false)
+  expect(fx.herdr.pane(s.herdr.panes['rt-1-t1']!).busy).toBe(false)
+  expect(msgs(s)).toEqual(expect.arrayContaining(['tâche 1 : agent ct-1-t1 arrêté', 'tâche 1 : agent rt-1-t1 arrêté']))
+})
+
+test('un arrêt impossible est journalisé, la tâche passe quand même en done', async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+  const born = await until(eng, (x) => x.herdr.panes['ct-1-t1'] !== undefined)
+  fx.herdr.pane(born.herdr.panes['ct-1-t1']!).deaf = true
+  const s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
+  expect(s.step).not.toBe('bloquée')
+  expect(msgs(s).some((m) => m.startsWith('tâche 1 : agent ct-1-t1 non arrêté ('))).toBe(true)
+})
+
+test('stopAgent sur un agent sans panneau enregistré ne fait rien', async () => {
+  const { fx } = await setup()
+  const s = await loadState('T-1')
+  const logLen = s.log.length
+  await stopAgent(s, fx, 'tâche 9', 'inconnu')
+  expect(fx.callsOf('herdr.paneSendKeys')).toEqual([])
+  expect(s.log).toHaveLength(logLen)
 })
