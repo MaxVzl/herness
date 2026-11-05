@@ -1,5 +1,6 @@
 .superpowers/
 node_modules/
 dist/
+.vitest/
 a_lire.txt
 .vitest/

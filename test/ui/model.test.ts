@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test } from 'vitest'
 import { missionDir } from '../../src/paths.ts'
 import { newState, saveState, type MissionState } from '../../src/mission/state.ts'
 import {
-  bucketOf, isHidden, needsPrRefresh, projectMissions, shortId, sortMissions, statusLabel, type PrInfo,
+  allMissions, bucketOf, isHidden, needsPrRefresh, projectMissions, shortId, sortMissions, statusLabel, type PrInfo,
 } from '../../src/ui/model.ts'
 
 let home: string
@@ -124,6 +124,14 @@ test('projectMissions ignore les autres dépôts et les états illisibles', asyn
   await mkdir(missionDir('m4'), { recursive: true })
   expect((await projectMissions('/r')).map((s) => s.id)).toEqual(['m1'])
 })
+test('allMissions rend les missions de tous les dépôts et ignore un état illisible', async () => {
+  await saveState(mk({ id: 'm1', repoPath: '/r' }))
+  await saveState(mk({ id: 'm2', repoPath: '/autre' }))
+  await mkdir(missionDir('zz'), { recursive: true })
+  await writeFile(join(missionDir('zz'), 'state.json'), '{')
+  expect((await allMissions()).map((s) => s.id).sort()).toEqual(['m1', 'm2'])
+})
+
 test('projectMissions : aucun dossier -> liste vide', async () => {
   expect(await projectMissions('/r')).toEqual([])
 })

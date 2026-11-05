@@ -1,0 +1,359 @@
+:root {
+  color-scheme: light;
+  --bg: #fafaf9;
+  --fg: #1c1917;
+  --muted: #78716c;
+  --line: #e7e5e4;
+  --amber: #b45309;
+  --red: #b91c1c;
+  --done: #a8a29e;
+  --panel: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0c0a09;
+    --fg: #fafaf9;
+    --muted: #a8a29e;
+    --line: #44403c;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --done: #78716c;
+    --panel: #1c1917;
+  }
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.45 system-ui, sans-serif;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 230px 1fr 360px;
+  height: 100%;
+}
+
+.missions,
+.conversation,
+.contexte {
+  min-width: 0;
+  min-height: 0;
+}
+
+.missions,
+.conversation {
+  border-right: 1px solid var(--line);
+}
+
+.missions {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+}
+
+.connexion {
+  margin: 0;
+  padding: 6px 10px;
+  background: var(--amber);
+  color: #1c1917;
+  font-size: 13px;
+}
+
+.mission-colonne {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.mission-entete {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mission-entete select,
+.mission-entete button,
+.masquees,
+.nouvelle {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mission-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  flex: 1;
+}
+
+.mission-liste li {
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+}
+
+.mission-liste li.ambre {
+  border-left-color: var(--amber);
+}
+
+.mission-liste li.rouge {
+  border-left-color: var(--red);
+}
+
+.mission-liste li.grise {
+  color: var(--done);
+}
+
+.mission-ligne {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mission-ligne[aria-current='true'] {
+  background: var(--bg);
+}
+
+.mission-id,
+.mission-projet,
+.mission-statut,
+.mission-badge {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mission-titre {
+  font-size: 14px;
+}
+
+.masquees,
+.nouvelle {
+  margin: 8px 10px;
+}
+
+.nouvelle {
+  margin-top: auto;
+}
+
+.conversation {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.conversation-corps,
+.chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.fil {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.bulle {
+  max-width: 42rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.bulle p {
+  margin: 0;
+}
+
+.bulle.droite {
+  align-self: flex-end;
+}
+
+.bulle.gauche {
+  align-self: flex-start;
+}
+
+.moteur {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--amber);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.bas {
+  border-top: 1px solid var(--line);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bandeau {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--amber);
+  color: #1c1917;
+}
+
+.nouveaux {
+  align-self: center;
+  margin: 4px;
+}
+
+.saisie textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  resize: vertical;
+}
+
+.porte {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.porte p {
+  margin: 0 0 4px;
+}
+
+.markdown p {
+  margin: 0;
+}
+
+.action-detail pre {
+  white-space: pre-wrap;
+  margin: 4px 0;
+}
+
+.panneau {
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--panel);
+}
+
+.panneau-corps {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+.poignee {
+  cursor: col-resize;
+  flex: 0 0 6px;
+  background: var(--line);
+}
+
+.panneau [role='tablist'],
+.tiroir [role='tablist'] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.onglet.point::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
+.pastille {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--done);
+}
+
+.pastille.faite {
+  background: #15803d;
+}
+
+.pastille.en-cours {
+  background: #2563eb;
+}
+
+.pastille.a-faire {
+  background: var(--done);
+}
+
+.pastille.echec {
+  background: var(--red);
+}
+
+.diff-ajout {
+  color: #15803d;
+}
+
+.diff-retrait {
+  color: var(--red);
+}
+
+.tiroir {
+  position: fixed;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(600px, 100vw);
+  overflow: auto;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+}
+
+.contexte-ouvrir {
+  position: fixed;
+  z-index: 2;
+  top: 8px;
+  right: 8px;
+}
+
+.journal {
+  margin: 0;
+  padding-left: 1.2rem;
+}

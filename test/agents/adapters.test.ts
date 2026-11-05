@@ -12,7 +12,7 @@ describe('agentArgs', () => {
       '--model', 'm', '--effort', 'high', '--permission-mode', 'auto', '--session-id', 'sid-1',
       '--mcp-config', '/m/mcp.json', '--append-system-prompt-file', '/m/p.md',
       '--add-dir', '/home/u/missions/42', '--name', 'herness-42',
-      '--disallowedTools', 'Bash(herness valider:*)', 'Bash(herness refuser:*)', 'Edit(//home/u/missions/42/inbox/**)',
+      '--disallowedTools', 'AskUserQuestion', 'Bash(herness valider:*)', 'Bash(herness refuser:*)', 'Edit(//home/u/missions/42/inbox/**)',
       'Bash(herdr:*)', 'Bash(script:*)', 'Bash(unbuffer:*)',
     ]);
   });
@@ -24,6 +24,13 @@ describe('agentArgs', () => {
 
   it("l'orchestrateur sans mode de permission est refusé", () => {
     expect(() => agentArgs('orchestrator', base)).toThrow('mode de permission');
+  });
+
+  it("l'orchestrateur ne peut pas utiliser AskUserQuestion", () => {
+    for (const resume of [false, true]) {
+      const r = agentArgs('orchestrator', { ...orch, sessionId: 'sid-1', resume });
+      expect(r.args.indexOf('AskUserQuestion')).toBeGreaterThan(r.args.indexOf('--disallowedTools'));
+    }
   });
 
   it("l'orchestrateur repris utilise --resume avec le même identifiant de session", () => {

@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { join, resolve } from 'node:path'
+import { execa } from 'execa'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import exemple from '../../projects/exemple/config.ts'
 import demo from '../fixtures/demo/config.ts'
-import { fill, loadProjectConfig, projectDirs, ProjectConfigSchema } from '../../src/config/project.ts'
+import { fill, InvalidConfigError, listProjects, loadProjectConfig, projectDirs, ProjectConfigSchema } from '../../src/config/project.ts'
 
 let dir: string
 let repo: string
@@ -79,6 +80,78 @@ test("la config d'exemple est valide et ne vise pas un vrai dépôt", () => {
   const c = ProjectConfigSchema.parse(exemple)
   expect(c.name).toBe('exemple')
   expect(c.repoPath).toBe('/chemin/vers/ton-projet')
+})
+
+test('listProjects rend toutes les configs triées par nom, sans exemple', async () => {
+  const { prepare: _p, ...rest } = demo
+  await writeConfig('b', { ...rest, name: 'b', repoPath: repo })
+  await writeConfig('a', { ...rest, name: 'a', repoPath: repo })
+  await writeConfig('exemple', { ...rest, name: 'exemple', repoPath: repo })
+  expect((await listProjects()).map((f) => f.config.name)).toEqual(['a', 'b'])
+})
+
+test('un fichier à la racine du dossier de projets est ignoré', async () => {
+  const { prepare: _p, ...rest } = demo
+  await writeConfig('a', { ...rest, name: 'a', repoPath: repo })
+  await writeFile(join(dir, 'README.md'), 'note\n')
+  expect((await loadProjectConfig(repo)).name).toBe('a')
+  expect((await listProjects()).map((f) => f.config.name)).toEqual(['a'])
+})
+
+test('listProjects ignore une config invalide et un import cassé, findProjectConfig lève', async () => {
+  const { prepare: _p, ...rest } = demo
+  const { models: _m, ...sansModels } = rest
+  await writeConfig('ok', { ...rest, name: 'ok', repoPath: repo })
+  await writeConfig('cassee', { ...sansModels, name: 'cassee', repoPath: repo })
+  await mkdir(join(dir, 'syntaxe'), { recursive: true })
+  await writeFile(join(dir, 'syntaxe', 'config.ts'), 'export default {\n')
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    expect((await listProjects()).map((f) => f.config.name)).toEqual(['ok'])
+    const logged = spy.mock.calls.map((c) => String(c[0])).join('\n')
+    expect(logged).toContain('cassee')
+    expect(logged).toContain('syntaxe')
+  } finally {
+    spy.mockRestore()
+  }
+  await expect(loadProjectConfig(repo)).rejects.toBeInstanceOf(InvalidConfigError)
+})
+
+test('herness projet charge et recharge une config hors paquet module', async () => {
+  const { prepare: _p, ...rest } = demo
+  const file = join(dir, 'a', 'config.ts')
+  const run = () => execa('node', [resolve('bin/herness.js'), 'projet'], {
+    cwd: repo,
+    reject: false,
+    stdin: 'ignore',
+    env: { HERNESS_PROJECTS_DIR: dir },
+  })
+  await writeConfig('a', { ...rest, name: 'alpha', repoPath: repo })
+  const first = await run()
+  expect(first.stderr).toBe('')
+  expect(first.exitCode).toBe(0)
+  expect(first.stdout).toContain('projet alpha')
+  expect(first.stdout).toContain('config valide')
+
+  await writeConfig('a', { ...rest, name: 'beta', repoPath: repo })
+  const later = new Date(Date.now() + 2000)
+  await utimes(file, later, later)
+  const second = await run()
+  expect(second.stderr).toBe('')
+  expect(second.exitCode).toBe(0)
+  expect(second.stdout).toContain('projet beta')
+  expect(second.stdout).toContain('config valide')
+})
+
+test('une config modifiée est relue sans redémarrer', async () => {
+  const { prepare: _p, ...rest } = demo
+  await writeConfig('a', { ...rest, name: 'a', repoPath: repo, mainBranch: 'main' })
+  expect((await loadProjectConfig(repo)).mainBranch).toBe('main')
+  await writeConfig('a', { ...rest, name: 'a', repoPath: repo, mainBranch: 'dev' })
+  const file = join(dir, 'a', 'config.ts')
+  const later = new Date(Date.now() + 2000)
+  await utimes(file, later, later)
+  expect((await loadProjectConfig(repo)).mainBranch).toBe('dev')
 })
 
 test('fill remplace les variables', () => {

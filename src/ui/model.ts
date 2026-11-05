@@ -60,7 +60,7 @@ export function needsPrRefresh(s: MissionState, pr: PrInfo | undefined, now: Dat
   return !(pr?.state === 'CLOSED' && isHidden(s, pr, now))
 }
 
-export async function projectMissions(repoPath: string): Promise<MissionState[]> {
+export async function allMissions(): Promise<MissionState[]> {
   let ids: string[]
   try {
     ids = await readdir(missionsRoot())
@@ -70,13 +70,16 @@ export async function projectMissions(repoPath: string): Promise<MissionState[]>
   const out: MissionState[] = []
   for (const id of ids) {
     try {
-      const s = await loadState(id)
-      if (s.repoPath === repoPath) out.push(s)
+      out.push(await loadState(id))
     } catch {
       // état illisible ou dossier étranger : ignoré
     }
   }
   return out
+}
+
+export async function projectMissions(repoPath: string): Promise<MissionState[]> {
+  return (await allMissions()).filter((s) => s.repoPath === repoPath)
 }
 
 export function sortMissions(list: MissionState[]): MissionState[] {
