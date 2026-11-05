@@ -225,6 +225,32 @@ program
   })
 
 program
+  .command('mise-a-jour')
+  .description('Installer la dernière version de herness (ou --version), puis proposer de redémarrer les missions en cours')
+  .option('--version <x.y.z>', 'version à installer (retour arrière compris)')
+  .action(async (opts: { version?: string }) => {
+    try {
+      const { update, installedBin, INSTALL_SCRIPT_URL } = await import('./update.ts')
+      const { execa } = await import('execa')
+      await update(opts, {
+        install: async (args) => {
+          const script = (await execa('curl', ['-fsSL', INSTALL_SCRIPT_URL])).stdout
+          await execa('sh', ['-s', '--', ...args], { input: script, stdout: 'inherit', stderr: 'inherit' })
+        },
+        restart: async (id) => {
+          await execa(installedBin(), ['reprendre', id, '--redemarrer'], { stdio: 'inherit' })
+        },
+        isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+        confirm: askYesNo,
+        out: (line) => console.log(line),
+      })
+    } catch (e) {
+      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      process.exitCode = 1
+    }
+  })
+
+program
   .command('statut [id]')
   .description("État des missions, ou détail d'une mission")
   .action(async (id?: string) => {
