@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/MaxVzl/herness/compare/v0.5.0...v0.6.0) (2026-11-05)
+
+
+### Features
+
+* installation par install.sh et herness mise-a-jour ([#27](https://github.com/MaxVzl/herness/issues/27)) ([#28](https://github.com/MaxVzl/herness/issues/28)) ([42251ed](https://github.com/MaxVzl/herness/commit/42251edebc5e9932a7fcc4c75310c8670469a3e2))
+
 ## [0.5.0](https://github.com/MaxVzl/herness/compare/v0.4.1...v0.5.0) (2026-11-05)
 
 
