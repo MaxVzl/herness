@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/MaxVzl/herness/compare/v0.4.0...v0.4.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **liberer-agents-termines:** herness — arrêter les agents dès que leur travail est fini ([3741b90](https://github.com/MaxVzl/herness/commit/3741b905bd548b9254fcba8dce82ddea68ce86ae))
+* **liberer-agents-termines:** herness — arrêter les agents dès que leur travail est fini ([3a1b45a](https://github.com/MaxVzl/herness/commit/3a1b45ac6983f08bd21cd4775ed85080e2a777f8))
+
 ## [0.4.0](https://github.com/MaxVzl/herness/compare/v0.3.1...v0.4.0) (2026-11-03)
 
 
