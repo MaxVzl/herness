@@ -2,3 +2,4 @@
 node_modules/
 dist/
 a_lire.txt
+.vitest/
