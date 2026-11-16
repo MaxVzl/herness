@@ -15,7 +15,7 @@ import { block, commitIfChanged, goto, informOrchestrator, log, notify, type Ste
 import { openGate } from './gates.ts'
 
 /** Délai d'attente d'un agent par consigne : une tâche (TDD, tests, commit) peut être longue. */
-export const ASK_TIMEOUT_MS: Record<Role, number> = { implementer: 4 * 3_600_000, reviewer: 2 * 3_600_000, orchestrator: 3_600_000 }
+export const ASK_TIMEOUT_MS: Record<Role, number> = { implementer: 4 * 3_600_000, reviewer: 2 * 3_600_000, diagnostic: 2 * 3_600_000, orchestrator: 3_600_000 }
 
 /** Interdits communs (contraintes globales). */
 const GLOBAL_FORBIDDEN = [

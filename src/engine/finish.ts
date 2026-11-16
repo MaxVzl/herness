@@ -517,7 +517,7 @@ async function diagnose(s: MissionState, e: Effects, cfg: ProjectConfig): Promis
     )
     return { agent: name, file, out }
   }
-  const agent: Agent = { site: { what: PF, pane: `RD${n}` }, name, role: 'reviewer', model: cfg.models.reviewer }
+  const agent: Agent = { site: { what: PF, pane: `RD${n}` }, name, role: 'diagnostic', model: cfg.models.reviewer }
   const pa = await converse(s, e, P, agent, make, async (x) => !!x.out && causeOf(await firstLine(x.out)) !== undefined)
   if (typeof pa === 'string') return pa
   await markPane(s, e, name)

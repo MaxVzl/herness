@@ -6,6 +6,14 @@ Un contrôle du preflight a échoué. Ton travail est de trouver la cause avant 
 
 La sortie du check rouge est dans `{{logPath}}`. Lis-la en entier, puis remonte à la cause réelle : lis le code et les tests concernés, compare avec ce que la branche a changé (`git diff` contre `origin/main`).
 
+## Commandes git
+
+Lance git depuis le worktree (ton dossier de travail), **sans** `git -C <chemin>` : les commandes permises sont reconnues par leur début, et `git -C … diff` est refusé.
+
+Commandes permises, toutes en lecture seule : `git diff`, `git log`, `git show`, `git rev-parse`, `git merge-base`, `git status`, `git rev-list`, `git ls-files`, `git blame`, `git cat-file`, `git for-each-ref`, `git reflog` (sans argument) et `git reflog show`. Par exemple : `git merge-base origin/main HEAD`, `git rev-parse HEAD`, `git rev-parse --abbrev-ref HEAD` pour le nom de la branche.
+
+`git fetch` est interdit : `origin/main` est déjà à jour. Toute autre commande (`git branch`, `git checkout`, `git reset`, relance du check…) est refusée.
+
 ## Classer la cause
 
 - `BRANCHE` : la cause est dans les changements de la branche (code ou test cassé, oubli, effet de bord).

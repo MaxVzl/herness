@@ -264,7 +264,7 @@ test('le même faux positif rouge deux fois part au diagnostic', async () => {
   expect(labels(fx)).toEqual(['base de test', 'preflight · lint', 'preflight · lint'])
   expect(s.loops.preflight.failing).toMatchObject({ label: 'lint', exitCode: 1, logPath: '/l/ko.log' })
   s = await until(eng, (x) => x.step === 'bloquée')
-  expect(fx.callsOf('agents.start').map((c) => [c[0], c[1]])).toEqual([['rdt-1-1', 'reviewer']])
+  expect(fx.callsOf('agents.start').map((c) => [c[0], c[1]])).toEqual([['rdt-1-1', 'diagnostic']])
   expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['rdt-1-1', join(pdir(), 'consigne-diagnostic-1.md')])
   const consigne = await readFile(join(pdir(), 'consigne-diagnostic-1.md'), 'utf8')
   expect(consigne).toContain('/l/ko.log')
