@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Role } from '../agents/adapters.ts'
 import { diagnosticName, globalFixerName, globalReviewerName, preflightFixerName } from '../agents/names.ts'
-import { fill, type ProjectConfig } from '../config/project.ts'
+import { fill, mainRef, type ProjectConfig } from '../config/project.ts'
 import { markDone } from '../herdr/layout.ts'
 import { nextLoopRound } from '../mission/loop.ts'
 import { freshLoops, saveState, type MissionState, type PendingAsk, type PreflightResult, type PreflightState } from '../mission/state.ts'
@@ -40,7 +40,6 @@ const errMsg = (err: unknown): string => (err instanceof Error ? err.message : S
 const globalDir = (s: MissionState): string => join(missionDir(s.id), 'global')
 const preflightDir = (s: MissionState): string => join(missionDir(s.id), 'preflight')
 const logsDir = (s: MissionState): string => join(missionDir(s.id), 'logs')
-const mainRef = (cfg: ProjectConfig): string => `origin/${cfg.mainBranch}`
 /** Relecteur global : relit la branche, puis chaque correction de la revue globale et du preflight. */
 const globalReviewer = (s: MissionState): string => globalReviewerName(s.id, s.loopGeneration)
 
@@ -198,7 +197,7 @@ export async function stepGlobalReview(s: MissionState, e: Effects, cfg: Project
     case 'fix':
       return globalFix(s, e, cfg)
     case 'control': {
-      const r = await e.git.controlCommits(s.worktree, G.fixBase ?? '', cfg.forbiddenPaths)
+      const r = await e.git.controlCommits(s.worktree, G.fixBase ?? '', cfg.forbiddenPaths, mainRef(cfg))
       if (!r.ok && r.code === 'no-commit') {
         const stop = await stopWithoutCommit(s, e, G, GR, join(globalDir(s), 'rapport.md'))
         if (stop) return stop
@@ -208,7 +207,7 @@ export async function stepGlobalReview(s: MissionState, e: Effects, cfg: Project
       return 'continue'
     }
     case 'test':
-      return globalTests(s, e)
+      return globalTests(s, e, cfg)
   }
 }
 
@@ -287,10 +286,13 @@ async function globalFix(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
   return 'continue'
 }
 
-/** Tâches dont les fichiers recoupent ceux de la correction ; aucune → toutes. Une commande n'est lancée qu'une fois. */
-async function touchedTasks(s: MissionState, e: Effects, fixBase: string): Promise<MissionState['tasks']> {
+/**
+ * Tâches dont les fichiers recoupent ceux de la correction ; aucune → toutes. Une commande n'est lancée qu'une fois.
+ * Les commits de main entrés par un rebase du correcteur ne comptent pas dans la correction.
+ */
+async function touchedTasks(s: MissionState, e: Effects, cfg: ProjectConfig, fixBase: string): Promise<MissionState['tasks']> {
   const wt = s.worktree as string
-  const fixed = new Set(await e.git.changedFiles(wt, fixBase))
+  const fixed = new Set(await e.git.branchFiles(wt, fixBase, mainRef(cfg)))
   const touched: MissionState['tasks'] = []
   for (const t of s.tasks) {
     if (!t.baseSha || !t.reviewedSha) continue
@@ -301,11 +303,11 @@ async function touchedTasks(s: MissionState, e: Effects, fixBase: string): Promi
   return list.filter((t) => !seen.has(t.testCommand) && seen.add(t.testCommand))
 }
 
-async function globalTests(s: MissionState, e: Effects): Promise<StepResult> {
+async function globalTests(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   const G = s.loops.globalReview
   const wt = s.worktree as string
   const tab = s.herdr.tabs['checks'] as string
-  for (const t of await touchedTasks(s, e, G.fixBase ?? (await e.git.headSha(wt)))) {
+  for (const t of await touchedTasks(s, e, cfg, G.fixBase ?? (await e.git.headSha(wt)))) {
     const r = await e.runInPane(e.herdr, tab, wt, `RG · tests T${t.n}`, ['bash', '-c', t.testCommand], logsDir(s))
     if (r.exitCode !== 0) {
       return nextGlobalRound(s, e, `Tests de la tâche ${t.n}\nCommande : ${t.testCommand}\nCode de sortie : ${r.exitCode}\nJournal complet : ${r.logPath}\n\n${r.tail}`)
@@ -418,7 +420,7 @@ async function preflight(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
     case 'fix':
       return preflightFix(s, e, cfg)
     case 'control': {
-      const r = await e.git.controlCommits(s.worktree, P.fixBase ?? '', cfg.forbiddenPaths)
+      const r = await e.git.controlCommits(s.worktree, P.fixBase ?? '', cfg.forbiddenPaths, mainRef(cfg))
       if (!r.ok && r.code === 'no-commit') {
         const stop = await stopWithoutCommit(s, e, P, PF, join(preflightDir(s), 'rapport.md'))
         if (stop) return stop

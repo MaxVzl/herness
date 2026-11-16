@@ -2,7 +2,7 @@ import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/pr
 import { dirname, join } from 'node:path'
 import { agentArgs, type Role } from '../agents/adapters.ts'
 import * as names from '../agents/names.ts'
-import { fill, type ProjectConfig } from '../config/project.ts'
+import { fill, mainRef, type ProjectConfig } from '../config/project.ts'
 import { markDone, release, releaseTab, slot } from '../herdr/layout.ts'
 import { nextTaskPhase, type LoopEvent } from '../mission/loop.ts'
 import { proposalHash, proposedPlanPath, proposedSpecPath, readProposal, type Proposal } from '../mission/amendment.ts'
@@ -602,7 +602,7 @@ async function finishImplement(s: MissionState, e: Effects, t: TaskState): Promi
 }
 
 async function stepControl(s: MissionState, e: Effects, cfg: ProjectConfig, t: TaskState): Promise<StepResult> {
-  const r = await e.git.controlCommits(s.worktree as string, t.baseSha as string, cfg.forbiddenPaths)
+  const r = await e.git.controlCommits(s.worktree as string, t.baseSha as string, cfg.forbiddenPaths, mainRef(cfg))
   if (r.ok) return apply(s, e, t, 'control-ok')
   if (r.code === 'no-commit') {
     const stop = await stopWithoutCommit(s, e, t, `tâche ${t.n}`, join(taskDir(s, t), 'rapport.md'))

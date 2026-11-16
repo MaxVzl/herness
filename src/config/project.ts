@@ -34,6 +34,9 @@ export const ProjectConfigSchema = z.object({
 })
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>
 
+/** Référence de main, toujours prise sur origin. */
+export const mainRef = (cfg: ProjectConfig): string => `origin/${cfg.mainBranch}`
+
 // Racine du paquet herness : herness est lancé depuis le dépôt cible, pas depuis ici.
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 

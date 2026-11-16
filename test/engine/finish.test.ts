@@ -140,7 +140,10 @@ test('revue globale en corrections démarre un implémenteur neuf puis re-revue 
     over: {
       agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ'] }) },
       // La correction touche src/a.ts, touché aussi par la tâche 1 seulement.
-      git: { changedFiles: async (_wt: string, base: string, head?: string) => (head === undefined ? ['src/a.ts'] : base === 'b1' ? ['src/a.ts'] : ['src/b.ts']) },
+      git: {
+        changedFiles: async (_wt: string, base: string) => (base === 'b1' ? ['src/a.ts'] : ['src/b.ts']),
+        branchFiles: async () => ['src/a.ts'],
+      },
     },
   })
   let s = await until(eng, (x) => x.loops.globalReview.phase === 'fix')
@@ -159,7 +162,9 @@ test('revue globale en corrections démarre un implémenteur neuf puis re-revue 
   const fix = await readFile(join(gdir(), 'correctifs-1.md'), 'utf8')
   expect(fix).toContain('src/a.ts:3 remarque de rgt-1')
   expect(fix).toContain(join(gdir(), 'rapport.md'))
-  expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths])
+  expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths, 'origin/main'])
+  // Fichiers de la correction : commits de la branche, sans ceux de main.
+  expect(fx.callsOf('git.branchFiles')[0]).toEqual([wt, 'sha-head', 'origin/main'])
   // Tests des tâches touchées seulement, dans l'onglet checks.
   const tests = fx.callsOf('runInPane')
   expect(tests.map((c) => [c[1], c[4]])).toEqual([[s.herdr.tabs['checks'], ['bash', '-c', 'pnpm test a']]])
@@ -387,7 +392,7 @@ test('CAUSE: MAIN non reproduite sur main est corrigée comme BRANCHE', async ()
   const fix = await readFile(join(pdir(), 'correctifs-1.md'), 'utf8')
   expect(fix).toContain('remarque de rdt-1-1')
   expect(fix).toContain('vert sur origin/main')
-  expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths])
+  expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths, 'origin/main'])
   // Re-revue par le relecteur global sur le diff depuis sa dernière tête relue.
   expect(fx.callsOf('git.diffPackage')[0]).toEqual([wt, 'sha-rev', join(pdir(), 'correction-1.diff')])
   expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['rgt-1', join(pdir(), 'consigne-rerevue-1.md')])
