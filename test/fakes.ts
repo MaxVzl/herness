@@ -118,6 +118,7 @@ export function fakeEffects(overrides: FakeOverrides = {}): FakeEffects {
     push: async () => {},
     mergeBase: async () => 'sha-base',
     changedFiles: async () => [],
+    branchFiles: async () => [],
     worktreeAddDetached: async () => {},
     worktreeRemove: async () => {},
     rebaseOnto: async () => ({ ok: true, changedCode: false }),

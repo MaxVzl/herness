@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { agentArgs } from './agents/adapters.ts'
 import { orchestratorName } from './agents/names.ts'
-import { loadProjectConfig, type ProjectConfig } from './config/project.ts'
+import { loadProjectConfig, mainRef, type ProjectConfig } from './config/project.ts'
 import type { Effects } from './engine/effects.ts'
 import { proofDbDown, testDbDown } from './engine/engine.ts'
 import { checkEnv } from './engine/envcheck.ts'
@@ -32,7 +32,6 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const BIN = join(packageRoot, 'bin', 'herness.js')
 const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
 const exists = (p: string): Promise<boolean> => access(p).then(() => true, () => false)
-const mainRef = (cfg: ProjectConfig): string => `origin/${cfg.mainBranch}`
 
 /** État d'une mission existante, avec un message clair si elle n'existe pas. */
 async function load(id: string): Promise<MissionState> {
@@ -68,7 +67,6 @@ async function orchestratorPrompt(s: MissionState, d: Demande, hasNote: boolean,
     specPath: pattern('specs'),
     planPath: pattern('plans'),
     missionDir: missionDir(s.id),
-    branch: s.branch ?? `herness/${s.id}`,
     mainBranch: cfg.mainBranch,
     preflight: cfg.preflight.length
       ? cfg.preflight.map((p) => `  - ${p.label} : \`${p.command.join(' ')}\``).join('\n')

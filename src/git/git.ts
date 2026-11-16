@@ -57,21 +57,45 @@ export async function identity(wt: string): Promise<{ name: string; email: strin
 export type ControlCode = 'no-commit' | 'identity' | 'author' | 'dirty' | 'forbidden';
 export type ControlResult = { ok: true; commits: number } | { ok: false; code: ControlCode; reason: string };
 
-export async function controlCommits(wt: string, baseSha: string, forbiddenPaths: string[]): Promise<ControlResult> {
-  const range = `${baseSha}..HEAD`;
-  const commits = Number((await git(wt, ['rev-list', '--count', range])).stdout.trim());
+/**
+ * Plage des commits de la branche depuis `base`, sans ceux de `mainRef` : après un rebase, `base` ne fait plus
+ * partie de la branche et `base..HEAD` contiendrait les commits de main entrés par le rebase.
+ * Sans `mainRef` (référence absente), aucune exclusion.
+ */
+async function branchRange(wt: string, base: string, mainRef: string): Promise<string[]> {
+  const known = await git(wt, ['rev-parse', '--verify', '--quiet', `${mainRef}^{commit}`], false);
+  return known.exitCode === 0 ? [`${base}..HEAD`, '--not', mainRef] : [`${base}..HEAD`];
+}
+
+async function filesOf(wt: string, range: string[]): Promise<string[]> {
+  const out = (await git(wt, ['log', '--name-only', '--no-renames', '--format=', ...range])).stdout;
+  return [...new Set(out.split('\n').filter(Boolean))];
+}
+
+/** Fichiers touchés par les commits de `base..HEAD` absents de `mainRef`, sans doublon (un renommage : suppression + ajout). */
+export async function branchFiles(wt: string, base: string, mainRef: string): Promise<string[]> {
+  return filesOf(wt, await branchRange(wt, base, mainRef));
+}
+
+/**
+ * Contrôle les commits de la branche depuis `baseSha` (nombre, auteurs, arbre propre, fichiers interdits).
+ * Les commits de `mainRef` sont exclus : un rebase fait par un correcteur n'y fait pas entrer ceux des collègues.
+ */
+export async function controlCommits(wt: string, baseSha: string, forbiddenPaths: string[], mainRef: string): Promise<ControlResult> {
+  const range = await branchRange(wt, baseSha, mainRef);
+  const commits = Number((await git(wt, ['rev-list', '--count', ...range])).stdout.trim());
   if (commits === 0) return { ok: false, code: 'no-commit', reason: `aucun commit depuis ${baseSha}` };
 
   const id = await identity(wt);
   if (!id) return { ok: false, code: 'identity', reason: 'identité git (user.email) non configurée dans le worktree' };
-  const authors = (await git(wt, ['log', '--format=%ae', range])).stdout.split('\n').filter(Boolean);
+  const authors = (await git(wt, ['log', '--format=%ae', ...range])).stdout.split('\n').filter(Boolean);
   const bad = [...new Set(authors.filter((a) => a !== id.email))];
   if (bad.length > 0) return { ok: false, code: 'author', reason: `auteur(s) ≠ ${id.email} : ${bad.join(', ')}` };
 
   const status = (await git(wt, ['status', '--porcelain'])).stdout.trim();
   if (status) return { ok: false, code: 'dirty', reason: `arbre non propre :\n${status}` };
 
-  const files = (await git(wt, ['diff', '--name-only', range])).stdout.split('\n').filter(Boolean);
+  const files = await filesOf(wt, range);
   const forbidden = files.filter((f) => forbiddenPaths.some((g) => matchesGlob(f, g)));
   if (forbidden.length > 0) return { ok: false, code: 'forbidden', reason: `fichier(s) interdit(s) modifié(s) : ${forbidden.join(', ')}` };
 

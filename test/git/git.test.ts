@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { run } from '../../src/exec.js';
 import { access } from 'node:fs/promises';
-import { changedFiles, deleteBranch, fetchBranch, localOnlyCommits, commitFiles, controlCommits, currentBranch, diffPackage, fetchMain, headSha, identity, isAncestor, isClean, mergeBase, push, rebaseOnto, renameBranch, unpushedCount, worktreeAddDetached, worktreeRemove } from '../../src/git/git.js';
+import { branchFiles, changedFiles, deleteBranch, fetchBranch, localOnlyCommits, commitFiles, controlCommits, currentBranch, diffPackage, fetchMain, headSha, identity, isAncestor, isClean, mergeBase, push, rebaseOnto, renameBranch, unpushedCount, worktreeAddDetached, worktreeRemove } from '../../src/git/git.js';
 
 let dir = '';
 const git = (...a: string[]) => run('git', ['-C', dir, ...a]);
@@ -29,9 +29,13 @@ afterEach(async () => {
 });
 
 describe('controlCommits', () => {
+  beforeEach(async () => {
+    await git('checkout', '-b', 'feature');
+  });
+
   it('KO « aucun commit » quand HEAD == base', async () => {
     const base = await headSha(dir);
-    const r = await controlCommits(dir, base, []);
+    const r = await controlCommits(dir, base, [], 'main');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/aucun commit/);
     if (!r.ok) expect(r.code).toBe('no-commit');
@@ -46,7 +50,7 @@ describe('controlCommits', () => {
     process.env.GIT_CONFIG_GLOBAL = '/dev/null';
     process.env.GIT_CONFIG_NOSYSTEM = '1';
     try {
-      const r = await controlCommits(dir, base, []);
+      const r = await controlCommits(dir, base, [], 'main');
       expect(r).toMatchObject({ ok: false, code: 'identity' });
     } finally {
       if (saved.g === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = saved.g;
@@ -57,7 +61,7 @@ describe('controlCommits', () => {
   it('KO quand un commit a un autre auteur que l’identité configurée', async () => {
     const base = await headSha(dir);
     await commit('b.txt', 'b\n', 'b', 'Autre <autre@example.com>');
-    const r = await controlCommits(dir, base, []);
+    const r = await controlCommits(dir, base, [], 'main');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/autre@example.com/);
     if (!r.ok) expect(r.code).toBe('author');
@@ -67,7 +71,7 @@ describe('controlCommits', () => {
     const base = await headSha(dir);
     await commit('b.txt', 'b\n', 'b');
     await writeFile(join(dir, 'trainard.txt'), 'x');
-    const r = await controlCommits(dir, base, []);
+    const r = await controlCommits(dir, base, [], 'main');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/trainard\.txt/);
     if (!r.ok) expect(r.code).toBe('dirty');
@@ -76,7 +80,7 @@ describe('controlCommits', () => {
   it('KO quand un fichier interdit est modifié', async () => {
     const base = await headSha(dir);
     await commit('generated/x.ts', 'x\n', 'gen');
-    const r = await controlCommits(dir, base, ['generated/**']);
+    const r = await controlCommits(dir, base, ['generated/**'], 'main');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/generated\/x\.ts/);
     if (!r.ok) expect(r.code).toBe('forbidden');
@@ -86,7 +90,70 @@ describe('controlCommits', () => {
     const base = await headSha(dir);
     await commit('b.txt', 'b\n', 'b');
     await commit('src/c.txt', 'c\n', 'c');
-    expect(await controlCommits(dir, base, ['generated/**'])).toEqual({ ok: true, commits: 2 });
+    expect(await controlCommits(dir, base, ['generated/**'], 'main')).toEqual({ ok: true, commits: 2 });
+  });
+  /** Branche feature avec un commit, rebasée sur un main qui a reçu deux commits d’un collègue (dont un fichier interdit). */
+  async function rebaseSurMainDuCollegue(): Promise<string> {
+    await commit('b.txt', 'b\n', 'b');
+    const fixBase = await headSha(dir);
+    await git('checkout', 'main');
+    await commit('m.txt', 'm\n', 'm', 'Collègue <coll@example.com>');
+    await commit('generated/m.ts', 'm\n', 'gen', 'Collègue <coll@example.com>');
+    await git('checkout', 'feature');
+    await git('rebase', 'main');
+    return fixBase;
+  }
+
+  it('OK après un rebase sur un main qui contient des commits d’un autre auteur et un fichier interdit', async () => {
+    const fixBase = await rebaseSurMainDuCollegue();
+    await commit('c.txt', 'c\n', 'correctif');
+    expect(await controlCommits(dir, fixBase, ['generated/**'], 'main')).toEqual({ ok: true, commits: 2 });
+  });
+
+  it('OK après un rebase seul, sans commit de correction', async () => {
+    const fixBase = await rebaseSurMainDuCollegue();
+    expect(await controlCommits(dir, fixBase, ['generated/**'], 'main')).toEqual({ ok: true, commits: 1 });
+  });
+
+  it('KO quand un autre auteur commite sur la branche après le rebase', async () => {
+    const fixBase = await rebaseSurMainDuCollegue();
+    await commit('c.txt', 'c\n', 'c', 'Autre <autre@example.com>');
+    const r = await controlCommits(dir, fixBase, ['generated/**'], 'main');
+    expect(r).toMatchObject({ ok: false, code: 'author' });
+    if (!r.ok) expect(r.reason).toMatch(/autre@example\.com/);
+    if (!r.ok) expect(r.reason).not.toMatch(/coll@example\.com/);
+  });
+
+  it('OK quand le correcteur fusionne main au lieu de rebaser', async () => {
+    await commit('b.txt', 'b\n', 'b');
+    const fixBase = await headSha(dir);
+    await git('checkout', 'main');
+    await commit('m.txt', 'm\n', 'm', 'Collègue <coll@example.com>');
+    await git('checkout', 'feature');
+    await git('merge', '--no-ff', '-m', 'merge', 'main');
+    const r = await controlCommits(dir, fixBase, [], 'main');
+    expect(r.ok).toBe(true);
+  });
+
+  it('sans référence de main, n’exclut rien et ne lève pas', async () => {
+    const base = await headSha(dir);
+    await commit('b.txt', 'b\n', 'b');
+    expect(await controlCommits(dir, base, [], 'origin/absent')).toEqual({ ok: true, commits: 1 });
+  });
+});
+
+describe('branchFiles', () => {
+  it('fichiers des commits de la branche, sans ceux de main entrés par un rebase', async () => {
+    await git('checkout', '-b', 'feature');
+    await commit('b.txt', 'b\n', 'b');
+    const fixBase = await headSha(dir);
+    await git('checkout', 'main');
+    await commit('m.txt', 'm\n', 'm', 'Collègue <coll@example.com>');
+    await git('checkout', 'feature');
+    await git('rebase', 'main');
+    await commit('c.txt', 'c\n', 'correctif');
+    await commit('c.txt', 'c2\n', 'correctif 2');
+    expect((await branchFiles(dir, fixBase, 'main')).sort()).toEqual(['b.txt', 'c.txt']);
   });
 });
 

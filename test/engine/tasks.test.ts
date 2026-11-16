@@ -104,7 +104,7 @@ test('une tâche verte et approuvée passe par implement, control, test, review 
   expect(brief).toContain('git stash')
   expect(brief).toContain(join(taskDir(), 'rapport.md'))
 
-  expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths])
+  expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths, 'origin/main'])
   const [, tab, cwd, label, cmd] = fx.callsOf('runInPane')[0]!
   expect([tab, cwd, label]).toEqual([s.herdr.tabs['checks'], wt, 'T1 · tests'])
   expect(cmd).toEqual(['bash', '-c', 'pnpm test a'])

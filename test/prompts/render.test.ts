@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { render } from '../../src/prompts/render.js'
 
 const SETS: Record<string, string[]> = {
-  orchestrator: ['id', 'demande', 'demandeFile', 'note', 'specPath', 'planPath', 'missionDir', 'branch', 'mainBranch', 'preflight'],
+  orchestrator: ['id', 'demande', 'demandeFile', 'note', 'specPath', 'planPath', 'missionDir', 'mainBranch', 'preflight'],
   brief: ['taskBody', 'specPath', 'planPath', 'testCommand', 'commitFormat', 'forbidden', 'reportPath'],
   review: ['briefPath', 'reportPath', 'baseSha', 'headSha', 'diffPath', 'constraints', 'outPath'],
   rereview: ['briefPath', 'reportPath', 'baseSha', 'headSha', 'diffPath', 'constraints', 'findings', 'outPath'],
@@ -84,7 +84,8 @@ describe('orchestrator.md', () => {
     const after = out.slice(out.indexOf("## Après l'ouverture de la PR"))
     expect(after).toContain('pr-ouverte')
     expect(after).toContain('demande explicite')
-    expect(after).toContain('git push --force-with-lease origin <<branch>>')
+    expect(after).toContain('git push --force-with-lease origin HEAD')
+    expect(after).toContain('git branch --show-current')
     expect(after).toContain('<<preflight>>')
     expect(after).toMatch(/Toujours interdit.*git stash.*--no-verify/s)
   })
