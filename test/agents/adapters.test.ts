@@ -44,6 +44,19 @@ describe('agentArgs', () => {
     ]);
   });
 
+  it('le diagnostiqueur a les droits du relecteur plus git en lecture seule, sans fetch ni branch', () => {
+    const r = agentArgs('diagnostic', base);
+    const reviewer = agentArgs('reviewer', base).args;
+    expect(r.kind).toBe('claude');
+    expect(r.args).toEqual(expect.arrayContaining(reviewer));
+    expect(r.args).toEqual(expect.arrayContaining([
+      'Bash(git rev-parse:*)', 'Bash(git merge-base:*)', 'Bash(git status:*)', 'Bash(git rev-list:*)',
+      'Bash(git reflog)', 'Bash(git reflog show:*)', 'Bash(git ls-files:*)', 'Bash(git blame:*)',
+      'Bash(git cat-file:*)', 'Bash(git for-each-ref:*)',
+    ]));
+    expect(r.args.filter((a) => /^Bash\(git (fetch|branch|checkout|reset)|^Bash\(git reflog:\*\)/.test(a))).toEqual([]);
+  });
+
   it("l'implémenteur est un agent cursor en --force --trust sur le modèle demandé", () => {
     expect(agentArgs('implementer', { ...base, model: 'grok-4.7-high' })).toEqual({ kind: 'cursor', args: ['--model', 'grok-4.7-high', '--force', '--trust'] });
   });

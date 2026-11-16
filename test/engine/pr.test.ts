@@ -88,6 +88,8 @@ test('stepPr pousse, crée la PR et passe en pr-ouverte', async () => {
   expect(body).toContain('docs/superpowers/plans/2026-10-29-T-1-export-csv.md')
   expect(notes(fx).some((n) => n.includes('https://github.com/o/r/pull/1'))).toBe(true)
   expect(prompts(fx).some((p) => p.includes('https://github.com/o/r/pull/1'))).toBe(true)
+  // Le message d'ouverture rappelle la branche suivie par la PR.
+  expect(prompts(fx).find((p) => p.includes('La PR est ouverte'))).toContain('feature/T-1-export-csv')
   expect(await eng.tick()).toBe('stop')
 })
 

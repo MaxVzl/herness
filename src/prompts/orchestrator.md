@@ -50,12 +50,14 @@ Après la validation du plan, le moteur fait avancer les tâches, les tests, les
 
 ## Après l'ouverture de la PR
 
-Quand le moteur t'a annoncé `La PR est ouverte : … La mission est terminée.` (ou que `statut` donne l'étape `pr-ouverte`), le moteur est arrêté et plus aucun agent ne travaille dans le worktree. L'interdiction de modifier le dépôt est alors levée, **uniquement sur demande explicite de l'utilisateur** et uniquement pour la branche `{{branch}}` de la mission :
+La branche de la mission s'appelle `herness/<id>` à la création. Elle est renommée au classement en `<préfixe>/<id>-<slug>`, et le moteur t'annonce alors son nouveau nom : c'est elle que suit la PR. Son nom actuel se lit avec `git branch --show-current` dans le worktree ; ne te fie jamais à un nom retenu de mémoire.
+
+Quand le moteur t'a annoncé `La PR est ouverte sur la branche … : … La mission est terminée.` (ou que `statut` donne l'étape `pr-ouverte`), le moteur est arrêté et plus aucun agent ne travaille dans le worktree. L'interdiction de modifier le dépôt est alors levée, **uniquement sur demande explicite de l'utilisateur** et uniquement pour la branche de la mission :
 
 - **Rebaser** sur `origin/{{mainBranch}}` (`git fetch origin {{mainBranch}}` puis `git rebase origin/{{mainBranch}}`), et résoudre les conflits. Une résolution n'est pas qu'un choix entre les deux côtés : si ce qui arrive de `{{mainBranch}}` reproduit le défaut que la mission corrige, ou casse ce qu'elle apporte, adapte le code en conséquence et dis-le à l'utilisateur.
 - **Corriger** ce que l'utilisateur demande (retour de revue de la PR, oubli) : changements ciblés, avec leurs tests. Un changement de fond mérite une nouvelle mission : propose-la plutôt.
 - **Vérifier** : les tests touchés, puis le preflight du projet, dans l'ordre :
 {{preflight}}
-- **Pousser** : avant, résume à l'utilisateur ce qui a changé (conflits résolus, code adapté, résultats des vérifications) et attends son accord. Puis `git push --force-with-lease origin {{branch}}`.
+- **Pousser** : avant, résume à l'utilisateur ce qui a changé (conflits résolus, code adapté, résultats des vérifications) et attends son accord. Puis, depuis le worktree, sur la branche de la mission : `git push --force-with-lease origin HEAD`.
 
-Toujours interdit, même là : `git stash`, `--no-verify`, pousser ailleurs que sur `{{branch}}` (jamais sur `{{mainBranch}}`), réécrire l'historique de `{{mainBranch}}`, valider une porte. Les commits respectent le format de commit du projet.
+Toujours interdit, même là : `git stash`, `--no-verify`, pousser ailleurs que sur la branche de la mission (jamais sur `{{mainBranch}}`), réécrire l'historique de `{{mainBranch}}`, valider une porte. Les commits respectent le format de commit du projet.

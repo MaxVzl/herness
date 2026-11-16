@@ -96,6 +96,8 @@ test('classify renomme la branche en feature/<id>-<slug> pour le type feat sur l
   expect(fx.callsOf('git.renameBranch')).toEqual([[wt, 'herness/T-1', 'feature/T-1-export-csv']])
   const s = await loadState('T-1')
   expect(s).toMatchObject({ step: 'brainstorm', type: 'feat', slug: 'export-csv', branch: 'feature/T-1-export-csv' })
+  // L'orchestrateur apprend le nouveau nom : son prompt ne le connaît pas.
+  expect(fx.callsOf('herdr.agentPrompt').map((c) => c[1])).toContainEqual(expect.stringContaining('feature/T-1-export-csv'))
 })
 
 test('classified avec un type inconnu est journalisé et ignoré', async () => {
@@ -298,6 +300,7 @@ test('reprise : branche déjà renommée, pas de nouveau renommage, branche enre
   await eng.tick()
   expect(fx.callsOf('git.renameBranch')).toEqual([])
   expect(await loadState('T-1')).toMatchObject({ step: 'brainstorm', branch: 'feature/T-1-export-csv' })
+  expect(fx.callsOf('herdr.agentPrompt').map((c) => c[1])).toContainEqual(expect.stringContaining('feature/T-1-export-csv'))
 })
 
 test('reprise : spec déjà commitée, pas de commit, passage à plan', async () => {

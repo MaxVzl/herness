@@ -4,7 +4,7 @@ import type { Herdr } from '../herdr/client.js';
 export const PERMISSION_MODES = ['acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk', 'plan'] as const;
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
-export type Role = 'orchestrator' | 'implementer' | 'reviewer';
+export type Role = 'orchestrator' | 'implementer' | 'reviewer' | 'diagnostic';
 export type AgentKind = 'claude' | 'cursor';
 export interface AgentLaunch {
   kind: AgentKind;
@@ -28,6 +28,24 @@ export type AgentApi = Pick<Herdr, 'agentStart' | 'agentPrompt' | 'agentWait' | 
 /** Dans une règle de permission, `/x` est relatif au projet : un chemin absolu prend `//`. */
 const absRule = (tool: string, path: string, glob: string): string => `${tool}(/${path}/${glob})`;
 
+/** Relecteur : lecture seule sur le worktree, écriture dans le dossier de mission, `git diff/log/show`. */
+const reviewerArgs = (o: AgentOptions): string[] => [
+  '--model', o.model, '--effort', 'high', '--permission-mode', 'dontAsk',
+  '--add-dir', o.missionDir,
+  '--allowedTools', 'Read', 'Grep', 'Glob', absRule('Edit', o.missionDir, '**'),
+  'Bash(git diff:*)', 'Bash(git log:*)', 'Bash(git show:*)',
+];
+
+/**
+ * Commandes git en lecture seule ajoutées pour le diagnostiqueur du preflight. Exclues : `git fetch` (écrit des
+ * refs), `git branch` (`-D`, `-m`) et `git reflog` avec arguments (`expire`, `delete`), qui écrivent.
+ */
+const DIAGNOSTIC_GIT = [
+  'Bash(git rev-parse:*)', 'Bash(git merge-base:*)', 'Bash(git status:*)', 'Bash(git rev-list:*)',
+  'Bash(git reflog)', 'Bash(git reflog show:*)', 'Bash(git ls-files:*)', 'Bash(git blame:*)',
+  'Bash(git cat-file:*)', 'Bash(git for-each-ref:*)',
+];
+
 export function agentArgs(role: Role, o: AgentOptions): AgentLaunch {
   switch (role) {
     case 'orchestrator': {
@@ -46,15 +64,9 @@ export function agentArgs(role: Role, o: AgentOptions): AgentLaunch {
       return { kind: 'claude', args };
     }
     case 'reviewer':
-      return {
-        kind: 'claude',
-        args: [
-          '--model', o.model, '--effort', 'high', '--permission-mode', 'dontAsk',
-          '--add-dir', o.missionDir,
-          '--allowedTools', 'Read', 'Grep', 'Glob', absRule('Edit', o.missionDir, '**'),
-          'Bash(git diff:*)', 'Bash(git log:*)', 'Bash(git show:*)',
-        ],
-      };
+      return { kind: 'claude', args: reviewerArgs(o) };
+    case 'diagnostic':
+      return { kind: 'claude', args: [...reviewerArgs(o), ...DIAGNOSTIC_GIT] };
     case 'implementer':
       return { kind: 'cursor', args: ['--model', o.model, '--force', '--trust'] };
   }
