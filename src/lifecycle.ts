@@ -67,7 +67,6 @@ async function orchestratorPrompt(s: MissionState, d: Demande, hasNote: boolean,
     specPath: pattern('specs'),
     planPath: pattern('plans'),
     missionDir: missionDir(s.id),
-    branch: s.branch ?? `herness/${s.id}`,
     mainBranch: cfg.mainBranch,
     preflight: cfg.preflight.length
       ? cfg.preflight.map((p) => `  - ${p.label} : \`${p.command.join(' ')}\``).join('\n')

@@ -159,6 +159,8 @@ const stepClassify: StepFn = async (s, e, cfg) => {
     log(s, e, `branche renommée en ${target}`)
   }
   s.branch = target
+  // Le prompt de l'orchestrateur ne connaît que `herness/<id>` : il apprend le nom suivi par la PR.
+  await informOrchestrator(s, e, `Branche de la mission renommée en ${target} : c'est elle que suivra la PR.`)
   return goto(s, e, 'brainstorm')
 }
 

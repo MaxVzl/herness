@@ -801,6 +801,6 @@ export async function stepPr(s: MissionState, e: Effects, cfg: ProjectConfig): P
   log(s, e, `PR ouverte : ${url}`)
   await notify(s, e, `PR ouverte : ${url}`)
   await stopAgentsTab(s, e, 'all', 'PR ouverte')
-  await informOrchestrator(s, e, `La PR est ouverte : ${url}. La mission est terminée.`)
+  await informOrchestrator(s, e, `La PR est ouverte sur la branche ${branch} : ${url}. La mission est terminée.`)
   return goto(s, e, 'pr-ouverte')
 }
