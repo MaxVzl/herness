@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/MaxVzl/herness/compare/v0.6.0...v0.6.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* trois défauts vus en mission : contrôle après rebase, nom de branche, diagnostiqueur ([#31](https://github.com/MaxVzl/herness/issues/31)) ([f154308](https://github.com/MaxVzl/herness/commit/f1543082bed8ef222f7446c74cee944ec2177c9e))
+* trois défauts vus en mission : contrôle après rebase, nom de branche, diagnostiqueur (MAX-6) ([#30](https://github.com/MaxVzl/herness/issues/30)) ([d6c01c6](https://github.com/MaxVzl/herness/commit/d6c01c64800f473e7d9e112661c26c8162eb6119))
+
 ## [0.6.0](https://github.com/MaxVzl/herness/compare/v0.5.0...v0.6.0) (2026-11-05)
 
 
