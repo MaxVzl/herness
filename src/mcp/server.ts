@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { loadProjectConfig } from '../config/project.ts'
+import { errorLogPath, logHernessError } from '../errlog.ts'
 import { proposedPlanPath, proposedSpecPath, readProposal } from '../mission/amendment.ts'
 import { postInbox } from '../mission/inbox.ts'
 import { checkAmendment, parsePlan } from '../mission/plan.ts'
@@ -43,11 +44,12 @@ function summarize(s: MissionState): string {
 }
 
 // Une exception interne devient un résultat d'erreur en français, jamais un message technique brut.
-function guard<A extends unknown[]>(fn: (...a: A) => Promise<ToolResult>): (...a: A) => Promise<ToolResult> {
+function guard<A extends unknown[]>(id: string, tool: string, fn: (...a: A) => Promise<ToolResult>): (...a: A) => Promise<ToolResult> {
   return async (...a) => {
     try {
       return await fn(...a)
     } catch (e) {
+      await logHernessError({ mission: id, origin: `outil MCP ${tool}` }, e)
       return fail(`Erreur : ${e instanceof Error ? e.message : String(e)}`)
     }
   }
@@ -57,7 +59,7 @@ function guard<A extends unknown[]>(fn: (...a: A) => Promise<ToolResult>): (...a
 export function buildServer(id: string): McpServer {
   const server = new McpServer({ name: 'herness', version: VERSION })
 
-  server.registerTool('statut', { description: 'Résumé de la mission : étape, tâche courante, tours, portes en attente, PR.' }, guard(async () =>
+  server.registerTool('statut', { description: 'Résumé de la mission : étape, tâche courante, tours, portes en attente, PR.' }, guard(id, 'statut', async () =>
     ok(summarize(await loadState(id)))))
 
   server.registerTool(
@@ -66,7 +68,7 @@ export function buildServer(id: string): McpServer {
       description: 'Déclare le type de travail et le slug de la mission une fois la demande comprise.',
       inputSchema: { type: z.string(), slug: z.string() },
     },
-    guard(async ({ type, slug }) => {
+    guard(id, 'mission_identifiee', async ({ type, slug }) => {
       const s = await loadState(id)
       const config = await loadProjectConfig(s.repoPath)
       const types = Object.keys(config.branchPrefixes)
@@ -84,7 +86,7 @@ export function buildServer(id: string): McpServer {
       description: "Demande à l'utilisateur de valider la spec ou le plan (une fois écrit dans le worktree ; le moteur le commitera après validation).",
       inputSchema: { kind: z.enum(['spec', 'plan']), summary: z.string() },
     },
-    guard(async ({ kind, summary }) => {
+    guard(id, 'demander_validation', async ({ kind, summary }) => {
       const s = await loadState(id)
       if (kind === 'spec') {
         const rel = specPath(s)
@@ -113,7 +115,7 @@ export function buildServer(id: string): McpServer {
         "Propose à l'utilisateur un amendement : plan amendé complet écrit dans plan.proposed.md du dossier de mission (et spec amendée dans spec.proposed.md si besoin), jamais dans le worktree. Les tâches déjà validées ne doivent pas changer.",
       inputSchema: { summary: z.string() },
     },
-    guard(async ({ summary }) => {
+    guard(id, 'proposer_amendement', async ({ summary }) => {
       const s = await loadState(id)
       const proposal = await readProposal(id)
       if (!proposal) return fail(`Plan proposé introuvable : écris le plan amendé complet dans ${proposedPlanPath(id)}.`)
@@ -141,13 +143,13 @@ export function buildServer(id: string): McpServer {
       description: "Demande un arbitrage à l'utilisateur : remarque de revue contredisant le plan, ou toute décision qu'il doit trancher.",
       inputSchema: { summary: z.string() },
     },
-    guard(async ({ summary }) => {
+    guard(id, 'demander_arbitrage', async ({ summary }) => {
       await postInbox(id, { type: 'request-gate', kind: 'arbitrage', summary })
       return ok("Arbitrage demandé à l'utilisateur.")
     }),
   )
 
-  server.registerTool('pause', { description: "Met le moteur en pause (sur demande de l'utilisateur). Ne débloque ni ne bloque rien." }, guard(async () => {
+  server.registerTool('pause', { description: "Met le moteur en pause (sur demande de l'utilisateur). Ne débloque ni ne bloque rien." }, guard(id, 'pause', async () => {
     await postInbox(id, { type: 'pause' })
     return ok('Pause demandée.')
   }))
@@ -157,7 +159,7 @@ export function buildServer(id: string): McpServer {
       description:
         "Lève une pause demandée avec `pause`, rien d'autre. Ne reprend PAS une mission bloquée : seul l'utilisateur la reprend (herness reprendre <id> puis validation), ou la débloque en validant un amendement.",
     },
-    guard(async () => {
+    guard(id, 'fin_de_pause', async () => {
       const s = await loadState(id)
       await postInbox(id, { type: 'resume' })
       const note =
@@ -170,9 +172,31 @@ export function buildServer(id: string): McpServer {
   server.registerTool(
     'abandonner',
     { description: "Demande l'abandon de la mission : ouvre une porte que seul l'utilisateur valide.", inputSchema: { reason: z.string() } },
-    guard(async ({ reason }) => {
+    guard(id, 'abandonner', async ({ reason }) => {
       await postInbox(id, { type: 'abandon', reason })
       return ok("Abandon demandé : porte soumise à l'utilisateur, rien n'est fermé tant qu'il ne l'a pas validée.")
+    }),
+  )
+
+  server.registerTool(
+    'signaler_anomalie',
+    {
+      description:
+        "Signale une anomalie de herness constatée sans erreur (moteur incohérent, message contradictoire avec statut, outil qui ne fait pas ce qu'il annonce). Jamais pour un échec normal de mission.",
+      inputSchema: { description: z.string() },
+    },
+    guard(id, 'signaler_anomalie', async ({ description }) => {
+      if (!description.trim()) {
+        return fail('Description vide : décris ce que tu as observé, ce que tu attendais et les identifiants utiles (porte, tâche).')
+      }
+      let step: string | undefined
+      try {
+        step = (await loadState(id)).step
+      } catch {
+        // étape omise si l'état est illisible
+      }
+      await logHernessError({ mission: id, origin: "signalement de l'orchestrateur", step }, description.trim())
+      return ok(`Anomalie signalée dans ${errorLogPath()}.`)
     }),
   )
 
