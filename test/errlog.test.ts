@@ -1,8 +1,9 @@
+import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { errorLogPath, logHernessError } from '../src/errlog.ts'
+import { errorLogPath, installProcessErrorLog, logHernessError, withErrorLog, type ErrorProcess } from '../src/errlog.ts'
 import { VERSION } from '../src/version.ts'
 
 let home: string
@@ -80,4 +81,47 @@ test('ne lève jamais quand le journal est inaccessible', async () => {
   await writeFile(file, 'x')
   process.env.HERNESS_HOME = file
   await expect(logHernessError({ origin: 'x' }, new Error('e'))).resolves.toBeUndefined()
+})
+
+test('withErrorLog rend le résultat sans rien écrire', async () => {
+  await expect(withErrorLog({ origin: 'x' }, async () => 7)).resolves.toBe(7)
+  expect(existsSync(errorLogPath())).toBe(false)
+})
+
+test('withErrorLog journalise puis relève la même erreur', async () => {
+  const boom = new Error('état illisible')
+  await expect(
+    withErrorLog({ mission: 'T-1', origin: 'lancement du moteur' }, async () => {
+      throw boom
+    }),
+  ).rejects.toBe(boom)
+  const text = await readFile(errorLogPath(), 'utf8')
+  expect(text).toContain('· mission T-1 · herness ')
+  expect(text).toContain('· lancement du moteur')
+  expect(text).toContain('état illisible')
+})
+
+test('installProcessErrorLog journalise puis sort avec le code 1', async () => {
+  const listeners = new Map<'uncaughtException' | 'unhandledRejection', (err: unknown) => Promise<void>>()
+  let écrit = false
+  const exit = vi.fn(() => {
+    écrit = existsSync(errorLogPath())
+  })
+  const proc: ErrorProcess = {
+    on(event, listener) {
+      listeners.set(event, listener)
+    },
+    exit,
+  }
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  installProcessErrorLog({ mission: 'T-1', origin: 'serveur MCP : erreur non rattrapée' }, proc)
+  expect(listeners.has('uncaughtException')).toBe(true)
+  expect(listeners.has('unhandledRejection')).toBe(true)
+  await listeners.get('unhandledRejection')!(new Error('promesse perdue'))
+  const text = await readFile(errorLogPath(), 'utf8')
+  expect(text).toContain('· serveur MCP : erreur non rattrapée')
+  expect(text).toContain('promesse perdue')
+  expect(exit).toHaveBeenCalledWith(1)
+  expect(écrit).toBe(true)
+  error.mockRestore()
 })
