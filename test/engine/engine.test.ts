@@ -307,6 +307,33 @@ test('état illisible : les erreurs de démarrage et du blocage sont journalisé
   expect(journal).not.toContain('(étape')
 })
 
+test('journal inaccessible : le motif de blocage ne pointe pas le fichier', async () => {
+  await mission({ step: 'classify', type: 'feat', slug: 'export-csv' })
+  await mkdir(join(home, 'erreurs.log'))
+  const { eng } = engine({
+    git: { renameBranch: async () => { throw new Error('branche verrouillée') } },
+    sleep: async () => { throw new Error('fin du test') },
+  })
+  await expect(eng.run()).rejects.toThrow('fin du test')
+  const s = await loadState('T-1')
+  expect(s.blockedReason?.split('\n')[0]).toBe('erreur du moteur : branche verrouillée')
+  expect(s.blockedReason).not.toContain('détail :')
+})
+
+test('état illisible persistant : une seule paire d\'entrées pour plusieurs tours', async () => {
+  let sleeps = 0
+  const { eng } = engine({
+    sleep: async () => {
+      if (++sleeps === 3) throw new Error('fin du test')
+    },
+  })
+  await expect(eng.run()).rejects.toThrow('fin du test')
+  expect(sleeps).toBe(3)
+  const journal = await readFile(join(home, 'erreurs.log'), 'utf8')
+  expect(journal.match(/· moteur$/gm)).toHaveLength(1)
+  expect(journal.match(/moteur : enregistrement du blocage/g)).toHaveLength(1)
+})
+
 test('pr-ouverte et fermée arrêtent la boucle', async () => {
   await mission({ step: 'pr-ouverte' })
   expect(await engine().eng.tick()).toBe('stop')
