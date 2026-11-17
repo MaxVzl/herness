@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/MaxVzl/herness/compare/v0.6.1...v0.7.0) (2026-11-17)
+
+
+### Features
+
+* **journal-erreurs-moteur:** Journal des erreurs de herness ([1107cff](https://github.com/MaxVzl/herness/commit/1107cff16290a8d6c4ecb7fc19a6ab0e8eb19aa4))
+* **journal-erreurs-moteur:** Journal des erreurs de herness ([6b0f716](https://github.com/MaxVzl/herness/commit/6b0f7163ea3eb94bd9d827280999eea57117cc52))
+
 ## [0.6.1](https://github.com/MaxVzl/herness/compare/v0.6.0...v0.6.1) (2026-11-16)
 
 
