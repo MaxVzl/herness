@@ -284,9 +284,27 @@ test('run : une exception bloque la mission sans arrêter le moteur, qui continu
   const s = await loadState('T-1')
   expect(s.step).toBe('fermée')
   expect(s.blockedReason).toContain('branche verrouillée')
+  expect(s.blockedReason?.split('\n')[0]?.startsWith('erreur du moteur : ')).toBe(true)
+  expect(s.blockedReason?.endsWith(`\ndétail : ${join(home, 'erreurs.log')}`)).toBe(true)
+  const journal = await readFile(join(home, 'erreurs.log'), 'utf8')
+  expect(journal).toContain('· mission T-1 · herness ')
+  expect(journal).toContain('· moteur (étape classify)')
+  expect(journal).toContain('branche verrouillée')
+  expect(journal).toMatch(/^    at /m)
   expect(s.log.map((l) => l.msg).join('\n')).toContain('branche verrouillée')
   // base de test arrêtée dès l'exception
   expect(fx.callsOf('run')[0]).toEqual([demo.testDb!.down[0], ['down', 'T-1', wt], { cwd: wt, reject: false }])
+})
+
+test('état illisible : les erreurs de démarrage et du blocage sont journalisées sans étape', async () => {
+  const { eng } = engine({ sleep: async () => { throw new Error('fin du test') } })
+  await expect(eng.run()).rejects.toThrow('fin du test')
+  const journal = await readFile(join(home, 'erreurs.log'), 'utf8')
+  expect(journal).toContain('moteur : démarrage (nettoyage des panneaux)')
+  expect(journal).toContain('moteur : démarrage (arrêt des agents terminés)')
+  expect(journal).toContain('moteur : enregistrement du blocage')
+  expect(journal).toMatch(/· moteur$/m)
+  expect(journal).not.toContain('(étape')
 })
 
 test('pr-ouverte et fermée arrêtent la boucle', async () => {

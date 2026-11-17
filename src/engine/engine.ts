@@ -1,6 +1,7 @@
 import { access, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fill, type ProjectConfig } from '../config/project.ts'
+import { errorLogPath, logHernessError } from '../errlog.ts'
 import { drainInbox, type InboxMessage } from '../mission/inbox.ts'
 import { parsePlan } from '../mission/plan.ts'
 import { loadState, saveState, type Gate, type GateKind, type MissionState, type Step } from '../mission/state.ts'
@@ -485,13 +486,19 @@ export class Engine {
   private async fail(err: unknown): Promise<void> {
     const msg = `erreur du moteur : ${errMsg(err)}`
     console.error(`herness ${this.id} : ${msg}`)
+    let logged = false
     try {
       const s = await loadState(this.id)
+      await logHernessError({ mission: this.id, origin: 'moteur', step: s.step }, err)
+      logged = true
       const dbErrors = [await testDbDown(s, this.e, this.cfg), await proofDbDown(s, this.e, this.cfg)].filter((x) => x !== null)
-      await block(s, this.e, dbErrors.length ? `${msg}\nbase(s) de test non supprimée(s) : ${dbErrors.join(' ; ')}` : msg)
+      const base = dbErrors.length ? `${msg}\nbase(s) de test non supprimée(s) : ${dbErrors.join(' ; ')}` : msg
+      await block(s, this.e, `${base}\ndétail : ${errorLogPath()}`)
       await saveState(s)
     } catch (err2) {
+      if (!logged) await logHernessError({ mission: this.id, origin: 'moteur' }, err)
       console.error(`herness ${this.id} : impossible d'enregistrer le blocage : ${errMsg(err2)}`)
+      await logHernessError({ mission: this.id, origin: 'moteur : enregistrement du blocage' }, err2)
     }
   }
 
@@ -535,11 +542,13 @@ export class Engine {
       await this.interruptStaleCommands()
     } catch (err) {
       console.error(`herness ${this.id} : nettoyage des panneaux au démarrage impossible : ${errMsg(err)}`)
+      await logHernessError({ mission: this.id, origin: 'moteur : démarrage (nettoyage des panneaux)' }, err)
     }
     try {
       await this.releaseFinishedAgents()
     } catch (err) {
       console.error(`herness ${this.id} : arrêt des agents terminés au démarrage impossible : ${errMsg(err)}`)
+      await logHernessError({ mission: this.id, origin: 'moteur : démarrage (arrêt des agents terminés)' }, err)
     }
     for (;;) {
       let r: StepResult
