@@ -284,9 +284,54 @@ test('run : une exception bloque la mission sans arrêter le moteur, qui continu
   const s = await loadState('T-1')
   expect(s.step).toBe('fermée')
   expect(s.blockedReason).toContain('branche verrouillée')
+  expect(s.blockedReason?.split('\n')[0]?.startsWith('erreur du moteur : ')).toBe(true)
+  expect(s.blockedReason?.endsWith(`\ndétail : ${join(home, 'erreurs.log')}`)).toBe(true)
+  const journal = await readFile(join(home, 'erreurs.log'), 'utf8')
+  expect(journal).toContain('· mission T-1 · herness ')
+  expect(journal).toContain('· moteur (étape classify)')
+  expect(journal).toContain('branche verrouillée')
+  expect(journal).toMatch(/^    at /m)
   expect(s.log.map((l) => l.msg).join('\n')).toContain('branche verrouillée')
   // base de test arrêtée dès l'exception
   expect(fx.callsOf('run')[0]).toEqual([demo.testDb!.down[0], ['down', 'T-1', wt], { cwd: wt, reject: false }])
+})
+
+test('état illisible : les erreurs de démarrage et du blocage sont journalisées sans étape', async () => {
+  const { eng } = engine({ sleep: async () => { throw new Error('fin du test') } })
+  await expect(eng.run()).rejects.toThrow('fin du test')
+  const journal = await readFile(join(home, 'erreurs.log'), 'utf8')
+  expect(journal).toContain('moteur : démarrage (nettoyage des panneaux)')
+  expect(journal).toContain('moteur : démarrage (arrêt des agents terminés)')
+  expect(journal).toContain('moteur : enregistrement du blocage')
+  expect(journal).toMatch(/· moteur$/m)
+  expect(journal).not.toContain('(étape')
+})
+
+test('journal inaccessible : le motif de blocage ne pointe pas le fichier', async () => {
+  await mission({ step: 'classify', type: 'feat', slug: 'export-csv' })
+  await mkdir(join(home, 'erreurs.log'))
+  const { eng } = engine({
+    git: { renameBranch: async () => { throw new Error('branche verrouillée') } },
+    sleep: async () => { throw new Error('fin du test') },
+  })
+  await expect(eng.run()).rejects.toThrow('fin du test')
+  const s = await loadState('T-1')
+  expect(s.blockedReason?.split('\n')[0]).toBe('erreur du moteur : branche verrouillée')
+  expect(s.blockedReason).not.toContain('détail :')
+})
+
+test('état illisible persistant : une seule paire d\'entrées pour plusieurs tours', async () => {
+  let sleeps = 0
+  const { eng } = engine({
+    sleep: async () => {
+      if (++sleeps === 3) throw new Error('fin du test')
+    },
+  })
+  await expect(eng.run()).rejects.toThrow('fin du test')
+  expect(sleeps).toBe(3)
+  const journal = await readFile(join(home, 'erreurs.log'), 'utf8')
+  expect(journal.match(/· moteur$/gm)).toHaveLength(1)
+  expect(journal.match(/moteur : enregistrement du blocage/g)).toHaveLength(1)
 })
 
 test('pr-ouverte et fermée arrêtent la boucle', async () => {

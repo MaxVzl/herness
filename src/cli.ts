@@ -60,22 +60,31 @@ program
 program
   .command('mcp <id>', { hidden: true })
   .action(async (id: string) => {
-    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js')
-    const { buildServer } = await import('./mcp/server.ts')
-    await buildServer(id).connect(new StdioServerTransport())
+    const { installProcessErrorLog, withErrorLog } = await import('./errlog.ts')
+    installProcessErrorLog({ mission: id, origin: 'serveur MCP : erreur non rattrapée' })
+    await withErrorLog({ mission: id, origin: 'lancement du serveur MCP' }, async () => {
+      const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js')
+      const { buildServer } = await import('./mcp/server.ts')
+      await buildServer(id).connect(new StdioServerTransport())
+    })
   })
 
 // Moteur de la mission : lancé par herness dans le panneau `engine`, seul écrivain de state.json.
 program
   .command('engine <id>', { hidden: true })
   .action(async (id: string) => {
-    const { loadState } = await import('./mission/state.ts')
-    const { loadProjectConfig } = await import('./config/project.ts')
-    const { Engine } = await import('./engine/engine.ts')
-    const { realEffects } = await import('./engine/effects.ts')
-    const s = await loadState(id)
-    const cfg = await loadProjectConfig(s.repoPath)
-    await new Engine(id, realEffects(), cfg).run()
+    const { installProcessErrorLog, withErrorLog } = await import('./errlog.ts')
+    installProcessErrorLog({ mission: id, origin: 'moteur : erreur non rattrapée' })
+    const engine = await withErrorLog({ mission: id, origin: 'lancement du moteur' }, async () => {
+      const { loadState } = await import('./mission/state.ts')
+      const { loadProjectConfig } = await import('./config/project.ts')
+      const { Engine } = await import('./engine/engine.ts')
+      const { realEffects } = await import('./engine/effects.ts')
+      const s = await loadState(id)
+      const cfg = await loadProjectConfig(s.repoPath)
+      return new Engine(id, realEffects(), cfg)
+    })
+    await engine.run()
   })
 
 async function askYesNo(question: string): Promise<boolean> {
