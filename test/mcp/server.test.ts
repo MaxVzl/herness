@@ -50,7 +50,7 @@ test('la liste des outils ne contient aucun outil de décision (valider, refuser
   const c = await connect()
   const names = (await c.listTools()).tools.map((t) => t.name).sort()
   expect(names).toEqual(
-    ['abandonner', 'demander_arbitrage', 'demander_validation', 'fin_de_pause', 'mission_identifiee', 'pause', 'proposer_amendement', 'statut'],
+    ['abandonner', 'demander_arbitrage', 'demander_validation', 'fin_de_pause', 'mission_identifiee', 'pause', 'proposer_amendement', 'signaler_anomalie', 'statut'],
   )
   expect(names.join(' ')).not.toMatch(/valider\b|refuser|approuver/)
 })
@@ -176,6 +176,33 @@ test('proposer_amendement refuse si le plan approuvé est illisible pour parsePl
   expect(r.isError).toBe(true)
   expect(r.content[0]!.text).toContain('Plan approuvé invalide')
   expect(await drainInbox('T-1')).toEqual([])
+})
+
+test("une exception d'outil est journalisée avec le nom de l'outil", async () => {
+  await rm(join(missionDir('T-1'), 'state.json'))
+  const r = await call('statut')
+  expect(r.isError).toBe(true)
+  expect(r.content[0]!.text.startsWith('Erreur : ')).toBe(true)
+  const text = await readFile(join(home, 'erreurs.log'), 'utf8')
+  expect(text).toContain('· mission T-1 · herness ')
+  expect(text).toContain('· outil MCP statut')
+})
+
+test("signaler_anomalie écrit la description avec l'étape et ne poste rien", async () => {
+  const r = await call('signaler_anomalie', { description: '  le moteur annonce g3 mais statut ne la montre pas  ' })
+  expect(r.isError).toBeFalsy()
+  expect(r.content[0]!.text).toContain(join(home, 'erreurs.log'))
+  const text = await readFile(join(home, 'erreurs.log'), 'utf8')
+  expect(text).toContain(`· signalement de l'orchestrateur (étape ${state.step})`)
+  expect(text).toContain('le moteur annonce g3 mais statut ne la montre pas')
+  expect(await drainInbox('T-1')).toEqual([])
+})
+
+test('signaler_anomalie refuse une description vide', async () => {
+  const r = await call('signaler_anomalie', { description: '   ' })
+  expect(r.isError).toBe(true)
+  expect(r.content[0]!.text).toContain('Description vide')
+  await expect(readFile(join(home, 'erreurs.log'), 'utf8')).rejects.toThrow()
 })
 
 test('demander_validation(spec) sans slug rend une erreur en français', async () => {

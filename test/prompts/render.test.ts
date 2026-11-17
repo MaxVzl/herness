@@ -64,7 +64,7 @@ describe('render', () => {
     expect(raw).toContain('### Tâche <n> : <titre>')
     expect(raw).toMatch(/jamais par toi/)
     expect(raw).toContain('herness valider')
-    for (const t of ['statut', 'mission_identifiee', 'demander_validation', 'proposer_amendement', 'demander_arbitrage', 'pause', 'fin_de_pause', 'abandonner']) {
+    for (const t of ['statut', 'mission_identifiee', 'demander_validation', 'proposer_amendement', 'demander_arbitrage', 'pause', 'fin_de_pause', 'abandonner', 'signaler_anomalie']) {
       expect(raw).toContain(t)
     }
     expect(raw).toContain('[herness]')
