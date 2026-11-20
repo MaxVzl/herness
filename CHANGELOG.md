@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/MaxVzl/herness/compare/v0.7.0...v0.8.0) (2026-11-20)
+
+
+### Features
+
+* **remonter-erreurs-issues:** Remonter les erreurs de herness en issues GitHub ([745ceb2](https://github.com/MaxVzl/herness/commit/745ceb2b84b78eb8d9ced3e13f7fa3ed137be0b0))
+* **remonter-erreurs-issues:** Remonter les erreurs de herness en issues GitHub ([2e375e8](https://github.com/MaxVzl/herness/commit/2e375e853eaf6520e1f20100c57ededa142884d8))
+
 ## [0.7.0](https://github.com/MaxVzl/herness/compare/v0.6.1...v0.7.0) (2026-11-17)
 
 
