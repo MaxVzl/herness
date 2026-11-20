@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { access, readdir, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { agentArgs } from './agents/adapters.ts'
 import { orchestratorName } from './agents/names.ts'
 import { loadProjectConfig, mainRef, type ProjectConfig } from './config/project.ts'
@@ -16,6 +15,7 @@ import { postInbox } from './mission/inbox.ts'
 import { loadState, newState, saveState, type MissionState } from './mission/state.ts'
 import { missionDir, missionsRoot, planPath, specPath } from './paths.ts'
 import { render } from './prompts/render.ts'
+import { hernessCommand, shellLine } from './update.ts'
 
 /** Dépendances des commandes de cycle de vie ; les tests injectent des doublures. */
 export interface LifecycleDeps {
@@ -29,9 +29,6 @@ export interface LifecycleDeps {
   confirm?: (question: string) => Promise<boolean>
 }
 
-const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
-const BIN = join(packageRoot, 'bin', 'herness.js')
-const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
 const exists = (p: string): Promise<boolean> => access(p).then(() => true, () => false)
 
 /** État d'une mission existante, avec un message clair si elle n'existe pas. */
@@ -149,10 +146,10 @@ export async function startMission(input: string, cwd: string, deps: LifecycleDe
   if (note) await writeFile(join(dir, 'note.md'), `${note}\n`)
   await writeFile(join(dir, 'orchestrator.md'), await orchestratorPrompt(s, d, note !== '', cfg))
 
-  await e.herdr.paneRun(space.panes.engine, `node ${shq(BIN)} engine ${id}`)
-  await e.herdr.paneRun(space.panes.tasks, `node ${shq(BIN)} tasks ${id}`)
-  await e.herdr.paneRun(space.panes.spec, `node ${shq(BIN)} voir spec ${id}`)
-  await e.herdr.paneRun(space.panes.plan, `node ${shq(BIN)} voir plan ${id}`)
+  await e.herdr.paneRun(space.panes.engine, shellLine(hernessCommand(), `engine ${id}`))
+  await e.herdr.paneRun(space.panes.tasks, shellLine(hernessCommand(), `tasks ${id}`))
+  await e.herdr.paneRun(space.panes.spec, shellLine(hernessCommand(), `voir spec ${id}`))
+  await e.herdr.paneRun(space.panes.plan, shellLine(hernessCommand(), `voir plan ${id}`))
   await startOrchestrator(s, e, cfg, space.panes.orchestrator, false)
   await openOrchestrator(id, e, orchestratorName(id))
   await e.herdr.tabFocus(space.tabs.master)
@@ -204,12 +201,12 @@ export async function resumeMission(id: string, deps: LifecycleDeps, opts: { res
     }
   }
   if (engineStopped) {
-    await e.herdr.paneRun(space.panes.engine, `node ${shq(BIN)} engine ${id}`)
+    await e.herdr.paneRun(space.panes.engine, shellLine(hernessCommand(), `engine ${id}`))
     out('moteur relancé')
   }
-  if (await paneIdle(e, space.panes.tasks)) await e.herdr.paneRun(space.panes.tasks, `node ${shq(BIN)} tasks ${id}`)
+  if (await paneIdle(e, space.panes.tasks)) await e.herdr.paneRun(space.panes.tasks, shellLine(hernessCommand(), `tasks ${id}`))
   for (const kind of ['spec', 'plan'] as const) {
-    if (await paneIdle(e, space.panes[kind])) await e.herdr.paneRun(space.panes[kind], `node ${shq(BIN)} voir ${kind} ${id}`)
+    if (await paneIdle(e, space.panes[kind])) await e.herdr.paneRun(space.panes[kind], shellLine(hernessCommand(), `voir ${kind} ${id}`))
   }
   const orchestrator = s.orchestrator.agent ?? orchestratorName(id)
   if (!(await e.herdr.agentGet(orchestrator))) {

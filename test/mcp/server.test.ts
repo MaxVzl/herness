@@ -164,8 +164,7 @@ test('missionMcpConfig écrit mcp.json', async () => {
   const p = await missionMcpConfig('T-1')
   const j = JSON.parse(await readFile(p, 'utf8'))
   expect(p).toBe(join(missionDir('T-1'), 'mcp.json'))
-  expect(j.mcpServers.herness.args).toEqual(['mcp', 'T-1'])
-  expect(j.mcpServers.herness.command).toMatch(/^\/.*bin\/herness\.js$/)
+  expect(j.mcpServers.herness).toEqual({ command: 'node', args: [expect.stringMatching(/\/bin\/herness\.js$/), 'mcp', 'T-1'] })
   expect(await readdir(missionDir('T-1'))).toContain('mcp.json')
 })
 

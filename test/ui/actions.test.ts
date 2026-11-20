@@ -101,7 +101,7 @@ test('restartDetached lance herness reprendre --redemarrer détaché via execPat
     const log = join(missionDir('m1'), 'logs', 'redemarrage-2026-11-02T10-11-12-000Z.log')
     expect(r).toEqual({ ok: true, lines: [`redémarrage lancé (ce panneau va se relancer) ; journal : ${log}`] })
     const [cmd, args, opts] = seen[0] as [string, string[], { detached: boolean; stdio: unknown[] }]
-    expect(cmd).toBe(process.execPath)
+    expect(cmd).toBe('node')
     expect(args[0]).toMatch(/bin\/herness\.js$/)
     expect(args.slice(1)).toEqual(['reprendre', 'm1', '--redemarrer'])
     expect(opts.detached).toBe(true)

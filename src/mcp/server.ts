@@ -1,6 +1,5 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { loadProjectConfig } from '../config/project.ts'
@@ -10,6 +9,7 @@ import { postInbox } from '../mission/inbox.ts'
 import { checkAmendment, parsePlan } from '../mission/plan.ts'
 import { loadState, type MissionState } from '../mission/state.ts'
 import { missionDir, planPath, specPath } from '../paths.ts'
+import { hernessCommand } from '../update.ts'
 import { VERSION } from '../version.ts'
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+){1,5}$/
@@ -203,12 +203,11 @@ export function buildServer(id: string): McpServer {
   return server
 }
 
-const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-
 export async function missionMcpConfig(id: string): Promise<string> {
   const file = join(missionDir(id), 'mcp.json')
+  const c = hernessCommand()
   const config = {
-    mcpServers: { herness: { command: join(packageRoot, 'bin', 'herness.js'), args: ['mcp', id] } },
+    mcpServers: { herness: { command: c.cmd, args: [...c.args, 'mcp', id] } },
   }
   await mkdir(missionDir(id), { recursive: true })
   await writeFile(file, JSON.stringify(config, null, 2) + '\n')
