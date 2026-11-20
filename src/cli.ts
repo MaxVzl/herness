@@ -185,6 +185,17 @@ program
   )
 
 program
+  .command('signaler <id>')
+  .description("Remonter en issues GitHub (MaxVzl/herness) les erreurs herness d'une mission")
+  .option('--oui', 'sans demander de confirmation')
+  .action((id: string, opts: { oui?: boolean }) =>
+    lifecycle(async (deps) => {
+      const { reportMissionErrors } = await import('./lifecycle.ts')
+      await reportMissionErrors(id, deps, { force: opts.oui === true })
+    }),
+  )
+
+program
   .command('supprimer <id>')
   .description("Supprimer le dossier d'une mission fermée (état, spec, plan, journaux)")
   .option('--oui', 'sans demander de confirmation')

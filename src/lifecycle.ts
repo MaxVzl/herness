@@ -8,6 +8,7 @@ import { loadProjectConfig, mainRef, type ProjectConfig } from './config/project
 import type { Effects } from './engine/effects.ts'
 import { proofDbDown, testDbDown } from './engine/engine.ts'
 import { checkEnv } from './engine/envcheck.ts'
+import { confirmQuestion, planReport, previewLines, sendReport } from './errreport.ts'
 import { createMissionSpace, paneIsIdle, type MissionSpace } from './herdr/layout.ts'
 import { missionMcpConfig } from './mcp/server.ts'
 import { nextFreeTextId, parseDemande, type Demande } from './mission/ids.ts'
@@ -390,6 +391,30 @@ export async function deleteMission(id: string, deps: LifecycleDeps, opts: { for
   }
   await rm(missionDir(id), { recursive: true, force: true })
   out(`Mission ${id} supprimée.`)
+  return true
+}
+
+/**
+ * `herness signaler` : remonte les erreurs herness d'une mission en issues GitHub.
+ * Ne lit ni n'écrit `state.json` au-delà du chargement initial.
+ */
+export async function reportMissionErrors(id: string, deps: LifecycleDeps, opts: { force?: boolean } = {}): Promise<boolean> {
+  const out = deps.out ?? console.log
+  await load(id)
+  const plan = await planReport(id, deps.e.run)
+  if (plan.length === 0) {
+    out(`Aucune erreur herness à remonter pour la mission ${id}.`)
+    return true
+  }
+  if (!opts.force && !(deps.isTTY && deps.confirm)) {
+    throw new Error("l'envoi demande une confirmation dans un terminal interactif (ou --oui)")
+  }
+  for (const line of previewLines(id, plan)) out(line)
+  if (!opts.force && deps.confirm && !(await deps.confirm(confirmQuestion(plan)))) {
+    out(`rien n'a été envoyé (herness signaler ${id} pour le refaire)`)
+    return false
+  }
+  for (const line of await sendReport(id, plan, deps.e.run, () => deps.e.now())) out(line)
   return true
 }
 
