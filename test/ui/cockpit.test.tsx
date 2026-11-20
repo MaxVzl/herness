@@ -551,6 +551,66 @@ test('R depuis le cockpit redémarre directement', async () => {
   expect(calls).toEqual([['restart', '26110201-15', false]])
 })
 
+test('le cockpit affiche le bandeau de version sous le titre', async () => {
+  const s = mission('26110201-40', 'bandeau', '2026-11-02T10:00:00.000Z')
+  const message = 'herness 0.8.0 installé, ce cockpit tourne en 0.6.0 : quitte-le et relance herness'
+  const { lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140}
+      notice={() => message} />,
+  )
+  await waitFor(lastFrame, 'installé, ce cockpit tourne en')
+  const lines = lastFrame()!.split('\n')
+  const iTitle = lines.findIndex((l) => l.includes('herness · demo'))
+  const iNotice = lines.findIndex((l) => l.includes(message))
+  expect(iTitle).toBeGreaterThan(-1)
+  expect(iNotice).toBeGreaterThan(iTitle)
+})
+
+test('pas de bandeau quand notice renvoie null', async () => {
+  const s = mission('26110201-41', 'sans-bandeau', '2026-11-02T10:00:00.000Z')
+  const { lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140}
+      notice={() => null} />,
+  )
+  await waitFor(lastFrame, 'sans-bandeau')
+  expect(lastFrame()).not.toContain('installé, ce cockpit tourne en')
+})
+
+test('le bandeau suit les rafraîchissements', async () => {
+  let text: string | null = null
+  const message = 'herness 0.8.0 installé, ce cockpit tourne en 0.6.0 : quitte-le et relance herness'
+  const { lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => []} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140}
+      intervalMs={20} notice={() => text} />,
+  )
+  await waitFor(lastFrame, 'aucune mission')
+  expect(lastFrame()).not.toContain('installé, ce cockpit tourne en')
+  text = message
+  await waitFor(lastFrame, message)
+  expect(lastFrame()).toContain(message)
+})
+
+test("une notice qui lève n'empêche pas l'affichage des missions", async () => {
+  const s = mission('26110201-42', 'malgre-notice', '2026-11-02T10:00:00.000Z')
+  const { lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140}
+      notice={() => { throw new Error('x') }} />,
+  )
+  await waitFor(lastFrame, 'malgre-notice')
+  expect(lastFrame()).toContain('malgre-notice')
+  expect(lastFrame()).not.toContain('installé, ce cockpit tourne en')
+})
+
+test("le bandeau s'affiche même quand la lecture des missions échoue", async () => {
+  const message = 'herness 0.8.0 installé, ce cockpit tourne en 0.6.0 : quitte-le et relance herness'
+  const { lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => { throw new Error('illisible') }} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140}
+      notice={() => message} />,
+  )
+  await waitFor(lastFrame, message)
+  expect(lastFrame()).toContain('lecture des missions impossible')
+})
+
 test('herness cockpit hors TTY affiche une image et sort', async () => {
   const projects = await mkdtemp(join(tmpdir(), 'herness-projects-'))
   const repo = await realpath(await mkdtemp(join(tmpdir(), 'herness-repo-')))

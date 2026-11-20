@@ -1,16 +1,14 @@
 import { spawn as nodeSpawn } from 'node:child_process'
 import { closeSync, mkdirSync, openSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { decide } from '../engine/gates.ts'
 import { realEffects } from '../engine/effects.ts'
 import { closeMission, deleteMission, resumeMission, startMission, type LifecycleDeps } from '../lifecycle.ts'
 import type { MissionState } from '../mission/state.ts'
 import { missionDir } from '../paths.ts'
+import { hernessCommand } from '../update.ts'
 
 export type ActionResult = { ok: boolean; lines: string[] }
-
-const BIN = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'herness.js')
 
 /** Sous-ensemble de `child_process.spawn` utilisé pour le redémarrage détaché ; injectable pour les tests. */
 export type Spawner = (
@@ -94,7 +92,8 @@ export function restartDetached(
     const log = join(dir, `redemarrage-${now().toISOString().replace(/[:.]/g, '-')}.log`)
     const fd = openSync(log, 'a')
     try {
-      const child = spawn(process.execPath, [BIN, 'reprendre', id, '--redemarrer'], { detached: true, stdio: ['ignore', fd, fd] })
+      const c = hernessCommand()
+      const child = spawn(c.cmd, [...c.args, 'reprendre', id, '--redemarrer'], { detached: true, stdio: ['ignore', fd, fd] })
       await new Promise<void>((resolve, reject) => {
         child.once('spawn', () => resolve())
         child.once('error', (err) => reject(err ?? new Error('lancement impossible')))

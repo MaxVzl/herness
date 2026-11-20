@@ -1,10 +1,10 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execa } from 'execa'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { newState, saveState, type MissionState } from '../../src/mission/state.ts'
-import { installedBin, runningMissions, update, type UpdateDeps } from '../../src/update.ts'
+import { hernessCommand, installDir, installedBin, installedVersion, runningMissions, runsInstalled, shellLine, staleNotice, update, type UpdateDeps } from '../../src/update.ts'
 
 let home: string
 const saved = { ...process.env }
@@ -111,4 +111,106 @@ test('lanceur installé : HERNESS_INSTALL_DIR, sinon XDG_DATA_HOME, sinon ~/.loc
 test('la CLI accepte --version sur mise-a-jour sans le confondre avec --version de herness', async () => {
   const r = await execa('node', ['bin/herness.js', 'mise-a-jour', '--help'], { reject: false, stdin: 'ignore' })
   expect(r.stdout).toContain('--version <x.y.z>')
+})
+
+test('installDir suit HERNESS_INSTALL_DIR, puis XDG_DATA_HOME, puis HOME', () => {
+  expect(installDir({ HERNESS_INSTALL_DIR: '/opt/h', HOME: '/home/x' })).toBe('/opt/h')
+  expect(installDir({ XDG_DATA_HOME: '/d', HOME: '/home/x' })).toBe('/d/herness')
+  expect(installDir({ HOME: '/home/x' })).toBe('/home/x/.local/share/herness')
+})
+
+test('runsInstalled : vrai pour une racine sous versions/, aussi atteinte par le lien current', async () => {
+  const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
+  try {
+    const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }
+    await mkdir(join(data, 'versions', '0.8.0'), { recursive: true })
+    await symlink('versions/0.8.0', join(data, 'current'))
+    expect(runsInstalled(env, join(data, 'versions', '0.8.0'))).toBe(true)
+    expect(runsInstalled(env, join(data, 'current'))).toBe(true)
+  } finally {
+    await rm(data, { recursive: true, force: true })
+  }
+})
+
+test('runsInstalled : faux pour un dossier de sources ou sans dossier versions', async () => {
+  const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
+  try {
+    const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }
+    expect(runsInstalled(env, process.cwd())).toBe(false)
+    expect(runsInstalled(env, data)).toBe(false)
+  } finally {
+    await rm(data, { recursive: true, force: true })
+  }
+})
+
+test('hernessCommand : lanceur installé si la version tourne depuis versions/ et que current/bin/herness existe', async () => {
+  const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
+  try {
+    const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }
+    await mkdir(join(data, 'versions', '0.8.0', 'bin'), { recursive: true })
+    await writeFile(join(data, 'versions', '0.8.0', 'bin', 'herness'), '')
+    await symlink('versions/0.8.0', join(data, 'current'))
+    const root = join(data, 'versions', '0.6.0')
+    await mkdir(root, { recursive: true })
+    expect(hernessCommand(env, root)).toEqual({ cmd: join(data, 'current', 'bin', 'herness'), args: [] })
+  } finally {
+    await rm(data, { recursive: true, force: true })
+  }
+})
+
+test('hernessCommand : node + bin/herness.js hors installation ou si le lanceur installé manque', async () => {
+  const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
+  try {
+    const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }
+    expect(hernessCommand(env, process.cwd())).toEqual({ cmd: 'node', args: [join(process.cwd(), 'bin', 'herness.js')] })
+    const root = join(data, 'versions', '0.6.0')
+    await mkdir(root, { recursive: true })
+    expect(hernessCommand(env, root)).toEqual({ cmd: 'node', args: [join(root, 'bin', 'herness.js')] })
+  } finally {
+    await rm(data, { recursive: true, force: true })
+  }
+})
+
+test('shellLine cite les chemins et laisse node nu', () => {
+  expect(shellLine({ cmd: 'node', args: ["/a b/it's/herness.js"] }, 'engine x')).toBe(`node '/a b/it'\\''s/herness.js' engine x`)
+  expect(shellLine({ cmd: '/d/current/bin/herness', args: [] }, 'cockpit')).toBe(`'/d/current/bin/herness' cockpit`)
+})
+
+test('installedVersion lit current/package.json, null sinon', async () => {
+  const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
+  try {
+    const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }
+    expect(installedVersion(env)).toBeNull()
+    await mkdir(join(data, 'versions', '0.8.0'), { recursive: true })
+    await symlink('versions/0.8.0', join(data, 'current'))
+    const pkg = join(data, 'current', 'package.json')
+    await writeFile(pkg, '{"version":"0.8.0"}')
+    expect(installedVersion(env)).toBe('0.8.0')
+    await writeFile(pkg, '{')
+    expect(installedVersion(env)).toBeNull()
+    await writeFile(pkg, '{"name":"x"}')
+    expect(installedVersion(env)).toBeNull()
+  } finally {
+    await rm(data, { recursive: true, force: true })
+  }
+})
+
+test('staleNotice : message seulement si la version installée diffère et que le processus tourne depuis une installation', async () => {
+  const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
+  try {
+    const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }
+    const root = join(data, 'versions', '0.6.0')
+    await mkdir(join(data, 'versions', '0.8.0'), { recursive: true })
+    await mkdir(root, { recursive: true })
+    await symlink('versions/0.8.0', join(data, 'current'))
+    const pkg = join(data, 'current', 'package.json')
+    await writeFile(pkg, '{"version":"0.8.0"}')
+    expect(staleNotice('0.6.0', env, root)).toBe('herness 0.8.0 installé, ce cockpit tourne en 0.6.0 : quitte-le et relance herness')
+    expect(staleNotice('0.8.0', env, root)).toBeNull()
+    expect(staleNotice('0.6.0', env, process.cwd())).toBeNull()
+    await rm(pkg)
+    expect(staleNotice('0.6.0', env, root)).toBeNull()
+  } finally {
+    await rm(data, { recursive: true, force: true })
+  }
 })

@@ -2,6 +2,8 @@ import { basename } from 'node:path'
 import { Box, Text, useApp, useInput, useStdout } from 'ink'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { MissionState } from '../mission/state.ts'
+import { staleNotice } from '../update.ts'
+import { VERSION } from '../version.ts'
 import * as act from './actions.ts'
 import type { ActionResult } from './actions.ts'
 import { HelpLine, MissionDetail, missionActions, resultLines, useMissionKeys, type HelpItem, type MissionActions, type Timer } from './detail.tsx'
@@ -67,7 +69,7 @@ function MissionRow({ s, selected }: { s: MissionState; selected: boolean }): Re
 }
 
 /** Mise en page du cockpit : titre, liste à gauche (au-dessus si étroit), détail à droite, puis bas d'écran. */
-function CockpitLayout({ name, all, visible, selected, columns, hiddenCount, detail, footer }: {
+function CockpitLayout({ name, all, visible, selected, columns, hiddenCount, detail, footer, notice }: {
   name: string
   all: MissionState[]
   visible: MissionState[]
@@ -76,6 +78,7 @@ function CockpitLayout({ name, all, visible, selected, columns, hiddenCount, det
   hiddenCount: number
   detail: React.ReactNode
   footer?: React.ReactNode
+  notice?: string | null
 }): React.ReactElement {
   const narrow = columns < NARROW_COLUMNS
   const list = (
@@ -88,6 +91,7 @@ function CockpitLayout({ name, all, visible, selected, columns, hiddenCount, det
   return (
     <Box flexDirection="column" width={columns}>
       <Title name={name} all={all} />
+      {notice ? <Text color="yellow">{notice}</Text> : null}
       <Box flexDirection={narrow ? 'column' : 'row'} marginTop={1}>
         {list}
         <Box flexDirection="column" {...(narrow ? { marginTop: 1 } : { width: '60%' })}>{detail}</Box>
@@ -131,6 +135,7 @@ export function Cockpit({
   intervalMs = 1000,
   timer,
   columns,
+  notice = () => staleNotice(VERSION),
 }: {
   repoPath: string
   name?: string
@@ -141,10 +146,12 @@ export function Cockpit({
   intervalMs?: number
   timer?: Timer
   columns?: number
+  notice?: () => string | null
 }): React.ReactElement {
   const { exit } = useApp()
   const { stdout } = useStdout()
   const [all, setAll] = useState<MissionState[]>([])
+  const [noticeText, setNoticeText] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [unreadable, setUnreadable] = useState(false)
   const [selectedId, setSelectedId] = useState<string | undefined>()
@@ -165,6 +172,8 @@ export function Cockpit({
   }, [actions, repoPath, log])
   const prs = useMemo<PrLookup>(() => prCache ?? new PrCache(), [prCache])
   const read = useMemo(() => load ?? (() => projectMissions(repoPath)), [load, repoPath])
+  const noticeRef = useRef(notice)
+  noticeRef.current = notice
 
   // Relectures : une seule à la fois, et seul le résultat le plus récent est appliqué (numéro de séquence).
   const polling = useRef(false)
@@ -201,6 +210,13 @@ export function Cockpit({
       polling.current = true
       const mine = ++seq.current
       try {
+        let nextNotice: string | null = null
+        try {
+          nextNotice = noticeRef.current()
+        } catch {
+          // bandeau illisible : la lecture des missions continue
+        }
+        if (alive) setNoticeText(nextNotice)
         const list = sortMissions(await read())
         if (!alive || mine <= applied.current) return
         applied.current = mine
@@ -332,6 +348,7 @@ export function Cockpit({
         ) : loaded ? null : <Text>chargement…</Text>
       }
       footer={footer}
+      notice={noticeText}
     />
   )
 }

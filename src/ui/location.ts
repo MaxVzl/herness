@@ -1,13 +1,11 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { loadProjectConfig, type ProjectConfig } from '../config/project.ts'
 import type { HerdrApi } from '../herdr/client.ts'
 import { missionsRoot } from '../paths.ts'
+import { hernessCommand, shellLine } from '../update.ts'
 
 const LABEL = 'herness'
-const BIN = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'herness.js')
-const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
 
 interface Spot { workspace: string; tab: string }
 
@@ -41,7 +39,7 @@ async function saveSpot(file: string, repoPath: string, spot: Spot): Promise<voi
 async function createTab(repoPath: string, workspace: string, h: HerdrApi, file: string): Promise<void> {
   const { tabId, rootPaneId } = await h.tabCreate({ workspace, cwd: repoPath, label: LABEL })
   try {
-    await h.paneRun(rootPaneId, `node ${shq(BIN)} cockpit`)
+    await h.paneRun(rootPaneId, shellLine(hernessCommand(), 'cockpit'))
   } catch (e) {
     await h.tabClose(tabId).catch(() => undefined)
     throw e

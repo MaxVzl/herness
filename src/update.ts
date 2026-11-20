@@ -1,15 +1,76 @@
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { loadState, type MissionState } from './mission/state.ts'
 import { missionsRoot } from './paths.ts'
 
 export const INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/MaxVzl/herness/main/install.sh'
 
+/** Racine du paquet en cours d'exécution. */
+export const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+/** Dossier d'installation : HERNESS_INSTALL_DIR, sinon $XDG_DATA_HOME/herness, sinon ~/.local/share/herness. */
+export function installDir(env: NodeJS.ProcessEnv = process.env): string {
+  return env.HERNESS_INSTALL_DIR || join(env.XDG_DATA_HOME || join(env.HOME || homedir(), '.local', 'share'), 'herness')
+}
+
 /** Lanceur de la version active, posé par install.sh : c'est lui qui exécute le nouveau code. */
 export function installedBin(env: NodeJS.ProcessEnv = process.env): string {
-  const data = env.HERNESS_INSTALL_DIR || join(env.XDG_DATA_HOME || join(env.HOME || homedir(), '.local', 'share'), 'herness')
-  return join(data, 'current', 'bin', 'herness')
+  return join(installDir(env), 'current', 'bin', 'herness')
+}
+
+/** Vrai si la racine réelle du processus est strictement sous le dossier versions/ de l'installation. */
+export function runsInstalled(env: NodeJS.ProcessEnv = process.env, root: string = PACKAGE_ROOT): boolean {
+  try {
+    const versions = realpathSync(join(installDir(env), 'versions'))
+    return realpathSync(root).startsWith(versions + sep)
+  } catch {
+    // versions/ ou la racine absents : ce n'est pas une installation
+    return false
+  }
+}
+
+/** Commande pour lancer herness : binaire direct, ou node et un script. */
+export interface HernessCommand {
+  cmd: string
+  args: string[]
+}
+
+/** Lanceur installé si ce processus tourne depuis versions/ et que current/bin/herness existe, sinon node et bin/herness.js. */
+export function hernessCommand(env: NodeJS.ProcessEnv = process.env, root: string = PACKAGE_ROOT): HernessCommand {
+  const bin = installedBin(env)
+  if (runsInstalled(env, root) && existsSync(bin)) return { cmd: bin, args: [] }
+  return { cmd: 'node', args: [join(root, 'bin', 'herness.js')] }
+}
+
+const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
+
+/** Ligne à taper dans un panneau herdr : node reste nu, les autres chemins sont cités pour le shell. */
+export function shellLine(c: HernessCommand, words: string): string {
+  const cmd = c.cmd === 'node' ? c.cmd : shq(c.cmd)
+  const args = c.args.map(shq).join(' ')
+  return `${args ? `${cmd} ${args}` : cmd} ${words}`
+}
+
+/** Version déclarée par current/package.json, ou null si elle est absente, illisible ou vide. */
+export function installedVersion(env: NodeJS.ProcessEnv = process.env): string | null {
+  try {
+    const version = (JSON.parse(readFileSync(join(installDir(env), 'current', 'package.json'), 'utf8')) as { version?: unknown }).version
+    return typeof version === 'string' && version !== '' ? version : null
+  } catch {
+    // fichier absent ou JSON invalide : pas de version connue
+    return null
+  }
+}
+
+/** Bandeau si ce processus tourne depuis une installation dont la version active diffère, sinon null. */
+export function staleNotice(own: string, env: NodeJS.ProcessEnv = process.env, root: string = PACKAGE_ROOT): string | null {
+  if (!runsInstalled(env, root)) return null
+  const installed = installedVersion(env)
+  if (installed === null || installed === own) return null
+  return `herness ${installed} installé, ce cockpit tourne en ${own} : quitte-le et relance herness`
 }
 
 export interface UpdateDeps {
