@@ -23,13 +23,18 @@ afterEach(async () => {
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
+/** Réponse du faux `gh` : login (code 0), ou corps écrit sur stdout puis code 1. */
+type ReponseGh = string | { stdout: string, code: 1 }
+
 /** Faux `gh` : journalise `"$*"`, répond selon la table, code 1 si la clé est absente. */
-async function fauxGh(table: Record<string, string>): Promise<{ dir: string, journal: string }> {
+async function fauxGh(table: Record<string, ReponseGh>): Promise<{ dir: string, journal: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'auteurs-notes-'))
   dirs.push(dir)
   const journal = join(dir, 'journal')
   const tablePath = join(dir, 'table')
-  const rows = Object.entries(table).map(([cle, valeur]) => `${cle}\t${valeur}`).join('\n')
+  const rows = Object.entries(table).map(([cle, valeur]) => (
+    typeof valeur === 'string' ? `${cle}\t${valeur}` : `${cle}\t${valeur.stdout}\t${valeur.code}`
+  )).join('\n')
   await writeFile(tablePath, rows === '' ? '' : `${rows}\n`)
   await writeFile(journal, '')
   const gh = join(dir, 'gh')
@@ -37,10 +42,17 @@ async function fauxGh(table: Record<string, string>): Promise<{ dir: string, jou
 printf '%s\\n' "$*" >> '${journal}'
 while IFS= read -r row || [ -n "$row" ]; do
   key=\${row%%\t*}
-  val=\${row#*\t}
+  rest=\${row#*\t}
+  code=\${rest##*\t}
+  if [ "$code" = "$rest" ]; then
+    val=$rest
+    code=0
+  else
+    val=\${rest%\t*}
+  fi
   if [ "$key" = "$*" ]; then
     printf '%s\\n' "$val"
-    exit 0
+    exit "$code"
   fi
 done < '${tablePath}'
 exit 1
@@ -49,7 +61,7 @@ exit 1
   return { dir, journal }
 }
 
-async function lancer(input: string, table: Record<string, string>) {
+async function lancer(input: string, table: Record<string, ReponseGh>) {
   const { dir, journal } = await fauxGh(table)
   const resultat = await execa('sh', [SCRIPT, DEPOT], {
     input,
@@ -78,6 +90,7 @@ test('repli sur le commit quand le numéro ne donne pas d\'auteur', async () => 
   const ligne = `* fix: z ([#9](https://github.com/MaxVzl/herness/issues/9)) ([745ceb2](https://github.com/MaxVzl/herness/commit/${SHA}))`
   const r = await lancer(`${ligne}\n`, { [apiCommit(SHA)]: 'carol' })
   expect(r.stdout.trimEnd().endsWith(' by @carol')).toBe(true)
+  expect(r.journal.trim().split('\n')).toEqual([prView(9), apiCommit(SHA)])
 })
 
 test('seul le premier numéro compte', async () => {
@@ -106,6 +119,32 @@ test('bots ignorés', async () => {
     [apiCommit(SHA)]: 'github-actions[bot]',
   })
   expect(r.stdout).toBe(entree)
+})
+
+test('corps d\'erreur de gh ignoré : ligne inchangée', async () => {
+  const corps = '{"message":"No commit found for SHA: 0000","status":"422"}'
+  const lignePr = '* pr ([#5](https://github.com/MaxVzl/herness/issues/5))'
+  const ligneApi = `* sha ([745ceb2](https://github.com/MaxVzl/herness/commit/${SHA}))`
+  const entree = `${lignePr}\n${ligneApi}\n`
+  const r = await lancer(entree, {
+    [prView(5)]: { stdout: corps, code: 1 },
+    [apiCommit(SHA)]: { stdout: corps, code: 1 },
+  })
+  expect(r.exitCode).toBe(0)
+  expect(r.stdout).toBe(entree)
+})
+
+test('ligne en CRLF déjà annotée laissée telle quelle', async () => {
+  const entree = `${ligne14} by @alice\r\n`
+  const r = await lancer(entree, { [prView(14)]: 'zoe' })
+  expect(r.stdout).toBe(entree)
+  expect(r.journal).toBe('')
+})
+
+test('annotation placée avant le retour chariot', async () => {
+  const ligne = '* a ([#14](https://github.com/MaxVzl/herness/issues/14))\r'
+  const r = await lancer(`${ligne}\n`, { [prView(14)]: 'alice' })
+  expect(r.stdout).toBe('* a ([#14](https://github.com/MaxVzl/herness/issues/14)) by @alice\r\n')
 })
 
 test('gh en échec : ligne inchangée et code 0', async () => {
