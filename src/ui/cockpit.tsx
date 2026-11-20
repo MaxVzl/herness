@@ -215,12 +215,11 @@ export function Cockpit({
           nextNotice = noticeRef.current()
         } catch {
           // bandeau illisible : la lecture des missions continue
-          nextNotice = null
         }
+        if (alive) setNoticeText(nextNotice)
         const list = sortMissions(await read())
         if (!alive || mine <= applied.current) return
         applied.current = mine
-        setNoticeText(nextNotice)
         setAll(list)
         setLoaded(true)
         setUnreadable(false)

@@ -87,7 +87,7 @@ test('open focus l\'espace, ou rend un message', async () => {
   expect(await open(none, d)).toEqual({ ok: false, lines: ['espace herdr inconnu'] })
 })
 
-test('restartDetached lance herness reprendre --redemarrer détaché via execPath, sortie dans un journal ; une erreur de lancement devient ok:false', async () => {
+test('restartDetached lance herness reprendre --redemarrer détaché via node, sortie dans un journal ; une erreur de lancement devient ok:false', async () => {
   const home = await mkdtemp(join(tmpdir(), 'herness-'))
   process.env.HERNESS_HOME = home
   try {

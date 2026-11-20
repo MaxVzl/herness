@@ -40,7 +40,8 @@ export interface HernessCommand {
 
 /** Lanceur installé si ce processus tourne depuis versions/ et que current/bin/herness existe, sinon node et bin/herness.js. */
 export function hernessCommand(env: NodeJS.ProcessEnv = process.env, root: string = PACKAGE_ROOT): HernessCommand {
-  if (runsInstalled(env, root) && existsSync(installedBin(env))) return { cmd: installedBin(env), args: [] }
+  const bin = installedBin(env)
+  if (runsInstalled(env, root) && existsSync(bin)) return { cmd: bin, args: [] }
   return { cmd: 'node', args: [join(root, 'bin', 'herness.js')] }
 }
 

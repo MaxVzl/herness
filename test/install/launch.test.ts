@@ -1,9 +1,13 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import demo from '../fixtures/demo/config.ts'
+import { fakeEffects } from '../fakes.ts'
 import { FakeHerdr } from '../herdr/fake.ts'
+import { resumeMission, startMission, type LifecycleDeps } from '../../src/lifecycle.ts'
+import { drainInbox } from '../../src/mission/inbox.ts'
+import { loadState, saveState } from '../../src/mission/state.ts'
 import { missionMcpConfig } from '../../src/mcp/server.ts'
 import { restartDetached, type Spawner } from '../../src/ui/actions.ts'
 import { openCockpit } from '../../src/ui/location.ts'
@@ -39,6 +43,44 @@ test('restartDetached lance le lanceur installé', async () => {
   const [cmd, args] = seen[0] as [string, string[]]
   expect(cmd).toBe('/inst/current/bin/herness')
   expect(args).toEqual(['reprendre', 'm1', '--redemarrer'])
+})
+
+const LAUNCHER = "'/inst/current/bin/herness'"
+
+async function lifecycle() {
+  const repo = join(home, 'projet-demo')
+  await mkdir(repo, { recursive: true })
+  const fx = fakeEffects({ git: { isClean: async () => true } })
+  const d: LifecycleDeps = { e: fx, loadConfig: async () => ({ ...demo, repoPath: repo }), out: () => {} }
+  return { fx, d, repo, h: fx.herdr }
+}
+
+test('startMission lance moteur, tableau et visionneuses par le lanceur installé', async () => {
+  const { d, repo, h } = await lifecycle()
+  const id = await startMission('https://github.com/o/r/issues/12', repo, d)
+  expect(h.runs.map((r) => r.cmd)).toEqual(expect.arrayContaining([
+    `${LAUNCHER} engine ${id}`,
+    `${LAUNCHER} tasks ${id}`,
+    `${LAUNCHER} voir spec ${id}`,
+    `${LAUNCHER} voir plan ${id}`,
+  ]))
+})
+
+test('resumeMission relance moteur, tableau et visionneuses arrêtés par le lanceur installé', async () => {
+  const { d, repo, h } = await lifecycle()
+  const id = await startMission('https://github.com/o/r/issues/12', repo, d)
+  await drainInbox(id)
+  const s = await loadState(id)
+  await saveState({ ...s, orchestrator: { ...s.orchestrator, started: true } })
+  for (const kind of ['engine', 'tasks', 'spec', 'plan'] as const) h.pane(s.herdr.panes[kind]!).busy = false
+  h.runs.length = 0
+  await resumeMission(id, d)
+  expect(h.runs.map((r) => r.cmd)).toEqual(expect.arrayContaining([
+    `${LAUNCHER} engine ${id}`,
+    `${LAUNCHER} tasks ${id}`,
+    `${LAUNCHER} voir spec ${id}`,
+    `${LAUNCHER} voir plan ${id}`,
+  ]))
 })
 
 test('openCockpit lance le cockpit par le lanceur installé', async () => {
