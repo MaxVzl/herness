@@ -183,7 +183,8 @@ test('texte autour recopié à l\'identique', async () => {
 test('dernière ligne sans retour à la ligne final traitée', async () => {
   const entree = '* a ([#14](https://github.com/MaxVzl/herness/issues/14))'
   const r = await lancer(entree, { [prView(14)]: 'alice' })
-  expect(r.stdout).toContain(' by @alice')
+  // read + printf ajoutent le retour à la ligne final : gh --jq .body en fournit déjà un.
+  expect(r.stdout).toBe(`${entree} by @alice\n`)
 })
 
 test('script exécutable', async () => {

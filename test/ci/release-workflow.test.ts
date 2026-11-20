@@ -32,3 +32,17 @@ test("l'annotation de la PR vient après release-please", () => {
   const releasePlease = workflow.indexOf('googleapis/release-please-action')
   expect(annotation).toBeGreaterThan(releasePlease)
 })
+
+test('les exécutions du workflow sont sérialisées', () => {
+  expect(workflow).toContain('group: release-please')
+  expect(workflow).toContain('cancel-in-progress: false')
+})
+
+test("l'annotation de la PR est la dernière étape, sans condition", () => {
+  const lignes = workflow.split('\n')
+  const index = lignes.findIndex((ligne) => ligne.includes('name: Auteurs des PR dans la PR de release'))
+  expect(index).toBeGreaterThanOrEqual(0)
+  const suite = lignes.slice(index + 1)
+  expect(suite.join('\n')).not.toMatch(/^\s*if:/m)
+  expect(suite.some((ligne) => /^\s*- name:/.test(ligne) || /^\s*- uses:/.test(ligne))).toBe(false)
+})
