@@ -627,6 +627,7 @@ test('fermer ne touche pas à la branche si la fermeture est annulée ou échoue
 const ISSUE_URL = 'https://github.com/MaxVzl/herness/issues/7'
 
 const ghRun: FakeOverrides['run'] = async (cmd, args = []) => {
+  if (cmd === 'cursor-agent') return { stdout: 'Logged in', stderr: '', exitCode: 0 }
   if (cmd === 'gh' && args[1] === 'list') return { stdout: '[]', stderr: '', exitCode: 0 }
   if (cmd === 'gh' && args[1] === 'create') return { stdout: `${ISSUE_URL}\n`, stderr: '', exitCode: 0 }
   return { stdout: '', stderr: '', exitCode: 0 }
@@ -687,6 +688,103 @@ test('signaler refusé n\'envoie rien', async () => {
   expect(await reportMissionErrors('gh12', d)).toBe(false)
   expect(out.join('\n')).toContain("rien n'a été envoyé")
   expect(ghCreates(fx)).toEqual([])
+})
+
+test('fermer en terminal propose l\'envoi avant d\'arrêter le moteur', async () => {
+  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  const { fx, d } = await started(
+    { git: { unpushedCount: async () => 0 }, run: ghRun },
+    { isTTY: true, confirm: async () => true },
+  )
+  expect(await closeMission('gh12', d, { signaler: true })).toBe(true)
+  const createAt = fx.calls.findIndex(
+    (c) => c.fn === 'run' && c.args[0] === 'gh' && (c.args[1] as string[])[1] === 'create',
+  )
+  const stopAt = fx.calls.findIndex(
+    (c) => c.fn === 'herdr.paneSendKeys' && (c.args as string[]).includes('ctrl+c'),
+  )
+  expect(createAt).toBeGreaterThanOrEqual(0)
+  expect(stopAt).toBeGreaterThan(createAt)
+  expect(await exists(join(missionDir('gh12'), 'issues.json'))).toBe(true)
+  expect((await loadState('gh12')).step).toBe('fermée')
+})
+
+test('fermer : l\'envoi refusé n\'empêche pas la fermeture', async () => {
+  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  const { fx, d } = await started(
+    { git: { unpushedCount: async () => 0 }, run: ghRun },
+    { isTTY: true, confirm: async (q) => !q.startsWith('Envoyer') },
+  )
+  expect(await closeMission('gh12', d, { signaler: true })).toBe(true)
+  expect((await loadState('gh12')).step).toBe('fermée')
+  expect(ghCreates(fx)).toEqual([])
+})
+
+test('fermer : un échec de gh n\'empêche pas la fermeture', async () => {
+  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  const { out, d } = await started(
+    {
+      git: { unpushedCount: async () => 0 },
+      run: async (cmd, args = []) => {
+        if (cmd === 'cursor-agent') return { stdout: 'Logged in', stderr: '', exitCode: 0 }
+        if (cmd === 'gh' && args[1] === 'list') throw new Error('gh non connecté')
+        return { stdout: '', stderr: '', exitCode: 0 }
+      },
+    },
+    { isTTY: true, confirm: async () => true },
+  )
+  expect(await closeMission('gh12', d, { signaler: true })).toBe(true)
+  expect(out.join('\n')).toContain('erreurs herness non remontées (gh non connecté) : herness signaler gh12')
+  expect((await loadState('gh12')).step).toBe('fermée')
+})
+
+test('fermer sans erreur à remonter ne dit rien de plus', async () => {
+  const { fx, out, d } = await started(
+    { git: { unpushedCount: async () => 0 }, run: ghRun },
+    { isTTY: true, confirm: async () => true },
+  )
+  expect(await closeMission('gh12', d, { signaler: true })).toBe(true)
+  expect(fx.callsOf('run').some((call) => call[0] === 'gh')).toBe(false)
+  const text = out.join('\n')
+  expect(text).not.toContain('Aucune erreur herness')
+  expect(text).not.toContain('herness signaler')
+})
+
+test('fermer sans l\'option rappelle la commande sans contacter GitHub', async () => {
+  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  const { fx, out, d } = await started({ git: { unpushedCount: async () => 0 }, run: ghRun })
+  expect(await closeMission('gh12', d)).toBe(true)
+  expect(out.join('\n')).toContain('1 erreur(s) herness non remontée(s) : herness signaler gh12')
+  expect(fx.callsOf('run').some((call) => call[0] === 'gh')).toBe(false)
+})
+
+test('fermer annulé ne propose rien', async () => {
+  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  const asked: string[] = []
+  const { fx, d } = await started(
+    { git: { unpushedCount: async () => 2 }, run: ghRun },
+    { isTTY: true, confirm: async (q) => (asked.push(q), false) },
+  )
+  expect(await closeMission('gh12', d, { signaler: true })).toBe(false)
+  expect(asked).toHaveLength(1)
+  expect(asked[0]).toMatch(/commit/)
+  expect(fx.callsOf('run').some((call) => call[0] === 'gh')).toBe(false)
+})
+
+test('fermer sur une mission déjà fermée et nettoyée rappelle seulement la commande', async () => {
+  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  const { fx, out, d, s } = await started(
+    { git: { unpushedCount: async () => 0 }, run: ghRun },
+    { isTTY: true, confirm: async () => true },
+  )
+  fx.herdr.workspaces = fx.herdr.workspaces.filter((w) => w.workspaceId !== s.herdr.workspace)
+  await rm(s.worktree!, { recursive: true, force: true })
+  await patch({ step: 'fermée' })
+  expect(await closeMission('gh12', d, { signaler: true })).toBe(true)
+  const text = out.join('\n')
+  expect(text).toContain('déjà fermée')
+  expect(text).toContain('herness signaler gh12')
+  expect(fx.callsOf('run').some((call) => call[0] === 'gh')).toBe(false)
 })
 
 test('signaler --oui envoie sans question mais avec aperçu', async () => {

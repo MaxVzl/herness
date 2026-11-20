@@ -180,7 +180,7 @@ program
   .action((id: string) =>
     lifecycle(async (deps) => {
       const { closeMission } = await import('./lifecycle.ts')
-      await closeMission(id, deps)
+      await closeMission(id, deps, { signaler: true })
     }),
   )
 
