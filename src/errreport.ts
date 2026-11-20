@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { errorLogPath } from './errlog.ts'
+import type { Runner } from './forge/github.ts'
+import { missionDir } from './paths.ts'
 
 export const ISSUES_REPO = 'MaxVzl/herness'
 
@@ -181,4 +186,152 @@ export function issueBody(missionId: string, g: ReportGroup, home?: string): str
 
 export function commentBody(missionId: string, g: ReportGroup, home?: string): string {
   return reportText(missionId, g, home, 'comment')
+}
+
+export type SentRecord = { entry: string; signature: string; url: string; at: string }
+
+export type OpenIssue = { number: number; title: string; url: string }
+
+export type PlannedSend =
+  | { kind: 'issue'; title: string; body: string; group: ReportGroup }
+  | { kind: 'comment'; issue: OpenIssue; body: string; group: ReportGroup }
+
+type ListedIssue = OpenIssue & { body?: string | null }
+
+function isEnoent(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT'
+}
+
+function errorDetail(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+export function issuesFilePath(id: string): string {
+  return join(missionDir(id), 'issues.json')
+}
+
+export async function readSent(id: string): Promise<SentRecord[]> {
+  const path = issuesFilePath(id)
+  let text: string
+  try {
+    text = await readFile(path, 'utf8')
+  } catch (err) {
+    if (isEnoent(err)) return []
+    throw new Error(`issues.json illisible (${path}) : ${errorDetail(err)}`)
+  }
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch (err) {
+    throw new Error(`issues.json illisible (${path}) : ${errorDetail(err)}`)
+  }
+  if (typeof data !== 'object' || data === null || !Array.isArray((data as { sent?: unknown }).sent)) {
+    throw new Error(`issues.json illisible (${path}) : tableau sent absent`)
+  }
+  return (data as { sent: SentRecord[] }).sent
+}
+
+export async function pendingEntries(id: string): Promise<LogEntry[]> {
+  let text: string
+  try {
+    text = await readFile(errorLogPath(), 'utf8')
+  } catch (err) {
+    if (isEnoent(err)) return []
+    throw err
+  }
+  const sent = new Set((await readSent(id)).map((record) => record.entry))
+  return parseErrorLog(text).filter((entry) => entry.mission === id && !sent.has(entryHash(entry)))
+}
+
+export async function planReport(id: string, runner: Runner, home?: string): Promise<PlannedSend[]> {
+  const entries = await pendingEntries(id)
+  if (entries.length === 0) return []
+  const listed = await runner('gh', [
+    'issue',
+    'list',
+    '--repo',
+    ISSUES_REPO,
+    '--state',
+    'open',
+    '--limit',
+    '500',
+    '--json',
+    'number,title,body,url',
+  ])
+  const open = JSON.parse(listed.stdout) as ListedIssue[]
+  return groupEntries(entries, home).map((group) => {
+    const match = open.find((issue) => (issue.body ?? '').includes(group.signature))
+    if (match) {
+      return {
+        kind: 'comment',
+        issue: { number: match.number, title: match.title, url: match.url },
+        body: commentBody(id, group, home),
+        group,
+      }
+    }
+    return { kind: 'issue', title: issueTitle(group, home), body: issueBody(id, group, home), group }
+  })
+}
+
+export function previewLines(id: string, plan: PlannedSend[]): string[] {
+  const lines = [`Erreurs herness de la mission ${id} à remonter sur ${ISSUES_REPO} (dépôt public) :`, '']
+  for (const send of plan) {
+    lines.push(
+      send.kind === 'issue'
+        ? `── Nouvelle issue : ${send.title}`
+        : `── Commentaire sur #${send.issue.number} (${send.issue.title})`,
+    )
+    lines.push(...send.body.split('\n'), '')
+  }
+  lines.push('Relis : tout ce qui est affiché sera public.')
+  return lines
+}
+
+function countLabel(count: number, one: string, many: string): string | undefined {
+  if (count === 0) return undefined
+  return count === 1 ? `1 ${one}` : `${count} ${many}`
+}
+
+export function confirmQuestion(plan: PlannedSend[]): string {
+  const issues = plan.filter((send) => send.kind === 'issue').length
+  const comments = plan.length - issues
+  const parts = [countLabel(issues, 'issue', 'issues'), countLabel(comments, 'commentaire', 'commentaires')].filter(
+    (part) => part !== undefined,
+  )
+  return `Envoyer ${parts.join(' et ')} sur ${ISSUES_REPO} ?`
+}
+
+async function writeSent(id: string, sent: SentRecord[]): Promise<void> {
+  await mkdir(missionDir(id), { recursive: true })
+  await writeFile(issuesFilePath(id), `${JSON.stringify({ sent }, null, 2)}\n`)
+}
+
+export async function sendReport(
+  id: string,
+  plan: PlannedSend[],
+  runner: Runner,
+  now: () => Date = () => new Date(),
+): Promise<string[]> {
+  const sent = await readSent(id)
+  const lines: string[] = []
+  for (const send of plan) {
+    const result =
+      send.kind === 'issue'
+        ? await runner('gh', ['issue', 'create', '--repo', ISSUES_REPO, '--title', send.title, '--body-file', '-'], {
+            input: send.body,
+          })
+        : await runner(
+            'gh',
+            ['issue', 'comment', String(send.issue.number), '--repo', ISSUES_REPO, '--body-file', '-'],
+            { input: send.body },
+          )
+    const url = result.stdout.trim()
+    const at = now().toISOString()
+    for (const entry of send.group.entries) {
+      sent.push({ entry: entryHash(entry), signature: send.group.signature, url, at })
+    }
+    await writeSent(id, sent)
+    lines.push(send.kind === 'issue' ? `issue créée : ${url}` : `commentaire ajouté : ${url}`)
+  }
+  return lines
 }
