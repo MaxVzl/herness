@@ -55,7 +55,8 @@ Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, `
 | `herness voir <spec\|plan> <id>` | Visionneuse du panneau `spec` ou `plan` de l'onglet `docs` : affiche le document avec `bat` (à défaut `less -R`) et le recharge dès qu'il change. Une proposition d'amendement en attente (`<spec\|plan>.proposed.md` du dossier de mission) a la priorité, signalée par un en-tête ; sinon le fichier du worktree ; sinon un message d'attente. `q` quitte l'affichage, Entrée le rouvre. Lecture seule : n'écrit jamais `state.json`. |
 | `herness valider <id> [--porte <gateId>] [--note <texte>]` | Valide une porte en attente (par défaut la plus ancienne). |
 | `herness refuser <id> --note <texte> [--porte <gateId>]` | Refuse une porte ; `--note` (motif) est obligatoire. |
-| `herness fermer <id>` | Ferme la mission : base de test, moteur, worktree et espace herdr (confirmation s'il reste du travail). Sur une mission déjà `fermée` (abandon validé), nettoie ce qui reste. La branche locale est supprimée seulement si tout son contenu est déjà sur `origin` (jamais la branche distante ni la PR). |
+| `herness fermer <id>` | Ferme la mission : base de test, moteur, worktree et espace herdr (confirmation s'il reste du travail). En ligne de commande, propose d'abord de remonter les erreurs herness de la mission. Sur une mission déjà `fermée` (abandon validé), nettoie ce qui reste. La branche locale est supprimée seulement si tout son contenu est déjà sur `origin` (jamais la branche distante ni la PR). |
+| `herness signaler <id> [--oui]` | Aperçu des issues et commentaires à publier sur `MaxVzl/herness` (dépôt public), puis confirmation. `--oui` envoie sans question. |
 | `herness supprimer <id> [--oui]` | Efface le dossier d'une mission `fermée` (état, spec, plan, journaux) après confirmation (`--oui` : sans). Refuse tant qu'il reste un worktree, un espace herdr ou une base : relancer `herness fermer` d'abord. |
 
 `valider` et `refuser` exigent un vrai terminal interactif (confirmation `o/N`) : un agent ne peut pas valider à ta place. Dans le cockpit et le panneau `tasks`, `v` (valider) et `r` (refuser, note obligatoire) font la même chose après confirmation en deux touches (voir « Cockpit »). Toutes ces commandes restent disponibles : le cockpit ne les remplace pas.
@@ -136,6 +137,8 @@ Un espace par mission, avec les onglets (en plus de l'onglet `herness` du cockpi
 ## Où vivent les missions
 
 `~/.local/state/herness/missions/<id>/` (`state.json`, `demande.md`, `orchestrator.md`…). La variable `HERNESS_HOME` remplace `~/.local/state/herness`.
+
+Les erreurs de herness sont aussi écrites dans `~/.local/state/herness/erreurs.log`. `herness signaler` (et `herness fermer` en ligne de commande) les remonte en issues sur `MaxVzl/herness` : une issue par erreur distincte, ou un commentaire si une issue ouverte porte déjà la même signature `herness-sig-…`. Le dossier personnel est remplacé par `~` dans ce qui est publié. `missions/<id>/issues.json` retient ce qui est parti.
 
 ## Ajouter un projet
 
