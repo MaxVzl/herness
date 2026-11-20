@@ -33,6 +33,8 @@ herness mise-a-jour --version 0.5.0    # version précise, retour arrière compr
 
 La commande relance le script d'installation, puis liste les missions en cours (ni `pr-ouverte`, ni `fermée`, ni `bloquée`) et propose de les redémarrer (`herness reprendre <id> --redemarrer`, avec la nouvelle version). Sinon, le moteur, le tableau et les visionneuses de ces missions continuent sur l'ancienne version, intacte dans son dossier. L'orchestrateur n'est pas relancé ; son serveur MCP garde l'ancien code jusqu'à ce que sa session soit relancée.
 
+Tout ce que herness lance (moteur, tableau, visionneuses, serveur MCP, cockpit) démarre avec la version active au moment du lancement, même depuis un cockpit plus ancien. Le cockpit exécute lui-même la création des missions et les validations : s'il tourne sur une version antérieure à celle installée, il l'indique en jaune sous son titre. Quitte-le (`q`) et relance `herness`.
+
 ### Développer herness
 
 Depuis un clone : `pnpm install`, puis un lien à un autre nom que `herness`, par exemple `ln -s "$PWD/bin/herness" ~/.local/bin/herness-dev`. Le script d'installation remplace un lien `~/.local/bin/herness` existant (en le signalant), mais refuse d'écraser un vrai fichier.
