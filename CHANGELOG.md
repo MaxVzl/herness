@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/MaxVzl/herness/compare/v0.8.0...v0.8.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **cockpit-version-perimee:** Cockpit périmé : lancer la version installée et signaler la mise à jour ([3494735](https://github.com/MaxVzl/herness/commit/3494735074bce6bd9e192fcf41c2d41c45b68546))
+
 ## [0.8.0](https://github.com/MaxVzl/herness/compare/v0.7.0...v0.8.0) (2026-11-20)
 
 
