@@ -8,6 +8,7 @@ import { loadProjectConfig, mainRef, type ProjectConfig } from './config/project
 import type { Effects } from './engine/effects.ts'
 import { proofDbDown, testDbDown } from './engine/engine.ts'
 import { checkEnv } from './engine/envcheck.ts'
+import { confirmQuestion, pendingEntries, planReport, previewLines, sendReport } from './errreport.ts'
 import { createMissionSpace, paneIsIdle, type MissionSpace } from './herdr/layout.ts'
 import { missionMcpConfig } from './mcp/server.ts'
 import { nextFreeTextId, parseDemande, type Demande } from './mission/ids.ts'
@@ -301,13 +302,24 @@ async function cleanBranch(s: MissionState, e: Effects, cfg: ProjectConfig, out:
   }
 }
 
+/** Rappel sans contact GitHub. Une erreur de lecture est ignorée : la fermeture continue. */
+async function remindPendingErrors(id: string, out: (l: string) => void): Promise<void> {
+  try {
+    const n = (await pendingEntries(id)).length
+    if (n > 0) out(`${n} erreur(s) herness non remontée(s) : herness signaler ${id}`)
+  } catch {
+    // Journal illisible : pas de rappel, la fermeture suit son cours.
+  }
+}
+
 /**
- * `herness fermer <id>`. Commits non poussés ou worktree sale → confirmation dans un terminal interactif. Moteur
- * arrêté d'abord (seul écrivain de l'état ; s'il ne s'arrête pas, rien n'est fermé), puis bases de test supprimées
- * d'après l'état relu (un échec arrête tout), worktree supprimé, état `fermée` enregistré, et enfin l'espace herdr de
- * la mission fermé (jamais le groupe). Rend faux si l'utilisateur annule.
+ * `herness fermer <id>`. Commits non poussés ou worktree sale → confirmation dans un terminal interactif. Avec
+ * `opts.signaler` (ligne de commande), propose ensuite de remonter les erreurs herness avant d'arrêter le moteur
+ * (seul écrivain de l'état ; s'il ne s'arrête pas, rien n'est fermé). Puis bases de test supprimées d'après l'état
+ * relu (un échec arrête tout), worktree supprimé, état `fermée` enregistré, et enfin l'espace herdr de la mission
+ * fermé (jamais le groupe). Rend faux si l'utilisateur annule.
  */
-export async function closeMission(id: string, deps: LifecycleDeps): Promise<boolean> {
+export async function closeMission(id: string, deps: LifecycleDeps, opts: { signaler?: boolean } = {}): Promise<boolean> {
   const { e } = deps
   const out = deps.out ?? console.log
   const first = await load(id)
@@ -317,6 +329,7 @@ export async function closeMission(id: string, deps: LifecycleDeps): Promise<boo
   if (closed) {
     const wsLeft = !!first.herdr.workspace && (await e.herdr.workspaceList()).some((w) => w.workspaceId === first.herdr.workspace)
     if (!wtLeft && !wsLeft && !first.testDbUp && !first.proofDbUp) {
+      await remindPendingErrors(id, out)
       out(`Mission ${id} déjà fermée : rien à fermer.`)
       return true
     }
@@ -339,6 +352,17 @@ export async function closeMission(id: string, deps: LifecycleDeps): Promise<boo
       out('fermeture annulée')
       return false
     }
+  }
+
+  if (opts.signaler && deps.isTTY && deps.confirm) {
+    try {
+      if ((await pendingEntries(id)).length > 0) await reportMissionErrors(id, deps)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      out(`erreurs herness non remontées (${message}) : herness signaler ${id}`)
+    }
+  } else {
+    await remindPendingErrors(id, out)
   }
 
   await stopEngine(first, e, out)
@@ -390,6 +414,30 @@ export async function deleteMission(id: string, deps: LifecycleDeps, opts: { for
   }
   await rm(missionDir(id), { recursive: true, force: true })
   out(`Mission ${id} supprimée.`)
+  return true
+}
+
+/**
+ * `herness signaler` : remonte les erreurs herness d'une mission en issues GitHub.
+ * Ne lit ni n'écrit `state.json` au-delà du chargement initial.
+ */
+export async function reportMissionErrors(id: string, deps: LifecycleDeps, opts: { force?: boolean } = {}): Promise<boolean> {
+  const out = deps.out ?? console.log
+  await load(id)
+  const plan = await planReport(id, deps.e.run)
+  if (plan.length === 0) {
+    out(`Aucune erreur herness à remonter pour la mission ${id}.`)
+    return true
+  }
+  if (!opts.force && !(deps.isTTY && deps.confirm)) {
+    throw new Error("l'envoi demande une confirmation dans un terminal interactif (ou --oui)")
+  }
+  for (const line of previewLines(id, plan)) out(line)
+  if (!opts.force && deps.confirm && !(await deps.confirm(confirmQuestion(plan)))) {
+    out(`rien n'a été envoyé (herness signaler ${id} pour le refaire)`)
+    return false
+  }
+  for (const line of await sendReport(id, plan, deps.e.run, () => deps.e.now())) out(line)
   return true
 }
 
