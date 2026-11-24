@@ -43,10 +43,10 @@ export function checkAmendment(
   for (const d of done) {
     const t = next.tasks.find((x) => x.n === d.n)
     if (!t) {
-      return { ok: false, reason: `Task ${d.n} already validated has disappeared: add a resumption task instead of modifying task ${d.n} already validated` }
+      return { ok: false, reason: `already-validated task ${d.n} has disappeared: add a follow-up task instead of modifying already-validated task ${d.n}` }
     }
     if (normalize(t.body) !== normalize(d.body)) {
-      return { ok: false, reason: `Task ${d.n} already validated has changed: add a resumption task instead of modifying task ${d.n} already validated` }
+      return { ok: false, reason: `already-validated task ${d.n} has changed: add a follow-up task instead of modifying already-validated task ${d.n}` }
     }
   }
   if (current) {
@@ -54,9 +54,9 @@ export function checkAmendment(
     const same = next.tasks.find((x) => x.n === current.n)
     const moved = next.tasks.find((x) => x.n !== current.n && normalize(x.body) === normalize(current.body))
     if (moved && (!same || normalize(same.body) !== normalize(current.body))) {
-      return { ok: false, reason: `Task ${current.n} in progress has changed number (${moved.n}): ${keep}` }
+      return { ok: false, reason: `in-progress task ${current.n} has changed number (${moved.n}): ${keep}` }
     }
-    if (!same) return { ok: false, reason: `Task ${current.n} in progress has disappeared: ${keep}` }
+    if (!same) return { ok: false, reason: `in-progress task ${current.n} has disappeared: ${keep}` }
   }
   return { ok: true }
 }

@@ -59,7 +59,7 @@ test('demander_validation(plan) avec un plan invalide rend les erreurs et ne pos
   await writeDoc(planPath(state), '# plan sans tâche\n')
   const r = await call('demander_validation', { kind: 'plan', summary: 's' })
   expect(r.isError).toBe(true)
-  expect(r.content[0]!.text).toContain('Plan sans tâche')
+  expect(r.content[0]!.text).toContain('Plan has no task')
   expect(await drainInbox('T-1')).toEqual([])
 })
 
@@ -121,7 +121,7 @@ test('proposer_amendement lit plan.proposed.md du dossier de mission, refuse une
   await writeFile(proposed, PLAN.replace('corps', 'autre corps'))
   const r = await call('proposer_amendement', { summary: 's' })
   expect(r.isError).toBe(true)
-  expect(r.content[0]!.text).toContain('ajoute une tâche de reprise')
+  expect(r.content[0]!.text).toContain('add a follow-up task')
   expect(await drainInbox('T-1')).toEqual([])
   const next = PLAN + '\n### Tâche 2 : b\n\n**Test :** `pnpm u`\n'
   await writeFile(proposed, next)

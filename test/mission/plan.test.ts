@@ -20,7 +20,7 @@ test('accepte le titre anglais ### Task 1:', () => {
   expect(r.ok && r.tasks[0]).toMatchObject({ n: 1, title: 'Hello', testCommand: 'pnpm test' })
 })
 
-test('accepte un plan au format anglais', () => {
+test('accepts a plan in English format', () => {
   const r = parsePlan('# P\n\n' + '### Task 1: Do it\n' + '**Test:** `pnpm test a`\n')
   expect(r.ok).toBe(true)
   if (!r.ok) return
@@ -57,7 +57,7 @@ test('checkAmendment refuse la modification du corps de la tâche 2 done', () =>
   if (!prev.ok) throw new Error('prev')
   const r = checkAmendment(prev.tasks.slice(0, 2).map((t) => ({ n: t.n, body: t.body })), next)
   expect(r.ok).toBe(false)
-  if (!r.ok) expect(r.reason).toBe('Task 2 already validated has changed: add a resumption task instead of modifying task 2 already validated')
+  if (!r.ok) expect(r.reason).toBe('already-validated task 2 has changed: add a follow-up task instead of modifying already-validated task 2')
 })
 
 test('checkAmendment refuse la disparition d\'une tâche done', () => {
@@ -66,7 +66,7 @@ test('checkAmendment refuse la disparition d\'une tâche done', () => {
   if (!prev.ok) throw new Error('prev')
   expect(checkAmendment([{ n: 3, body: prev.tasks[2]!.body }], next)).toEqual({
     ok: false,
-    reason: 'Task 3 already validated has disappeared: add a resumption task instead of modifying task 3 already validated',
+    reason: 'already-validated task 3 has disappeared: add a follow-up task instead of modifying already-validated task 3',
   })
 })
 
@@ -80,7 +80,7 @@ test('checkAmendment refuse la disparition de la tâche en cours, accepte la mod
   const r = checkAmendment(done, gone, current)
   expect(r).toEqual({
     ok: false,
-    reason: 'Task 2 in progress has disappeared: keep it under number 2 (changing its text if needed) and add tasks instead',
+    reason: 'in-progress task 2 has disappeared: keep it under number 2 (changing its text if needed) and add tasks instead',
   })
   expect(checkAmendment(done, parsePlan(plan(3).replace('Corps 2', 'Corps 2 amendé')), current)).toEqual({ ok: true })
 })
@@ -95,12 +95,12 @@ test('checkAmendment refuse la renumérotation de la tâche en cours', () => {
   expect(r.ok).toBe(false)
   if (!r.ok) {
     expect(r.reason).toBe(
-      'Task 2 in progress has changed number (3): keep it under number 2 (changing its text if needed) and add tasks instead',
+      'in-progress task 2 has changed number (3): keep it under number 2 (changing its text if needed) and add tasks instead',
     )
   }
 })
 
-test('checkAmendment signale un plan amendé invalide en anglais', () => {
+test('checkAmendment reports an invalid amended plan in English', () => {
   const r = checkAmendment([], parsePlan('# no task\n'))
   expect(r).toEqual({
     ok: false,

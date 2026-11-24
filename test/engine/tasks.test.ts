@@ -428,7 +428,7 @@ test("un amendement qui modifie une tâche validée est écarté et l'orchestrat
   expect(s.tasks).toHaveLength(1)
   expect(s.appliedAmendments).toEqual(['g1'])
   expect(fx.callsOf('git.commitFiles')).toEqual([])
-  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toMatch(/^\[herness\] .*tâche 1 déjà validée a changé/s)
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toMatch(/^\[herness\] .*already-validated task 1 has changed/s)
 })
 
 test('reprise : implement sans agent mais avec commits passe directement au contrôle', async () => {
@@ -1033,7 +1033,7 @@ test("M4 : un amendement qui retire la tâche en cours est écarté et l'orchest
   const s = await loadState('T-1')
   expect(s.appliedAmendments).toEqual(['g1'])
   expect(s.tasks).toHaveLength(2)
-  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain('la tâche 2 en cours a disparu')
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain('in-progress task 2 has disappeared')
 })
 
 const msgs = (s: MissionState) => s.log.map((l) => l.msg)
