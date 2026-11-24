@@ -50,106 +50,106 @@ test('la liste des outils ne contient aucun outil de décision (valider, refuser
   const c = await connect()
   const names = (await c.listTools()).tools.map((t) => t.name).sort()
   expect(names).toEqual(
-    ['abandonner', 'demander_arbitrage', 'demander_validation', 'fin_de_pause', 'mission_identifiee', 'pause', 'proposer_amendement', 'signaler_anomalie', 'statut'],
+    ['abandon', 'end_pause', 'mission_classified', 'pause', 'propose_amendment', 'report_anomaly', 'request_approval', 'request_arbitration', 'status'],
   )
   expect(names.join(' ')).not.toMatch(/valider\b|refuser|approuver/)
 })
 
-test('demander_validation(plan) avec un plan invalide rend les erreurs et ne poste rien', async () => {
+test('request_approval(plan) avec un plan invalide rend les erreurs et ne poste rien', async () => {
   await writeDoc(planPath(state), '# plan sans tâche\n')
-  const r = await call('demander_validation', { kind: 'plan', summary: 's' })
+  const r = await call('request_approval', { kind: 'plan', summary: 's' })
   expect(r.isError).toBe(true)
   expect(r.content[0]!.text).toContain('Plan has no task')
   expect(await drainInbox('T-1')).toEqual([])
 })
 
-test('demander_validation(plan) valide poste un request-gate avec le chemin du plan', async () => {
+test('request_approval(plan) valide poste un request-gate avec le chemin du plan', async () => {
   await writeDoc(planPath(state), PLAN)
-  const r = await call('demander_validation', { kind: 'plan', summary: 's' })
+  const r = await call('request_approval', { kind: 'plan', summary: 's' })
   expect(r.isError).toBeFalsy()
   expect(await drainInbox('T-1')).toEqual([{ type: 'request-gate', kind: 'plan', summary: 's', path: planPath(state) }])
 })
 
-test('demander_validation(spec) poste un request-gate spec', async () => {
+test('request_approval(spec) poste un request-gate spec', async () => {
   await writeDoc(specPath(state), '# spec\n')
-  const r = await call('demander_validation', { kind: 'spec', summary: 's' })
+  const r = await call('request_approval', { kind: 'spec', summary: 's' })
   expect(r.isError).toBeFalsy()
   expect(await drainInbox('T-1')).toEqual([{ type: 'request-gate', kind: 'spec', summary: 's', path: specPath(state) }])
 })
 
-test('demander_validation sans fichier dans le worktree rend une erreur avec le chemin exact attendu', async () => {
-  const spec = await call('demander_validation', { kind: 'spec', summary: 's' })
+test('request_approval sans fichier dans le worktree rend une erreur avec le chemin exact attendu', async () => {
+  const spec = await call('request_approval', { kind: 'spec', summary: 's' })
   expect(spec.isError).toBe(true)
   expect(spec.content[0]!.text).toContain(join(state.worktree!, specPath(state)))
-  const plan = await call('demander_validation', { kind: 'plan', summary: 's' })
+  const plan = await call('request_approval', { kind: 'plan', summary: 's' })
   expect(plan.isError).toBe(true)
   expect(plan.content[0]!.text).toContain(join(state.worktree!, planPath(state)))
   expect(await drainInbox('T-1')).toEqual([])
 })
 
-test('mission_identifiee rend les chemins exacts de la spec et du plan', async () => {
-  const r = await call('mission_identifiee', { type: 'feat', slug: 'un-slug' })
+test('mission_classified rend les chemins exacts de la spec et du plan', async () => {
+  const r = await call('mission_classified', { type: 'feat', slug: 'un-slug' })
   const named = { ...state, slug: 'un-slug' }
   expect(r.content[0]!.text).toContain(join(state.worktree!, specPath(named)))
   expect(r.content[0]!.text).toContain(join(state.worktree!, planPath(named)))
 })
 
-test('demander_arbitrage poste un request-gate arbitrage', async () => {
-  await call('demander_arbitrage', { summary: 'trancher' })
+test('request_arbitration poste un request-gate arbitrage', async () => {
+  await call('request_arbitration', { summary: 'trancher' })
   expect(await drainInbox('T-1')).toEqual([{ type: 'request-gate', kind: 'arbitration', summary: 'trancher' }])
 })
 
-test('mission_identifiee refuse un type absent des préfixes du projet', async () => {
-  const bad = await call('mission_identifiee', { type: 'inconnu', slug: 'un-slug' })
+test('mission_classified refuse un type absent des préfixes du projet', async () => {
+  const bad = await call('mission_classified', { type: 'inconnu', slug: 'un-slug' })
   expect(bad.isError).toBe(true)
-  const badSlug = await call('mission_identifiee', { type: 'feat', slug: 'Slug_Mauvais' })
+  const badSlug = await call('mission_classified', { type: 'feat', slug: 'Slug_Mauvais' })
   expect(badSlug.isError).toBe(true)
   expect(await drainInbox('T-1')).toEqual([])
-  const ok = await call('mission_identifiee', { type: 'feat', slug: 'un-slug' })
+  const ok = await call('mission_classified', { type: 'feat', slug: 'un-slug' })
   expect(ok.isError).toBeFalsy()
   expect(await drainInbox('T-1')).toEqual([{ type: 'classified', workType: 'feat', slug: 'un-slug' }])
 })
 
-test('proposer_amendement lit plan.proposed.md du dossier de mission, refuse une tâche done modifiée, et ne touche pas au worktree', async () => {
+test('propose_amendment lit plan.proposed.md du dossier de mission, refuse une tâche done modifiée, et ne touche pas au worktree', async () => {
   await writeFile(join(missionDir('T-1'), 'plan.approved.md'), PLAN)
   await saveState({ ...state, tasks: [{ n: 1, title: 'a', testCommand: 'pnpm t', phase: 'done', round: 0 }] })
   await writeDoc(planPath(state), PLAN)
   const proposed = join(missionDir('T-1'), 'plan.proposed.md')
-  const missing = await call('proposer_amendement', { summary: 's' })
+  const missing = await call('propose_amendment', { summary: 's' })
   expect(missing.isError).toBe(true)
   expect(missing.content[0]!.text).toContain(proposed)
   await writeFile(proposed, PLAN.replace('corps', 'autre corps'))
-  const r = await call('proposer_amendement', { summary: 's' })
+  const r = await call('propose_amendment', { summary: 's' })
   expect(r.isError).toBe(true)
   expect(r.content[0]!.text).toContain('add a follow-up task')
   expect(await drainInbox('T-1')).toEqual([])
   const next = PLAN + '\n### Tâche 2 : b\n\n**Test :** `pnpm u`\n'
   await writeFile(proposed, next)
-  const ok = await call('proposer_amendement', { summary: 's' })
+  const ok = await call('propose_amendment', { summary: 's' })
   expect(ok.isError).toBeFalsy()
   expect(await drainInbox('T-1')).toEqual([{ type: 'request-gate', kind: 'amendment', summary: 's', path: proposed, hash: proposalHash(next) }])
   // Le worktree n'est jamais modifié pendant la proposition.
   expect(await readFile(join(state.worktree!, planPath(state)), 'utf8')).toBe(PLAN)
 })
 
-test('proposer_amendement avec une spec proposée lie aussi la spec au hachage et la cite', async () => {
+test('propose_amendment avec une spec proposée lie aussi la spec au hachage et la cite', async () => {
   await writeFile(join(missionDir('T-1'), 'plan.approved.md'), PLAN)
   const next = PLAN + '\n### Tâche 2 : b\n\n**Test :** `pnpm u`\n'
   await writeFile(join(missionDir('T-1'), 'plan.proposed.md'), next)
   await writeFile(join(missionDir('T-1'), 'spec.proposed.md'), '# spec v2\n')
-  const ok = await call('proposer_amendement', { summary: 's' })
+  const ok = await call('propose_amendment', { summary: 's' })
   expect(ok.isError).toBeFalsy()
   const [m] = (await drainInbox('T-1')) as { hash?: string; summary: string }[]
   expect(m!.hash).toBe(proposalHash(next, '# spec v2\n'))
   expect(m!.summary).toContain(join(missionDir('T-1'), 'spec.proposed.md'))
 })
 
-test('pause, fin_de_pause, abandonner postent leur message ; statut résume', async () => {
+test('pause, end_pause, abandon postent leur message ; statut résume', async () => {
   await call('pause')
-  await call('fin_de_pause')
-  await call('abandonner', { reason: 'r' })
+  await call('end_pause')
+  await call('abandon', { reason: 'r' })
   expect(await drainInbox('T-1')).toEqual([{ type: 'pause' }, { type: 'resume' }, { type: 'abandon', reason: 'r' }])
-  const r = await call('statut')
+  const r = await call('status')
   expect(r.content[0]!.text).toContain('env')
 })
 
@@ -168,46 +168,46 @@ test('missionMcpConfig écrit mcp.json', async () => {
   expect(await readdir(missionDir('T-1'))).toContain('mcp.json')
 })
 
-test('proposer_amendement refuse si le plan approuvé est illisible pour parsePlan et ne poste rien', async () => {
+test('propose_amendment refuse si le plan approuvé est illisible pour parsePlan et ne poste rien', async () => {
   await writeFile(join(missionDir('T-1'), 'plan.approved.md'), '# pas de tâche\n')
   await writeFile(join(missionDir('T-1'), 'plan.proposed.md'), PLAN)
-  const r = await call('proposer_amendement', { summary: 's' })
+  const r = await call('propose_amendment', { summary: 's' })
   expect(r.isError).toBe(true)
-  expect(r.content[0]!.text).toContain('Plan approuvé invalide')
+  expect(r.content[0]!.text).toContain('Approved plan is invalid')
   expect(await drainInbox('T-1')).toEqual([])
 })
 
 test("une exception d'outil est journalisée avec le nom de l'outil", async () => {
   await rm(join(missionDir('T-1'), 'state.json'))
-  const r = await call('statut')
+  const r = await call('status')
   expect(r.isError).toBe(true)
-  expect(r.content[0]!.text.startsWith('Erreur : ')).toBe(true)
+  expect(r.content[0]!.text.startsWith('Error: ')).toBe(true)
   const text = await readFile(join(home, 'errors.log'), 'utf8')
   expect(text).toContain('· mission T-1 · herness ')
-  expect(text).toContain('· outil MCP statut')
+  expect(text).toContain('· MCP tool status')
 })
 
-test("signaler_anomalie écrit la description avec l'étape et ne poste rien", async () => {
-  const r = await call('signaler_anomalie', { description: '  le moteur annonce g3 mais statut ne la montre pas  ' })
+test("report_anomaly écrit la description avec l'étape et ne poste rien", async () => {
+  const r = await call('report_anomaly', { description: '  le moteur annonce g3 mais statut ne la montre pas  ' })
   expect(r.isError).toBeFalsy()
   expect(r.content[0]!.text).toContain(join(home, 'errors.log'))
   const text = await readFile(join(home, 'errors.log'), 'utf8')
-  expect(text).toContain(`· signalement de l'orchestrateur (step ${state.step})`)
+  expect(text).toContain(`· orchestrator anomaly report (step ${state.step})`)
   expect(text).toContain('le moteur annonce g3 mais statut ne la montre pas')
   expect(await drainInbox('T-1')).toEqual([])
 })
 
-test('signaler_anomalie refuse une description vide', async () => {
-  const r = await call('signaler_anomalie', { description: '   ' })
+test('report_anomaly refuse une description vide', async () => {
+  const r = await call('report_anomaly', { description: '   ' })
   expect(r.isError).toBe(true)
-  expect(r.content[0]!.text).toContain('Description vide')
+  expect(r.content[0]!.text).toContain('Empty description')
   await expect(readFile(join(home, 'errors.log'), 'utf8')).rejects.toThrow()
 })
 
-test('demander_validation(spec) sans slug rend une erreur en français', async () => {
+test('request_approval(spec) without a slug returns an error', async () => {
   await saveState({ ...state, slug: undefined })
-  const r = await call('demander_validation', { kind: 'spec', summary: 's' })
+  const r = await call('request_approval', { kind: 'spec', summary: 's' })
   expect(r.isError).toBe(true)
-  expect(r.content[0]!.text).toMatch(/^Erreur : .*slug/)
+  expect(r.content[0]!.text).toMatch(/^Error: .*slug/)
   expect(await drainInbox('T-1')).toEqual([])
 })

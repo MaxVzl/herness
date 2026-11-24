@@ -52,6 +52,7 @@ test('dev crée l\'espace, enregistre l\'état puis lance moteur, tableau et orc
       },
     },
   })
+  cfg = { ...cfg, language: 'fr' }
   const id = await startMission('https://github.com/o/r/issues/12', repo, d)
   expect(id).toBe('gh12')
   const s = await loadState('gh12')
@@ -69,10 +70,15 @@ test('dev crée l\'espace, enregistre l\'état puis lance moteur, tableau et orc
   expect(demande).toContain('c2')
   expect(await exists(join(missionDir('gh12'), 'mcp.json'))).toBe(true)
   const prompt = await readFile(join(missionDir('gh12'), 'orchestrator.md'), 'utf8')
-  expect(prompt).toContain('déterminé après classement')
+  expect(prompt).toContain('path determined after classification')
   expect(prompt).toContain('docs/superpowers/specs/')
   expect(prompt).toContain('docs/superpowers/plans/')
-  expect(prompt).toContain('<AAAA-MM-JJ>-<id>-<slug>.md')
+  expect(prompt).toContain('<YYYY-MM-DD>-<id>-<slug>.md')
+  expect(prompt).toContain('mission_classified')
+  expect(prompt).toContain('### Task <n>: <title>')
+  expect(prompt).toContain('**Test:**')
+  expect(prompt).toMatch(/\bfr\b/)
+  expect(prompt).not.toContain('Tu réponds en français')
   expect(prompt).toContain(join(missionDir('gh12'), 'request.md'))
   // Après la PR : branche de la mission lue dans le worktree (elle est renommée au classement), main du projet et
   // preflight de la config, en clair.
@@ -114,6 +120,7 @@ test('dev avec un texte libre : id du jour et demande écrite telle quelle', asy
   const id = await startMission('  ajoute un export CSV  ', repo, d)
   expect(id).toBe('20261030-1')
   expect(await readFile(join(missionDir(id), 'request.md'), 'utf8')).toBe('ajoute un export CSV\n')
+  expect(await readFile(join(missionDir(id), 'orchestrator.md'), 'utf8')).toContain('a written request (free text)')
   expect((await loadState(id)).source).toEqual({ kind: 'text', ref: 'ajoute un export CSV' })
 })
 
@@ -123,14 +130,14 @@ test('dev avec une note : note.md écrite et signalée à l\'orchestrateur', asy
   const note = join(missionDir('gh12'), 'note.md')
   expect(await readFile(note, 'utf8')).toBe("ne touche pas à l'export PDF\n")
   const prompt = await readFile(join(missionDir('gh12'), 'orchestrator.md'), 'utf8')
-  expect(prompt).toContain(`Lis aussi la note de l'utilisateur, \`${note}\``)
+  expect(prompt).toContain(`Also read the user's note, \`${note}\``)
 })
 
 test('dev sans note (ou note vide) : ni note.md ni mention dans le prompt', async () => {
   const { d } = deps()
   await startMission('https://github.com/o/r/issues/12', repo, d, { note: '   ' })
   expect(await exists(join(missionDir('gh12'), 'note.md'))).toBe(false)
-  expect(await readFile(join(missionDir('gh12'), 'orchestrator.md'), 'utf8')).not.toContain('note de l\'utilisateur')
+  expect(await readFile(join(missionDir('gh12'), 'orchestrator.md'), 'utf8')).not.toContain("user's note")
 })
 
 test('dev refuse un id de mission déjà existant', async () => {

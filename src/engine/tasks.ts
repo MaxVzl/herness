@@ -136,7 +136,7 @@ export async function stopWithoutCommit(s: MissionState, e: Effects, h: StopHold
     s,
     e,
     `${what} : l'implémenteur s'est arrêté sans commit en laissant un compte rendu (${reportPath}). Porte ${g.id} (agent-stopped) ouverte. ` +
-      `Lis ce compte rendu et explique-le à l'utilisateur. Si le plan est en cause, propose un amendement (proposer_amendement) : validé, il est appliqué aussitôt et l'implémenteur repart de la consigne amendée. ` +
+      `Lis ce compte rendu et explique-le à l'utilisateur. Si le plan est en cause, propose un amendement (propose_amendment) : validé, il est appliqué aussitôt et l'implémenteur repart de la consigne amendée. ` +
       `Sinon, l'utilisateur valide pour relancer l'implémenteur avec sa décision en note (herness approve ${s.id} --gate ${g.id} --note "…"), ou refuse pour bloquer la mission (herness reject ${s.id} --gate ${g.id} --note "…").`,
   )
   return 'continue'
@@ -424,7 +424,7 @@ export async function applyAmendment(s: MissionState, e: Effects, cfg: ProjectCo
   const proposal = (await readProposal(s.id)) ?? (await interruptedProposal(s, e, g))
   if (!proposal) return reject(`proposition introuvable (${proposedPlanPath(s.id)})`)
   if (g.hash === undefined || g.hash !== proposal.hash) {
-    return reject('la proposition a changé après la demande ; redemande la validation avec proposer_amendement')
+    return reject('la proposition a changé après la demande ; redemande la validation avec propose_amendment')
   }
   const next = parsePlan(proposal.plan)
   const approved = await approvedPlan(s)

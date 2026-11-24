@@ -377,7 +377,7 @@ export class Engine {
           if (g.kind === 'amendment' && s.step === 'blocked' && s.blockedFrom === 'tasks') await this.amendBlocked(s, g.id)
         } else {
           log(s, e, `porte ${g.id} (${g.kind}) refusée : ${g.note ?? ''}`)
-          const again = g.kind === 'spec' || g.kind === 'plan' ? ` Corrige puis redemande la validation avec demander_validation('${g.kind}').` : ''
+          const again = g.kind === 'spec' || g.kind === 'plan' ? ` Corrige puis redemande la validation avec request_approval('${g.kind}').` : ''
           await informOrchestrator(s, e, `L'utilisateur a refusé la porte ${g.id} (${g.kind}). Motif : ${g.note ?? '(aucun)'}.${again}`)
         }
         return

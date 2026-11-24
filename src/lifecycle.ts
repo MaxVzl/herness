@@ -53,14 +53,14 @@ async function demandeText(d: Demande, e: Effects): Promise<string> {
 async function orchestratorPrompt(s: MissionState, d: Demande, hasNote: boolean, cfg: ProjectConfig): Promise<string> {
   // Valeur placée entre accents graves par le gabarit : aucun accent grave ici.
   const pattern = (dir: 'specs' | 'plans'): string =>
-    `${(dir === 'specs' ? specPath : planPath)({ ...s, slug: '<slug>' })} — chemin déterminé après classement : ` +
-    `dossier docs/superpowers/${dir}/, nom <AAAA-MM-JJ>-<id>-<slug>.md, où <slug> est celui que tu donnes à mission_identifiee`
+    `${(dir === 'specs' ? specPath : planPath)({ ...s, slug: '<slug>' })} — path determined after classification: ` +
+    `folder docs/superpowers/${dir}/, name <YYYY-MM-DD>-<id>-<slug>.md, where <slug> is the one you give mission_classified`
   return render('orchestrator', {
     id: s.id,
-    demande: d.kind === 'text' ? 'une demande écrite (texte libre)' : d.ref,
-    demandeFile: join(missionDir(s.id), 'request.md'),
+    request: d.kind === 'text' ? 'a written request (free text)' : d.ref,
+    requestFile: join(missionDir(s.id), 'request.md'),
     note: hasNote
-      ? ` Lis aussi la note de l'utilisateur, \`${join(missionDir(s.id), 'note.md')}\` : elle complète la demande et l'emporte en cas de contradiction.`
+      ? ` Also read the user's note, \`${join(missionDir(s.id), 'note.md')}\`: it complements the request and wins if they contradict.`
       : '',
     specPath: pattern('specs'),
     planPath: pattern('plans'),
@@ -68,7 +68,8 @@ async function orchestratorPrompt(s: MissionState, d: Demande, hasNote: boolean,
     mainBranch: cfg.mainBranch,
     preflight: cfg.preflight.length
       ? cfg.preflight.map((p) => `  - ${p.label} : \`${p.command.join(' ')}\``).join('\n')
-      : '  - (aucune étape de preflight dans la config du projet)',
+      : '  - (no preflight step in the project config)',
+    language: cfg.language,
   })
 }
 

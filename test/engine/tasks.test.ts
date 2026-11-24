@@ -676,7 +676,7 @@ test("arrêt sans commit avec compte rendu : porte agent-stopped, l'orchestrateu
   expect(String(fx.callsOf('herdr.notify').at(-1)![1])).toContain("arrêté sans commit")
   const msg = String(fx.callsOf('herdr.agentPrompt').at(-1)![1])
   expect(msg).toContain(`Porte ${g.id} (agent-stopped)`)
-  expect(msg).toContain('proposer_amendement')
+  expect(msg).toContain('propose_amendment')
 
   expect(await eng.tick()).toBe('wait')
   expect(await eng.tick()).toBe('wait')

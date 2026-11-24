@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { render } from '../../src/prompts/render.js'
 
 const SETS: Record<string, string[]> = {
-  orchestrator: ['id', 'demande', 'demandeFile', 'note', 'specPath', 'planPath', 'missionDir', 'mainBranch', 'preflight'],
+  orchestrator: ['id', 'request', 'requestFile', 'note', 'specPath', 'planPath', 'missionDir', 'mainBranch', 'preflight', 'language'],
   brief: ['taskBody', 'specPath', 'planPath', 'testCommand', 'commitFormat', 'forbidden', 'reportPath'],
   review: ['briefPath', 'reportPath', 'baseSha', 'headSha', 'diffPath', 'constraints', 'outPath'],
   rereview: ['briefPath', 'reportPath', 'baseSha', 'headSha', 'diffPath', 'constraints', 'findings', 'outPath'],
@@ -58,14 +58,18 @@ describe('render', () => {
     for (const c of ['BRANCHE', 'MAIN', 'ENVIRONNEMENT']) expect(out).toContain(`CAUSE: ${c}`)
   })
 
-  it('orchestrator.md mentionne le format « **Test :** » et interdit de valider soi-même', async () => {
+  it('orchestrator.md imposes English plan markers and forbids self-approval', async () => {
     const raw = await readFile(new URL('../../src/prompts/orchestrator.md', import.meta.url), 'utf8')
-    expect(raw).toContain('**Test :**')
-    expect(raw).toContain('### Tâche <n> : <titre>')
-    expect(raw).toMatch(/jamais par toi/)
+    expect(raw).toContain('**Test:**')
+    expect(raw).toContain('### Task <n>: <title>')
+    expect(raw).toMatch(/never by you/)
     expect(raw).toContain('herness approve')
-    for (const t of ['statut', 'mission_identifiee', 'demander_validation', 'proposer_amendement', 'demander_arbitrage', 'pause', 'fin_de_pause', 'abandonner', 'signaler_anomalie']) {
+    expect(raw).not.toContain('Tu réponds en français')
+    for (const t of ['status', 'mission_classified', 'request_approval', 'propose_amendment', 'request_arbitration', 'pause', 'end_pause', 'abandon', 'report_anomaly']) {
       expect(raw).toContain(t)
+    }
+    for (const old of ['statut', 'mission_identifiee', 'demander_validation', 'proposer_amendement', 'demander_arbitrage', 'fin_de_pause', 'abandonner', 'signaler_anomalie']) {
+      expect(raw).not.toContain(old)
     }
     expect(raw).toContain('[herness]')
   })
@@ -78,22 +82,32 @@ describe('render', () => {
 })
 
 describe('orchestrator.md', () => {
-  it('lève l\'interdiction de modifier le dépôt seulement une fois la PR ouverte, sur demande', async () => {
+  it('lifts the ban on changing the repo only once the PR is open, on request', async () => {
     const out = await render('orchestrator', full(SETS.orchestrator!))
-    expect(out).toContain('sauf une fois la PR ouverte')
-    const after = out.slice(out.indexOf("## Après l'ouverture de la PR"))
+    expect(out).toContain('except once the PR is open')
+    const after = out.slice(out.indexOf('## After the PR is open'))
     expect(after).toContain('pr-open')
-    expect(after).toContain('demande explicite')
+    expect(after).toContain('explicit request')
     expect(after).toContain('git push --force-with-lease origin HEAD')
     expect(after).toContain('git branch --show-current')
     expect(after).toContain('<<preflight>>')
-    expect(after).toMatch(/Toujours interdit.*git stash.*--no-verify/s)
+    expect(after).toMatch(/Still forbidden.*git stash.*--no-verify/s)
   })
 
-  it("décrit l'implémenteur comme brief.md : il peut lire la spec et le plan", async () => {
+  it('describes the implementer as brief.md does: they can read the spec and the plan', async () => {
     const out = await render('orchestrator', full(SETS.orchestrator!))
     expect(out).not.toContain('ne voit ni la conversation ni la spec')
-    expect(out).toContain("L'implémenteur ne voit pas la conversation")
-    expect(out).toContain('peut lire la spec et le plan')
+    expect(out).toContain('The implementer does not see the conversation')
+    expect(out).toContain('can read the spec and the plan')
+  })
+
+  it('renders the project language, mission_classified and the English plan markers', async () => {
+    const out = await render('orchestrator', { ...full(SETS.orchestrator!), language: 'fr' })
+    expect(out).toMatch(/\bfr\b/)
+    expect(out).toContain('mission_classified')
+    expect(out).toContain('### Task <n>: <title>')
+    expect(out).toContain('**Test:**')
+    expect(out).not.toContain('Tu réponds en français')
+    expect(out).not.toMatch(/\{\{/)
   })
 })
