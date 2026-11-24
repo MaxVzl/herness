@@ -269,7 +269,7 @@ test('le même faux positif rouge deux fois part au diagnostic', async () => {
   expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['rdt-1-1', join(pdir(), 'consigne-diagnostic-1.md')])
   const consigne = await readFile(join(pdir(), 'consigne-diagnostic-1.md'), 'utf8')
   expect(consigne).toContain('/l/ko.log')
-  expect(s.blockedReason).toContain('ENVIRONNEMENT')
+  expect(s.blockedReason).toContain('ENVIRONMENT')
   expect(s.blockedReason).toContain('remarque de rdt-1-1')
   expect(s.testDbUp).toBe(false)
   expect(fx.callsOf('run')).toEqual([down()])
@@ -638,14 +638,14 @@ test('revue globale : une remarque « imposé par le plan » ouvre un arbitrage 
       const fileName = basename(file)
       const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
       const first = !out.includes('rerevue')
-      await writeFile(out, first ? 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 imposé par le plan mais incohérent\n' : 'VERDICT: APPROVED\n')
+      await writeFile(out, first ? 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 imposed by the plan but inconsistent\n' : 'VERDICT: APPROVED\n')
     }
     return 'done' as const
   }
   const { fx, eng } = await setup({ over: { agents: { ask } } })
   let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'arbitration'))
   const g = s.gates.find((x) => x.kind === 'arbitration')!
-  expect(g.summary).toContain('src/a.ts:3 imposé par le plan')
+  expect(g.summary).toContain('src/a.ts:3 imposed by the plan')
   expect(await eng.tick()).toBe('wait')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1'])
   await expect(readFile(join(gdir(), 'correctifs-1.md'))).rejects.toThrow()

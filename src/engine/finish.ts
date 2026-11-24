@@ -535,7 +535,7 @@ async function diagnose(s: MissionState, e: Effects, cfg: ProjectConfig): Promis
       return 'continue'
     case 'ENVIRONMENT':
       restartRun(P)
-      return block(s, e, `${PF} : check « ${f.label} » rouge, cause ENVIRONNEMENT (diagnostic : ${out})\n${await findingsOf(out)}`)
+      return block(s, e, `${PF} : check « ${f.label} » rouge, cause ${cause} (diagnostic : ${out})\n${await findingsOf(out)}`)
   }
 }
 
@@ -690,7 +690,7 @@ async function preflightFix(s: MissionState, e: Effects, cfg: ProjectConfig): Pr
 
 async function preflightRereview(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   const P = s.loops.preflight
-  const findings = P.fixFindings || P.fixFailure || '(aucune)'
+  const findings = P.fixFindings || P.fixFailure || '(none)'
   const pa = await converse(s, e, P, reviewerAgent(s, cfg, PF), () => rereviewAsk(s, e, cfg, preflightDir(s), P.round, findings), reviewerDelivered)
   if (typeof pa === 'string') return pa
   const out = pa.out as string

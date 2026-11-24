@@ -18,6 +18,7 @@ import { openGate } from './gates.ts'
 export const ASK_TIMEOUT_MS: Record<Role, number> = { implementer: 4 * 3_600_000, reviewer: 2 * 3_600_000, diagnostic: 2 * 3_600_000, orchestrator: 3_600_000 }
 
 /** Interdits communs (contraintes globales). */
+const GENERATED_FILES = 'editing generated project files'
 const GLOBAL_FORBIDDEN = [
   '`git push`',
   '`git stash`',
@@ -26,7 +27,7 @@ const GLOBAL_FORBIDDEN = [
   '`rebase`',
   '`reset --hard`',
   'leaving the worktree',
-  'editing generated project files',
+  GENERATED_FILES,
   '`docker compose`',
   '`--author`',
   '`git -c user.*`',
@@ -51,7 +52,7 @@ export function forbidden(cfg: ProjectConfig): string {
   for (const it of items) {
     if (seen.has(strip(it))) continue
     seen.add(strip(it))
-    const generated = it === 'éditer les fichiers générés du projet' && cfg.forbiddenPaths.length > 0
+    const generated = it === GENERATED_FILES && cfg.forbiddenPaths.length > 0
     lines.push(`- ${generated ? `${it} (${cfg.forbiddenPaths.map((p) => `\`${p}\``).join(', ')})` : it}`)
   }
   return lines.join('\n')
@@ -65,17 +66,18 @@ async function approvedPlan(s: MissionState): Promise<PlanTask[]> {
 
 /** Corps d'un rapport de revue sans sa ligne de verdict. */
 export async function findingsOf(path: string | undefined): Promise<string> {
-  if (!path) return '(aucune)'
+  if (!path) return '(none)'
   const raw = await readFile(path, 'utf8').catch(() => '')
-  return raw.split('\n').slice(1).join('\n').trim() || '(aucune)'
+  return raw.split('\n').slice(1).join('\n').trim() || '(none)'
 }
 
-const CONTRADICTS_PLAN = /imposé par le plan/i
+const CONTRADICTS_PLAN = /imposed by the plan|imposé par le plan/i
 
 /**
  * Verdict CORRECTIONS (tâche, revue globale, re-revue du preflight) : l'orchestrateur est prévenu en une ligne ; des
- * remarques qui contredisent le plan (« imposé par le plan ») ouvrent une porte `arbitration`, et les correctifs
- * attendent la décision de l'utilisateur (`arbitrationPending`), dont la note entre dans le fichier de correctifs.
+ * remarques qui contredisent le plan (« imposed by the plan », ou « imposé par le plan ») ouvrent une porte
+ * `arbitration`, et les correctifs attendent la décision de l'utilisateur (`arbitrationPending`), dont la note entre
+ * dans le fichier de correctifs.
  */
 export async function onCorrections(s: MissionState, e: Effects, what: string, reviewPath: string, round: number): Promise<void> {
   await informOrchestrator(s, e, `${what} : revue CORRECTIONS (tour ${round}), remarques dans ${reviewPath}`)
@@ -243,7 +245,7 @@ export const PROOF = { pollMs: 15_000, idleGraceMs: 10 * 60_000 }
 /**
  * herdr juge la fin d'un agent sur son écran : un cursor-agent paraît au repos pendant une longue commande (une
  * suite vitest, par exemple). Pour un implémenteur, `done` ne vaut donc fin qu'une fois son compte rendu complété
- * (son brief l'exige avant `TERMINÉ`). Sinon le moteur revérifie ; après `idleGraceMs` au repos sans compte rendu
+ * (son brief l'exige avant `DONE`). Sinon le moteur revérifie ; après `idleGraceMs` au repos sans compte rendu
  * (le compte repart quand l'agent travaille), il contrôle quand même, comme avant.
  */
 async function proven(s: MissionState, e: Effects, what: string, pa: PendingAsk, r: 'done' | 'blocked' | 'timeout'): Promise<'done' | 'blocked' | 'timeout'> {

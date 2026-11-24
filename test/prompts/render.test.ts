@@ -49,6 +49,7 @@ describe('render', () => {
       const out = await render(name, full(SETS[name]!))
       expect(out).toContain('VERDICT: APPROVED')
       expect(out).toContain('VERDICT: CORRECTIONS')
+      expect(out).toMatch(/in English/)
       expect(out.trim()).toMatch(/DONE`?\.?$/)
     }
   })
@@ -56,6 +57,7 @@ describe('render', () => {
   it('diagnostic impose la première ligne CAUSE', async () => {
     const out = await render('diagnostic', full(SETS.diagnostic!))
     for (const c of ['BRANCH', 'MAIN', 'ENVIRONMENT']) expect(out).toContain(`CAUSE: ${c}`)
+    expect(out).toMatch(/in English/)
   })
 
   it('orchestrator.md imposes English plan markers and forbids self-approval', async () => {

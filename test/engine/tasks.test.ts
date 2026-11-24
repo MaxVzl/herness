@@ -4,7 +4,7 @@ import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import demo from '../fixtures/demo/config.ts'
 import { Engine } from '../../src/engine/engine.ts'
-import { stopAgent } from '../../src/engine/tasks.ts'
+import { findingsOf, forbidden, stopAgent } from '../../src/engine/tasks.ts'
 import { postInbox } from '../../src/mission/inbox.ts'
 import { loadState, newState, saveState, type Gate, type MissionState, type TaskState } from '../../src/mission/state.ts'
 import { missionDir, planPath, specPath } from '../../src/paths.ts'
@@ -23,6 +23,16 @@ beforeEach(async () => {
 afterEach(async () => {
   delete process.env.HERNESS_HOME
   await rm(home, { recursive: true, force: true })
+})
+
+test('forbidden names the generated files from the project config', () => {
+  const text = forbidden(demo)
+  expect(text).toContain('editing generated project files')
+  for (const p of demo.forbiddenPaths) expect(text).toContain(`\`${p}\``)
+})
+
+test('findingsOf without a review body says (none)', async () => {
+  expect(await findingsOf(undefined)).toBe('(none)')
 })
 
 const T1 = '### Tâche 1 : Modèle\n\n**Test :** `pnpm test a`\n\nfaire a\n'
@@ -634,7 +644,7 @@ test('une remarque « imposé par le plan » ouvre une porte arbitrage et suspen
     if (name.startsWith('r')) {
       const fileName = basename(file)
       const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
-      await writeFile(out, 'VERDICT: CORRECTIONS\n\n## Remarques\n- src/a.ts:3 nom de variable\n- src/b.ts:9 colonne supprimée alors que c\'est Imposé par le plan (tâche 1)\n')
+      await writeFile(out, 'VERDICT: CORRECTIONS\n\n## Remarques\n- src/a.ts:3 nom de variable\n- src/b.ts:9 colonne supprimée alors que c\'est imposed by the plan (tâche 1)\n')
     }
     return 'done' as const
   }
@@ -654,6 +664,20 @@ test('une remarque « imposé par le plan » ouvre une porte arbitrage et suspen
   s = await until(eng, (x) => x.tasks[0]!.phase === 'control')
   const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
   expect(fix).toContain('le plan prime, garder la colonne')
+})
+
+test('une remarque « imposé par le plan » ouvre encore une porte arbitrage', async () => {
+  const ask = async (name: string, file: string) => {
+    if (name.startsWith('r')) {
+      const fileName = basename(file)
+      const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
+      await writeFile(out, 'VERDICT: CORRECTIONS\n\n- src/b.ts:9 imposé par le plan\n')
+    }
+    return 'done' as const
+  }
+  const { eng } = await setup({ over: { agents: { ask } } })
+  const s = await until(eng, (x) => x.tasks[0]!.phase === 'fix')
+  expect(s.gates.find((x) => x.kind === 'arbitration')?.summary).toContain('imposé par le plan')
 })
 
 test('un verdict CORRECTIONS sans contradiction du plan informe l\'orchestrateur sans ouvrir de porte', async () => {
@@ -1031,7 +1055,7 @@ test("M2 : arrêt du moteur avant l'enregistrement de l'état (brief déjà ré�
   })
   await mkdir(taskDir(), { recursive: true })
   // Brief réécrit par la tentative interrompue.
-  await writeFile(join(taskDir(), 'brief.md'), `# Brief de tâche\n\n## Reprise\n\n<!-- amendment g1 -->\n\n### Tâche 1 : Modèle\n\n\n\n**Test :** \`pnpm test a\`\n\nfaire a, en gardant le placeholder imposé par le composant de base\n`)
+  await writeFile(join(taskDir(), 'brief.md'), `# Task brief\n\n## Resume\n\n<!-- amendment g1 -->\n\n### Task 1: Modèle\n\n\n\n**Test :** \`pnpm test a\`\n\nfaire a, en gardant le placeholder imposé par le composant de base\n`)
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.appliedAmendments).toEqual(['g1'])
