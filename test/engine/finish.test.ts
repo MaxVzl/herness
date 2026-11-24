@@ -210,7 +210,7 @@ test('revue globale : au 3e tour un implémenteur fort, au-delà la mission est 
   let s = await until(eng, (x) => x.loops.globalReview.phase === 'control')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1', 'cgt-1-3'])
   expect((fx.callsOf('agents.start')[1]![3] as { args: string[] }).args).toContain('grok-4.7-high')
-  s = await until(eng, (x) => x.step === 'bloquée')
+  s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedReason).toContain('3 tours de correction épuisés')
 })
 
@@ -263,7 +263,7 @@ test('le même faux positif rouge deux fois part au diagnostic', async () => {
   let s = await until(eng, (x) => x.loops.preflight.phase === 'diagnose')
   expect(labels(fx)).toEqual(['base de test', 'preflight · lint', 'preflight · lint'])
   expect(s.loops.preflight.failing).toMatchObject({ label: 'lint', exitCode: 1, logPath: '/l/ko.log' })
-  s = await until(eng, (x) => x.step === 'bloquée')
+  s = await until(eng, (x) => x.step === 'blocked')
   expect(fx.callsOf('agents.start').map((c) => [c[0], c[1]])).toEqual([['rdt-1-1', 'diagnostic']])
   expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['rdt-1-1', join(pdir(), 'consigne-diagnostic-1.md')])
   const consigne = await readFile(join(pdir(), 'consigne-diagnostic-1.md'), 'utf8')
@@ -318,7 +318,7 @@ test('un nettoyage prévu est lancé dans l\'onglet process avant de relancer le
 
 const MAIN_WT = () => join(missionDir('T-1'), 'preuve-main')
 
-test('CAUSE: MAIN prouvée ouvre la porte pr-malgre-main et supprime le worktree temporaire', async () => {
+test('CAUSE: MAIN prouvée ouvre la porte pr-despite-main et supprime le worktree temporaire', async () => {
   const { fx, eng } = await setup({
     patch: { step: 'preflight' },
     over: {
@@ -341,7 +341,7 @@ test('CAUSE: MAIN prouvée ouvre la porte pr-malgre-main et supprime le worktree
   const order = fx.calls.map((c) => (c.fn === 'runInPane' ? String(c.args[3]) : c.fn)).filter((f) => f === 'preuve main · arrêt de la base' || f === 'git.worktreeRemove')
   expect(order).toEqual(['preuve main · arrêt de la base', 'git.worktreeRemove'])
   const g = s.gates.at(-1)!
-  expect(g).toMatchObject({ kind: 'pr-malgre-main', status: 'pending' })
+  expect(g).toMatchObject({ kind: 'pr-despite-main', status: 'pending' })
   expect(g.summary).toContain('lint')
   expect(s.testDbUp).toBe(true)
 
@@ -354,7 +354,7 @@ test('CAUSE: MAIN prouvée ouvre la porte pr-malgre-main et supprime le worktree
   expect(s.testDbUp).toBe(false)
 })
 
-test('pr-malgre-main refusée bloque la mission et supprime la base', async () => {
+test('pr-despite-main refusée bloque la mission et supprime la base', async () => {
   const { fx, eng } = await setup({
     patch: { step: 'preflight' },
     over: {
@@ -364,7 +364,7 @@ test('pr-malgre-main refusée bloque la mission et supprime la base', async () =
   })
   const s0 = await until(eng, (x) => x.loops.preflight.phase === 'gate')
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: s0.gates.at(-1)!.id, decision: 'refused', note: 'non' })
-  const s = await until(eng, (x) => x.step === 'bloquée')
+  const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedFrom).toBe('preflight')
   expect(s.testDbUp).toBe(false)
   expect(fx.callsOf('run')).toEqual([down()])
@@ -448,7 +448,7 @@ test('une exception pendant la preuve sur main supprime le worktree temporaire e
 
 // ---------- amendements (R14) ----------
 
-const amend = (patch: Partial<Gate> = {}): Gate => ({ id: 'g1', kind: 'amendement', status: 'approved', summary: 's', createdAt: '2026-10-29T10:00:00.000Z', hash: proposalHash(PLAN2), ...patch })
+const amend = (patch: Partial<Gate> = {}): Gate => ({ id: 'g1', kind: 'amendment', status: 'approved', summary: 's', createdAt: '2026-10-29T10:00:00.000Z', hash: proposalHash(PLAN2), ...patch })
 
 test('un amendement approuvé pendant une boucle de correction du preflight attend sa résolution', async () => {
   const { eng } = await setup({
@@ -563,7 +563,7 @@ test("une base de test non supprimée après un preflight tout vert bloque la mi
     over: { runInPane: panes(), run: async () => ({ stdout: '', stderr: 'conteneur occupé', exitCode: 1 }) },
   })
   const s = await until(eng, (x) => x.step !== 'preflight')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedFrom).toBe('preflight')
   expect(s.blockedReason).toContain('base de test T-1 non supprimée : ')
   expect(s.blockedReason).toContain('conteneur occupé')
@@ -578,7 +578,7 @@ test("un amendement au preflight avec une base impossible à supprimer bloque sa
   })
   await eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedFrom).toBe('preflight')
   expect(s.blockedReason).toContain('base de test T-1 non supprimée')
   expect(s.appliedAmendments).toEqual([])
@@ -594,10 +594,10 @@ test('une base de preuve impossible à supprimer bloque la mission et reste conn
     },
   })
   const s = await until(eng, (x) => x.step !== 'preflight')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedReason).toContain('base de test T-1-main non supprimée')
   expect(s.proofDbUp).toBe(true)
-  expect(s.gates.filter((g) => g.kind === 'pr-malgre-main')).toEqual([])
+  expect(s.gates.filter((g) => g.kind === 'pr-despite-main')).toEqual([])
 })
 
 test('abandon pendant une preuve sur main supprime les deux bases', async () => {
@@ -608,7 +608,7 @@ test('abandon pendant une preuve sur main supprime les deux bases', async () => 
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   expect(await eng.tick()).toBe('stop')
   const s = await loadState('T-1')
-  expect(s.step).toBe('fermée')
+  expect(s.step).toBe('closed')
   expect(fx.callsOf('run')).toEqual([down(), [demo.testDb!.down[0], ['down', 'T-1-main', MAIN_WT()], { cwd: wt, reject: false }]])
   expect(s.testDbUp).toBe(false)
   expect(s.proofDbUp).toBe(false)
@@ -641,8 +641,8 @@ test('revue globale : une remarque « imposé par le plan » ouvre un arbitrage 
     return 'done' as const
   }
   const { fx, eng } = await setup({ over: { agents: { ask } } })
-  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'arbitrage'))
-  const g = s.gates.find((x) => x.kind === 'arbitrage')!
+  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'arbitration'))
+  const g = s.gates.find((x) => x.kind === 'arbitration')!
   expect(g.summary).toContain('src/a.ts:3 imposé par le plan')
   expect(await eng.tick()).toBe('wait')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1'])
@@ -655,12 +655,12 @@ test('revue globale : une remarque « imposé par le plan » ouvre un arbitrage 
   expect(s.consumedArbitrages).toEqual([g.id])
 })
 
-// ---------- correcteur arrêté sans commit (agent-arret) ----------
+// ---------- correcteur arrêté sans commit (agent-stopped) ----------
 
 const noCommit = { ok: false as const, code: 'no-commit' as const, reason: 'aucun commit depuis f1' }
 const baseLoops = () => newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops
 
-test("revue globale : correcteur arrêté sans commit avec compte rendu, porte agent-arret ; validée, nouveau tour avec la décision", async () => {
+test("revue globale : correcteur arrêté sans commit avec compte rendu, porte agent-stopped ; validée, nouveau tour avec la décision", async () => {
   const { fx, eng } = await setup({
     patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'control', fixer: 'new', fixBase: 'f1', reviewedSha: 'h1', lastReview: join(gdir(), 'revue.md') } } },
     over: {
@@ -671,8 +671,8 @@ test("revue globale : correcteur arrêté sans commit avec compte rendu, porte a
   await mkdir(gdir(), { recursive: true })
   await writeFile(join(gdir(), 'revue.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 renommer\n')
   await writeFile(join(gdir(), 'rapport.md'), 'Je ne peux pas renommer : le nom est imposé par la spec.\n')
-  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-arret'))
-  const g = s.gates.find((x) => x.kind === 'agent-arret')!
+  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
+  const g = s.gates.find((x) => x.kind === 'agent-stopped')!
   expect(g.summary).toMatch(/^revue globale : l'implémenteur s'est arrêté sans commit\n/)
   expect(g.summary).toContain('imposé par la spec')
   expect(s.loops.globalReview).toMatchObject({ round: 1, phase: 'control', stopGate: g.id })
@@ -693,7 +693,7 @@ test('revue globale : aucun commit sans compte rendu bloque comme avant', async 
     patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'control', fixer: 'new', fixBase: 'f1' } } },
     over: { git: { controlCommits: async () => noCommit } },
   })
-  const s = await until(eng, (x) => x.step === 'bloquée')
+  const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedReason).toContain('contrôle du commit en échec')
   expect(s.gates).toEqual([])
 })
@@ -710,11 +710,11 @@ test('preflight : correcteur arrêté sans commit avec compte rendu ; porte vali
   })
   await mkdir(pdir(), { recursive: true })
   await writeFile(join(pdir(), 'rapport.md'), 'Arrêt : la règle de lint contredit la spec.\n')
-  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-arret'))
-  const g1 = s.gates.find((x) => x.kind === 'agent-arret')!
+  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
+  const g1 = s.gates.find((x) => x.kind === 'agent-stopped')!
   expect(g1.summary).toMatch(/^preflight : l'implémenteur s'est arrêté sans commit\n/)
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g1.id, decision: 'approved', note: 'désactive la règle localement' })
-  s = await until(eng, (x) => x.gates.filter((g) => g.kind === 'agent-arret').length === 2)
+  s = await until(eng, (x) => x.gates.filter((g) => g.kind === 'agent-stopped').length === 2)
   expect(s.loops.preflight.round).toBe(2)
   expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cpt-1-2', join(pdir(), 'correctifs-2.md')])
   const fix = await readFile(join(pdir(), 'correctifs-2.md'), 'utf8')
@@ -723,7 +723,7 @@ test('preflight : correcteur arrêté sans commit avec compte rendu ; porte vali
 
   const g2 = s.gates.at(-1)!
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g2.id, decision: 'refused', note: 'stop' })
-  s = await until(eng, (x) => x.step === 'bloquée')
+  s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedFrom).toBe('preflight')
   expect(s.blockedReason).toContain("arrêté sans commit")
 })
@@ -736,7 +736,7 @@ test("M1 : revue globale, compte rendu inchangé depuis l'envoi des correctifs :
   await mkdir(gdir(), { recursive: true })
   await writeFile(join(gdir(), 'revue.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 renommer\n')
   await writeFile(join(gdir(), 'rapport.md'), 'compte rendu du tour précédent\n')
-  const s = await until(eng, (x) => x.step === 'bloquée')
+  const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.loops.globalReview.reportSize).toBe(Buffer.byteLength('compte rendu du tour précédent\n'))
   expect(s.gates).toEqual([])
 })
@@ -749,7 +749,7 @@ test("M1 : preflight, compte rendu inchangé depuis l'envoi des correctifs : blo
   })
   await mkdir(pdir(), { recursive: true })
   await writeFile(join(pdir(), 'rapport.md'), 'ancien\n')
-  const s = await until(eng, (x) => x.step === 'bloquée')
+  const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.gates).toEqual([])
   expect(s.blockedReason).toContain('contrôle du commit en échec')
 })

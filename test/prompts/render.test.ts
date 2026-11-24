@@ -82,7 +82,7 @@ describe('orchestrator.md', () => {
     const out = await render('orchestrator', full(SETS.orchestrator!))
     expect(out).toContain('sauf une fois la PR ouverte')
     const after = out.slice(out.indexOf("## Après l'ouverture de la PR"))
-    expect(after).toContain('pr-ouverte')
+    expect(after).toContain('pr-open')
     expect(after).toContain('demande explicite')
     expect(after).toContain('git push --force-with-lease origin HEAD')
     expect(after).toContain('git branch --show-current')

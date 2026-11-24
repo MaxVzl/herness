@@ -35,7 +35,7 @@ function summarize(s: MissionState): string {
   const current = s.tasks.find((t) => t.phase !== 'done')
   const pending = s.gates.filter((g) => g.status === 'pending')
   return [
-    `Étape : ${s.step}${s.blockedReason ? ` (bloquée : ${s.blockedReason})` : ''}`,
+    `Étape : ${s.step}${s.blockedReason ? ` (blocked : ${s.blockedReason})` : ''}`,
     `Tâche courante : ${current ? `${current.n} « ${current.title} » (phase ${current.phase}, tour ${current.round})` : 'aucune'}`,
     `Tours : revue globale ${s.loops.globalReview.round}, preflight ${s.loops.preflight.round}`,
     `Portes en attente : ${pending.length === 0 ? 'aucune' : pending.map((g) => `${g.kind} (${g.summary})`).join(' ; ')}`,
@@ -132,7 +132,7 @@ export function buildServer(id: string): McpServer {
       const check = checkAmendment(done, parsePlan(proposal.plan), curBody ? { n: curBody.n, body: curBody.body } : undefined)
       if (!check.ok) return fail(`Amendement refusé : ${check.reason}`)
       const full = proposal.spec !== undefined ? `${summary}\nSpec proposée : ${proposedSpecPath(id)}` : summary
-      await postInbox(id, { type: 'request-gate', kind: 'amendement', summary: full, path: proposedPlanPath(id), hash: proposal.hash })
+      await postInbox(id, { type: 'request-gate', kind: 'amendment', summary: full, path: proposedPlanPath(id), hash: proposal.hash })
       return ok("Amendement soumis à l'utilisateur. Ne modifie plus la proposition : toute modification après la demande la fait rejeter.")
     }),
   )
@@ -144,7 +144,7 @@ export function buildServer(id: string): McpServer {
       inputSchema: { summary: z.string() },
     },
     guard(id, 'demander_arbitrage', async ({ summary }) => {
-      await postInbox(id, { type: 'request-gate', kind: 'arbitrage', summary })
+      await postInbox(id, { type: 'request-gate', kind: 'arbitration', summary })
       return ok("Arbitrage demandé à l'utilisateur.")
     }),
   )
@@ -157,14 +157,14 @@ export function buildServer(id: string): McpServer {
     'fin_de_pause',
     {
       description:
-        "Lève une pause demandée avec `pause`, rien d'autre. Ne reprend PAS une mission bloquée : seul l'utilisateur la reprend (herness reprendre <id> puis validation), ou la débloque en validant un amendement.",
+        "Lève une pause demandée avec `pause`, rien d'autre. Ne reprend PAS une mission blocked : seul l'utilisateur la reprend (herness reprendre <id> puis validation), ou la débloque en validant un amendement.",
     },
     guard(id, 'fin_de_pause', async () => {
       const s = await loadState(id)
       await postInbox(id, { type: 'resume' })
       const note =
-        s.step === 'bloquée'
-          ? ` La mission reste bloquée : seul l'utilisateur la reprend (herness reprendre ${id} puis validation), ou la débloque en validant un amendement.`
+        s.step === 'blocked'
+          ? ` La mission reste blocked : seul l'utilisateur la reprend (herness reprendre ${id} puis validation), ou la débloque en validant un amendement.`
           : ''
       return ok(`Fin de pause demandée.${note}`)
     }),

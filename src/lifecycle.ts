@@ -167,7 +167,7 @@ export async function resumeMission(id: string, deps: LifecycleDeps, opts: { res
   const { e } = deps
   const out = deps.out ?? console.log
   const s = await load(id)
-  if (s.step === 'fermée' || s.step === 'pr-ouverte') {
+  if (s.step === 'closed' || s.step === 'pr-open') {
     out(`Mission ${id} : ${s.step}${s.prUrl ? ` (PR ${s.prUrl})` : ''} ; rien à reprendre.`)
     return
   }
@@ -218,10 +218,10 @@ export async function resumeMission(id: string, deps: LifecycleDeps, opts: { res
     await openOrchestrator(id, e, orchestrator)
     out("prompt d'ouverture envoyé à l'orchestrateur")
   }
-  if (s.step === 'bloquée') {
+  if (s.step === 'blocked') {
     // Seul le moteur ouvre les portes : la demande passe par l'inbox.
-    await postInbox(id, { type: 'request-gate', kind: 'reprise-bloquee', summary: s.blockedReason ?? 'mission bloquée' })
-    out(`Mission bloquée : ${s.blockedReason ?? '(raison inconnue)'}`)
+    await postInbox(id, { type: 'request-gate', kind: 'resume-blocked', summary: s.blockedReason ?? 'mission bloquée' })
+    out(`Mission blocked : ${s.blockedReason ?? '(raison inconnue)'}`)
     out(`Pour la reprendre à l'étape ${s.blockedFrom ?? '?'}, valide la porte de reprise : herness valider ${id}`)
   }
   if (opts.focus !== false) await e.herdr.tabFocus(space.tabs.master)
@@ -313,7 +313,7 @@ async function remindPendingErrors(id: string, out: (l: string) => void): Promis
  * `herness fermer <id>`. Commits non poussés ou worktree sale → confirmation dans un terminal interactif. Avec
  * `opts.signaler` (ligne de commande), propose ensuite de remonter les erreurs herness avant d'arrêter le moteur
  * (seul écrivain de l'état ; s'il ne s'arrête pas, rien n'est fermé). Puis bases de test supprimées d'après l'état
- * relu (un échec arrête tout), worktree supprimé, état `fermée` enregistré, et enfin l'espace herdr de la mission
+ * relu (un échec arrête tout), worktree supprimé, état `closed` enregistré, et enfin l'espace herdr de la mission
  * fermé (jamais le groupe). Rend faux si l'utilisateur annule.
  */
 export async function closeMission(id: string, deps: LifecycleDeps, opts: { signaler?: boolean } = {}): Promise<boolean> {
@@ -321,13 +321,13 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
   const out = deps.out ?? console.log
   const first = await load(id)
   // Une mission fermée par un abandon validé garde son worktree et son espace : `fermer` nettoie ce qui reste.
-  const closed = first.step === 'fermée'
+  const closed = first.step === 'closed'
   const wtLeft = !!first.worktree && (await exists(first.worktree))
   if (closed) {
     const wsLeft = !!first.herdr.workspace && (await e.herdr.workspaceList()).some((w) => w.workspaceId === first.herdr.workspace)
     if (!wtLeft && !wsLeft && !first.testDbUp && !first.proofDbUp) {
       await remindPendingErrors(id, out)
-      out(`Mission ${id} déjà fermée : rien à fermer.`)
+      out(`Mission ${id} déjà closed : rien à fermer.`)
       return true
     }
   }
@@ -378,7 +378,7 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
     await e.git.worktreeRemove(s.repoPath, s.worktree)
   }
   const branchDeleted = await cleanBranch(s, e, cfg, out)
-  s.step = 'fermée'
+  s.step = 'closed'
   s.log.push({ at: e.now().toISOString(), msg: 'mission fermée (herness fermer)' })
   await saveState(s)
   // En dernier : `fermer` peut être lancé depuis un panneau de cet espace.
@@ -396,7 +396,7 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
 export async function deleteMission(id: string, deps: LifecycleDeps, opts: { force?: boolean } = {}): Promise<boolean> {
   const out = deps.out ?? console.log
   const s = await load(id)
-  if (s.step !== 'fermée') throw new Error(`mission ${id} pas fermée : herness fermer ${id} d'abord`)
+  if (s.step !== 'closed') throw new Error(`mission ${id} pas closed : herness fermer ${id} d'abord`)
   const left: string[] = []
   if (s.worktree && (await exists(s.worktree))) left.push(`le worktree ${s.worktree}`)
   if (s.herdr.workspace && (await deps.e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace)) left.push("l'espace herdr")
@@ -467,7 +467,7 @@ export async function missionStatus(id?: string): Promise<string[]> {
     `Mission ${s.id} (${s.source.kind} : ${s.source.ref})`,
     `Étape : ${s.step}${s.paused ? ' (en pause)' : ''}`,
   ]
-  if (s.step === 'bloquée') lines.push(`Bloquée depuis ${s.blockedFrom ?? '?'} : ${s.blockedReason ?? '?'}`)
+  if (s.step === 'blocked') lines.push(`Bloquée depuis ${s.blockedFrom ?? '?'} : ${s.blockedReason ?? '?'}`)
   if (s.branch) lines.push(`Branche : ${s.branch}`)
   if (s.worktree) lines.push(`Worktree : ${s.worktree}`)
   if (s.prUrl) lines.push(`PR : ${s.prUrl}`)

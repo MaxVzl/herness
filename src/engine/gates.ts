@@ -19,7 +19,7 @@ export function openGate(s: MissionState, kind: GateKind, summary: string, path?
 
 /** Motif du refus d'une décision sur une porte qui n'est plus en attente. */
 function notPending(gate: Gate): string {
-  if (gate.status === 'caduque') return `porte ${gate.id} caduque : plus rien ne l'attend, décision ignorée`
+  if (gate.status === 'obsolete') return `porte ${gate.id} caduque : plus rien ne l'attend, décision ignorée`
   return `porte ${gate.id} déjà décidée (${gate.status})`
 }
 

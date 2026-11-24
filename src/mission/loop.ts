@@ -8,7 +8,7 @@ export type LoopEvent =
   | 'tests-red'
   | 'review-approved'
   | 'review-changes'
-  /** Arrêt sans commit, porte `agent-arret` validée : un tour de correction comme des tests rouges. */
+  /** Arrêt sans commit, porte `agent-stopped` validée : un tour de correction comme des tests rouges. */
   | 'stopped'
   | 'fixed';
 

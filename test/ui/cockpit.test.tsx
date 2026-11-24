@@ -89,7 +89,7 @@ test('la mission avec une porte est en tête et en ambre', async () => {
 
 test('une PR mergée est masquée, visible après a', async () => {
   const done = mission('26110201-3', 'livree', '2026-11-01T10:00:00.000Z')
-  done.step = 'pr-ouverte'
+  done.step = 'pr-open'
   done.prUrl = 'https://example.test/o/r/pull/7'
   const active = mission('26110201-4', 'encours', '2026-11-02T10:00:00.000Z')
   const pr = fakePrCache({ [done.prUrl]: { state: 'MERGED', checkedAt: '2026-11-02T10:00:00.000Z' } })
@@ -110,13 +110,13 @@ test('une PR mergée est masquée, visible après a', async () => {
   expect(lastFrame()).not.toContain('livree')
 })
 
-test('PR CLOSED : fermée depuis plus de 7 jours masquée et jamais revérifiée ; pr-ouverte CLOSED visible et revérifiée', async () => {
+test('PR CLOSED : fermée depuis plus de 7 jours masquée et jamais revérifiée ; pr-open CLOSED visible et revérifiée', async () => {
   const old = mission('26110201-31', 'abandonnee', '2026-10-01T10:00:00.000Z')
-  old.step = 'fermée'
+  old.step = 'closed'
   old.prUrl = 'https://example.test/o/r/pull/31'
   old.log = [{ at: '2026-10-20T10:00:00.000Z', msg: 'mission fermée (herness fermer)' }]
   const open = mission('26110201-32', 'a-traiter', '2026-10-01T10:00:00.000Z')
-  open.step = 'pr-ouverte'
+  open.step = 'pr-open'
   open.prUrl = 'https://example.test/o/r/pull/32'
   const closed = (at: string): PrInfo => ({ state: 'CLOSED', checkedAt: at })
   const pr = fakePrCache({ [old.prUrl]: closed('2026-10-21T10:00:00.000Z'), [open.prUrl]: closed('2026-10-21T10:00:00.000Z') })
@@ -395,7 +395,7 @@ test('une relecture lente ne chevauche pas la suivante et un résultat périmé 
 
 test('un rafraîchissement des PR lent n est pas relancé à chaque relecture', async () => {
   const s = mission('26110201-23', 'pr', '2026-11-02T10:00:00.000Z')
-  s.step = 'pr-ouverte'
+  s.step = 'pr-open'
   s.prUrl = 'https://example.test/o/r/pull/8'
   let refreshes = 0
   let release: () => void = () => {}
@@ -412,7 +412,7 @@ test('un rafraîchissement des PR lent n est pas relancé à chaque relecture', 
 
 test('un rafraîchissement des PR qui lève n affiche pas l erreur de lecture', async () => {
   const s = mission('26110201-24', 'pr', '2026-11-02T10:00:00.000Z')
-  s.step = 'pr-ouverte'
+  s.step = 'pr-open'
   s.prUrl = 'https://example.test/o/r/pull/9'
   const cache = { get: () => undefined, refresh: (): Promise<void> => { throw new Error('boom') } }
   const { lastFrame } = render(
@@ -426,10 +426,10 @@ test('un rafraîchissement des PR qui lève n affiche pas l erreur de lecture', 
 
 test('seules les PR visibles et non mergées sont rafraîchies', async () => {
   const open = mission('26110201-25', 'ouverte', '2026-11-02T10:00:00.000Z')
-  open.step = 'pr-ouverte'
+  open.step = 'pr-open'
   open.prUrl = 'https://example.test/o/r/pull/10'
   const merged = mission('26110201-26', 'mergee', '2026-11-01T10:00:00.000Z')
-  merged.step = 'pr-ouverte'
+  merged.step = 'pr-open'
   merged.prUrl = 'https://example.test/o/r/pull/11'
   const pr = fakePrCache({ [merged.prUrl]: { state: 'MERGED', checkedAt: '2026-11-02T10:00:00.000Z' } })
   const { stdin, lastFrame } = render(

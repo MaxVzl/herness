@@ -369,7 +369,7 @@ function restartRun(P: PreflightState): void {
 }
 
 /**
- * Étape 9. Garantie : toute sortie de l'étape (vers `pr`, `bloquée`, `tasks` après un amendement, ou exception)
+ * Étape 9. Garantie : toute sortie de l'étape (vers `pr`, `blocked`, `tasks` après un amendement, ou exception)
  * arrête la base de test de la mission. Pendant une boucle de correction, la base reste en place d'un tour à l'autre.
  */
 export async function stepPreflight(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
@@ -607,7 +607,7 @@ async function proveOnMain(s: MissionState, e: Effects, cfg: ProjectConfig): Pro
     const prep = await e.runInPane(e.herdr, tab, path, 'preuve main · préparation', fill(cfg.prepare, vars), logs)
     if (prep.exitCode !== 0) failure = `préparation en échec (code ${prep.exitCode}), journal : ${prep.logPath}`
     if (!failure && cfg.testDb) {
-      // Enregistré avant le lancement : `fermée` et `Engine.fail` la suppriment aussi.
+      // Enregistré avant le lancement : `closed` et `Engine.fail` la suppriment aussi.
       s.proofDbUp = true
       await saveState(s)
       const up = await e.runInPane(e.herdr, tab, path, 'preuve main · base de test', fill(cfg.testDb.up, vars), logs)
@@ -628,19 +628,19 @@ async function proveOnMain(s: MissionState, e: Effects, cfg: ProjectConfig): Pro
   }
   const g = openGate(
     s,
-    'pr-malgre-main',
+    'pr-despite-main',
     `Le check « ${f.label} » est rouge sur la branche et aussi sur ${mainRef(cfg)} (preuve : ${proof.logPath} ; branche : ${f.logPath}). ` +
       `Ouvrir la PR malgré tout ?`,
     P.diagnosis,
   )
   P.gate = g.id
   P.phase = 'gate'
-  log(s, e, `${PF} : ${f.label} rouge aussi sur ${mainRef(cfg)}, porte ${g.id} (pr-malgre-main) ouverte`)
-  await notify(s, e, `Porte pr-malgre-main à valider : « ${f.label} » rouge aussi sur main`)
+  log(s, e, `${PF} : ${f.label} rouge aussi sur ${mainRef(cfg)}, porte ${g.id} (pr-despite-main) ouverte`)
+  await notify(s, e, `Porte pr-despite-main à valider : « ${f.label} » rouge aussi sur main`)
   await informOrchestrator(
     s,
     e,
-    `Le check « ${f.label} » est rouge aussi sur ${mainRef(cfg)} (diagnostic : ${P.diagnosis}). Porte ${g.id} (pr-malgre-main) ouverte : l'utilisateur décide s'il ouvre la PR malgré tout (herness valider|refuser ${s.id} --porte ${g.id}).`,
+    `Le check « ${f.label} » est rouge aussi sur ${mainRef(cfg)} (diagnostic : ${P.diagnosis}). Porte ${g.id} (pr-despite-main) ouverte : l'utilisateur décide s'il ouvre la PR malgré tout (herness valider|refuser ${s.id} --porte ${g.id}).`,
   )
   return 'continue'
 }
@@ -649,7 +649,7 @@ async function mainGate(s: MissionState, e: Effects): Promise<StepResult> {
   const P = s.loops.preflight
   const f = P.failing
   const g = s.gates.find((x) => x.id === P.gate)
-  if (!f || !g) return block(s, e, `${PF} : porte pr-malgre-main introuvable`)
+  if (!f || !g) return block(s, e, `${PF} : porte pr-despite-main introuvable`)
   if (g.status === 'pending') return 'wait'
   if (g.status === 'refused') {
     restartRun(P)
@@ -753,7 +753,7 @@ async function prBody(s: MissionState, cfg: ProjectConfig, context: string): Pro
 export async function stepPr(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   if (s.prUrl) {
     await stopAgentsTab(s, e, 'all', 'PR ouverte')
-    return goto(s, e, 'pr-ouverte')
+    return goto(s, e, 'pr-open')
   }
   const wt = s.worktree
   const branch = s.branch
@@ -802,5 +802,5 @@ export async function stepPr(s: MissionState, e: Effects, cfg: ProjectConfig): P
   await notify(s, e, `PR ouverte : ${url}`)
   await stopAgentsTab(s, e, 'all', 'PR ouverte')
   await informOrchestrator(s, e, `La PR est ouverte sur la branche ${branch} : ${url}. La mission est terminée.`)
-  return goto(s, e, 'pr-ouverte')
+  return goto(s, e, 'pr-open')
 }

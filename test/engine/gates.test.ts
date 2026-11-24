@@ -83,9 +83,9 @@ test('decide sans porte en attente lève', async () => {
 
 test('une porte caduque n’est plus en attente : pendingGate l’ignore, une décision est refusée avec un motif clair', async () => {
   const s = fresh()
-  openGate(s, 'agent-arret', 'arrêt')
+  openGate(s, 'agent-stopped', 'arrêt')
   openGate(s, 'spec', 'spec')
-  s.gates[0]!.status = 'caduque'
+  s.gates[0]!.status = 'obsolete'
   expect(pendingGate(s)?.id).toBe('g2')
   const r = applyDecision(s, { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   expect(r).toEqual({ ok: false, reason: "porte g1 caduque : plus rien ne l'attend, décision ignorée" })

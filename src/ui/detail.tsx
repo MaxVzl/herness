@@ -6,8 +6,8 @@ import type { ActionDeps, ActionResult, Spawner } from './actions.ts'
 import { Confirm, NoteInput } from './inputs.tsx'
 import { shortId } from './model.ts'
 
-const STEPS_AFTER_REVIEW: Step[] = ['global-review', 'preflight', 'pr', 'pr-ouverte', 'fermée']
-const FINISHED: Step[] = ['pr-ouverte', 'fermée']
+const STEPS_AFTER_REVIEW: Step[] = ['global-review', 'preflight', 'pr', 'pr-open', 'closed']
+const FINISHED: Step[] = ['pr-open', 'closed']
 const MESSAGE_MS = 5000
 const SUCCESS_LINES = 5
 const FAILURE_LINES = 8
@@ -56,7 +56,7 @@ export function MissionDetail({ state: s, selectedGate, sentGates = [] }: {
   const agents = agentsLine(s)
   const pending = s.gates.filter((g) => g.status === 'pending')
   const selected = pending.some((g) => g.id === selectedGate) ? selectedGate : undefined
-  const showReview = s.step === 'bloquée' ? s.blockedFrom !== undefined && STEPS_AFTER_REVIEW.includes(s.blockedFrom) : STEPS_AFTER_REVIEW.includes(s.step)
+  const showReview = s.step === 'blocked' ? s.blockedFrom !== undefined && STEPS_AFTER_REVIEW.includes(s.blockedFrom) : STEPS_AFTER_REVIEW.includes(s.step)
   const gr = s.loops.globalReview
   const pf = s.loops.preflight
   return (
@@ -64,7 +64,7 @@ export function MissionDetail({ state: s, selectedGate, sentGates = [] }: {
       <Text>
         <Text bold>{`${s.id} · ${s.branch ?? '(pas de branche)'} · ${s.step}`}</Text>
         {s.paused ? <Text color="yellow">{' · EN PAUSE'}</Text> : null}
-        {s.step === 'bloquée' && s.blockedReason ? <Text color="red">{` · ${s.blockedReason}`}</Text> : null}
+        {s.step === 'blocked' && s.blockedReason ? <Text color="red">{` · ${s.blockedReason}`}</Text> : null}
       </Text>
       {s.tasks.map((t) => (
         <Text key={t.n}>
@@ -392,9 +392,9 @@ export function useMissionKeys({
       case 'o':
         return void runOnce('open', () => actions.open(state))
       case 'x': {
-        // Le panneau `tasks` disparaît avec sa mission fermée : supprimer se fait depuis le cockpit.
+        // Le panneau `tasks` disparaît avec sa mission closed : supprimer se fait depuis le cockpit.
         if (ownPanel) return
-        if (state.step !== 'fermée') return say("supprimer indisponible : ferme d'abord la mission (f)", false)
+        if (state.step !== 'closed') return say("supprimer indisponible : ferme d'abord la mission (f)", false)
         const id = state.id
         return confirmThen(
           `Supprimer définitivement ${id} (état, spec, plan, journaux) ?`,
@@ -443,7 +443,7 @@ export function useMissionKeys({
     { key: 'R', label: 'redémarrer', enabled: true },
     { key: 'f', label: 'fermer', enabled: true },
     { key: 'o', label: 'ouvrir', enabled: true },
-    ...(ownPanel ? [] : [{ key: 'x', label: 'supprimer', enabled: state?.step === 'fermée' }]),
+    ...(ownPanel ? [] : [{ key: 'x', label: 'supprimer', enabled: state?.step === 'closed' }]),
     ...(onBack ? [{ key: 'c', label: 'cockpit', enabled: true }] : []),
   ]
   const help = helpItems.map((it) => (it.enabled ? `${it.key} ${it.label}` : `(${it.key} ${it.label})`)).join(' · ')

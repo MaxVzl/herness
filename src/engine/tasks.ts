@@ -74,16 +74,16 @@ const CONTRADICTS_PLAN = /imposé par le plan/i
 
 /**
  * Verdict CORRECTIONS (tâche, revue globale, re-revue du preflight) : l'orchestrateur est prévenu en une ligne ; des
- * remarques qui contredisent le plan (« imposé par le plan ») ouvrent une porte `arbitrage`, et les correctifs
+ * remarques qui contredisent le plan (« imposé par le plan ») ouvrent une porte `arbitration`, et les correctifs
  * attendent la décision de l'utilisateur (`arbitrationPending`), dont la note entre dans le fichier de correctifs.
  */
 export async function onCorrections(s: MissionState, e: Effects, what: string, reviewPath: string, round: number): Promise<void> {
   await informOrchestrator(s, e, `${what} : revue CORRECTIONS (tour ${round}), remarques dans ${reviewPath}`)
-  if (s.step === 'bloquée') return
+  if (s.step === 'blocked') return
   const raw = await readFile(reviewPath, 'utf8').catch(() => '')
   const lines = raw.split('\n').slice(1).map((l) => l.trim()).filter((l) => CONTRADICTS_PLAN.test(l))
   if (lines.length === 0) return
-  const g = openGate(s, 'arbitrage', lines.join('\n'), reviewPath)
+  const g = openGate(s, 'arbitration', lines.join('\n'), reviewPath)
   log(s, e, `${what} : remarque(s) qui contredisent le plan, porte ${g.id} (arbitrage) ouverte`)
   await notify(s, e, `Arbitrage à trancher (${what}) : ${lines[0]}`)
   await informOrchestrator(
@@ -93,18 +93,18 @@ export async function onCorrections(s: MissionState, e: Effects, what: string, r
   )
 }
 
-/** Une porte `arbitrage` attend la décision de l'utilisateur : aucun fichier de correctifs n'est écrit. */
-export const arbitrationPending = (s: MissionState): boolean => s.gates.some((g) => g.kind === 'arbitrage' && g.status === 'pending')
+/** Une porte `arbitration` attend la décision de l'utilisateur : aucun fichier de correctifs n'est écrit. */
+export const arbitrationPending = (s: MissionState): boolean => s.gates.some((g) => g.kind === 'arbitration' && g.status === 'pending')
 
 /** Décisions d'arbitrage pas encore transmises, à ajouter au fichier de correctifs ; marquées consommées. */
 export function consumeArbitrations(s: MissionState): string {
-  const arbitrages = s.gates.filter((g) => g.kind === 'arbitrage' && (g.status === 'approved' || g.status === 'refused') && !s.consumedArbitrages.includes(g.id))
+  const arbitrages = s.gates.filter((g) => g.kind === 'arbitration' && (g.status === 'approved' || g.status === 'refused') && !s.consumedArbitrages.includes(g.id))
   const notes = arbitrages.filter((g) => g.note).map((g) => `- ${g.summary.split('\n')[0]} → ${g.status === 'approved' ? 'validé' : 'refusé'} : ${g.note}`)
   s.consumedArbitrages.push(...arbitrages.map((g) => g.id))
   return notes.length ? `\n\n## Décision de l'utilisateur\n\n${notes.join('\n')}\n` : ''
 }
 
-/** Porteur d'une porte `agent-arret` : une tâche, la revue globale ou le preflight. */
+/** Porteur d'une porte `agent-stopped` : une tâche, la revue globale ou le preflight. */
 export type StopHolder = { stopGate?: string | undefined; stopDecision?: string | undefined; reportSize?: number | undefined }
 
 /** Taille d'un fichier en octets, 0 s'il est absent. */
@@ -122,20 +122,20 @@ export async function reportTail(path: string, since = 0, lines = 40): Promise<s
 /**
  * Contrôle « aucun commit » : si l'implémenteur a complété le compte rendu depuis l'envoi de sa consigne
  * (`reportSize`), il s'est arrêté volontairement (son brief le lui demande quand quelque chose bloque). Une porte
- * `agent-arret` est ouverte et l'orchestrateur explique le compte rendu à l'utilisateur. Rend `null` sinon : le
+ * `agent-stopped` est ouverte et l'orchestrateur explique le compte rendu à l'utilisateur. Rend `null` sinon : le
  * contrôle bloque alors la mission comme avant.
  */
 export async function stopWithoutCommit(s: MissionState, e: Effects, h: StopHolder, what: string, reportPath: string): Promise<StepResult | null> {
   const tail = await reportTail(reportPath, h.reportSize ?? 0)
   if (tail === null) return null
-  const g = openGate(s, 'agent-arret', `${what} : l'implémenteur s'est arrêté sans commit\n${tail}`, reportPath)
+  const g = openGate(s, 'agent-stopped', `${what} : l'implémenteur s'est arrêté sans commit\n${tail}`, reportPath)
   h.stopGate = g.id
-  log(s, e, `${what} : l'implémenteur s'est arrêté sans commit, porte ${g.id} (agent-arret) ouverte (${reportPath})`)
+  log(s, e, `${what} : l'implémenteur s'est arrêté sans commit, porte ${g.id} (agent-stopped) ouverte (${reportPath})`)
   await notify(s, e, `${what} : l'implémenteur s'est arrêté sans commit, porte ${g.id} à trancher`)
   await informOrchestrator(
     s,
     e,
-    `${what} : l'implémenteur s'est arrêté sans commit en laissant un compte rendu (${reportPath}). Porte ${g.id} (agent-arret) ouverte. ` +
+    `${what} : l'implémenteur s'est arrêté sans commit en laissant un compte rendu (${reportPath}). Porte ${g.id} (agent-stopped) ouverte. ` +
       `Lis ce compte rendu et explique-le à l'utilisateur. Si le plan est en cause, propose un amendement (proposer_amendement) : validé, il est appliqué aussitôt et l'implémenteur repart de la consigne amendée. ` +
       `Sinon, l'utilisateur valide pour relancer l'implémenteur avec sa décision en note (herness valider ${s.id} --porte ${g.id} --note "…"), ou refuse pour bloquer la mission (herness refuser ${s.id} --porte ${g.id} --note "…").`,
   )
@@ -143,7 +143,7 @@ export async function stopWithoutCommit(s: MissionState, e: Effects, h: StopHold
 }
 
 /**
- * Porte `agent-arret` du porteur : `wait` tant qu'elle attend, mission bloquée si elle est refusée. Validée, la
+ * Porte `agent-stopped` du porteur : `wait` tant qu'elle attend, mission bloquée si elle est refusée. Validée, la
  * décision (note, ou « continue ») est gardée pour le prochain fichier de correctifs et rend `approved`.
  */
 export async function settleStop(s: MissionState, e: Effects, h: StopHolder, what: string): Promise<'approved' | StepResult> {
@@ -151,7 +151,7 @@ export async function settleStop(s: MissionState, e: Effects, h: StopHolder, wha
   const g = s.gates.find((x) => x.id === id)
   if (g?.status === 'pending') return 'wait'
   delete h.stopGate
-  if (g?.status === 'caduque') return 'continue'
+  if (g?.status === 'obsolete') return 'continue'
   if (!g || g.status === 'refused') {
     return block(s, e, `${what} : l'implémenteur s'est arrêté sans commit, porte ${id} refusée${g?.note ? ` (${g.note})` : ''}`)
   }
@@ -268,7 +268,7 @@ async function proven(s: MissionState, e: Effects, what: string, pa: PendingAsk,
 
 /**
  * Traite l'issue d'une consigne. `done` et `timeout` (mission bloquée) effacent `pendingAsk`. `blocked` le garde
- * et ouvre une porte `agent-bloque` : rien n'est envoyé à l'agent, l'utilisateur le débloque dans son panneau,
+ * et ouvre une porte `agent-blocked` : rien n'est envoyé à l'agent, l'utilisateur le débloque dans son panneau,
  * puis la porte validée, le moteur attend l'agent (`resumeAsk`) sans renvoyer la consigne.
  */
 export async function settle(s: MissionState, e: Effects, h: AskHolder, what: string, name: string, r: 'done' | 'blocked' | 'timeout'): Promise<'done' | StepResult> {
@@ -276,14 +276,14 @@ export async function settle(s: MissionState, e: Effects, h: AskHolder, what: st
   if (r === 'done') return 'done'
   if (r === 'timeout') return block(s, e, `agent ${name} sans réponse (${what})`)
   const tail = await e.herdr.agentRead(name, 40).catch(() => '')
-  const g = openGate(s, 'agent-bloque', `Agent ${name} (${what}) bloqué, à débloquer dans son panneau :\n${tail}`)
+  const g = openGate(s, 'agent-blocked', `Agent ${name} (${what}) bloqué, à débloquer dans son panneau :\n${tail}`)
   h.blockedGate = g.id
-  log(s, e, `porte ${g.id} (agent-bloque) ouverte pour ${name}`)
+  log(s, e, `porte ${g.id} (agent-blocked) ouverte pour ${name}`)
   await notify(s, e, `Agent ${name} bloqué : porte ${g.id} à valider une fois débloqué`)
   await informOrchestrator(
     s,
     e,
-    `L'agent ${name} (${what}) attend une intervention dans son panneau. Porte ${g.id} (agent-bloque) ouverte : l'utilisateur le débloque puis valide (herness valider ${s.id} --porte ${g.id}).`,
+    `L'agent ${name} (${what}) attend une intervention dans son panneau. Porte ${g.id} (agent-blocked) ouverte : l'utilisateur le débloque puis valide (herness valider ${s.id} --porte ${g.id}).`,
   )
   return 'wait'
 }
@@ -313,9 +313,9 @@ async function apply(s: MissionState, e: Effects, t: TaskState, ev: LoopEvent, d
   return 'continue'
 }
 
-/** Première porte `amendement` approuvée et pas encore traitée. */
+/** Première porte `amendment` approuvée et pas encore traitée. */
 export function pendingAmendment(s: MissionState): Gate | undefined {
-  return s.gates.find((x) => x.kind === 'amendement' && x.status === 'approved' && !s.appliedAmendments.includes(x.id))
+  return s.gates.find((x) => x.kind === 'amendment' && x.status === 'approved' && !s.appliedAmendments.includes(x.id))
 }
 
 /**
@@ -339,15 +339,15 @@ async function resetLoops(s: MissionState, e: Effects): Promise<void> {
 
 /**
  * Raison pour laquelle un amendement doit encore attendre, ou `undefined` : une consigne est en cours chez un agent
- * (`pendingAsk`), ou une porte `agent-bloque`/`agent-arret` attend. Exception : la porte `agent-arret` de la tâche en
+ * (`pendingAsk`), ou une porte `agent-blocked`/`agent-stopped` attend. Exception : la porte `agent-stopped` de la tâche en
  * cours, qui attend justement qu'on corrige sa consigne.
  */
 function amendmentHold(s: MissionState): string | undefined {
   const asks = [...s.tasks.map((t) => t.pendingAsk), s.loops.globalReview.pendingAsk, s.loops.preflight.pendingAsk]
   if (asks.some((a) => a !== undefined)) return 'consigne en cours chez un agent'
   const current = s.tasks.find((t) => t.phase !== 'done' && t.phase !== 'pending')
-  const waiting = s.gates.filter((g) => g.status === 'pending' && (g.kind === 'agent-bloque' || g.kind === 'agent-arret'))
-  const other = waiting.find((g) => !(g.kind === 'agent-arret' && current?.stopGate === g.id))
+  const waiting = s.gates.filter((g) => g.status === 'pending' && (g.kind === 'agent-blocked' || g.kind === 'agent-stopped'))
+  const other = waiting.find((g) => !(g.kind === 'agent-stopped' && current?.stopGate === g.id))
   return other ? `porte ${other.id} (${other.kind}) en attente` : undefined
 }
 
@@ -395,17 +395,17 @@ async function interruptedProposal(s: MissionState, e: Effects, g: Gate): Promis
   return found ?? null
 }
 
-/** Applique la première porte `amendement` approuvée non traitée (voir `applyAmendment`). Rend vrai si l'état a changé. */
+/** Applique la première porte `amendment` approuvée non traitée (voir `applyAmendment`). Rend vrai si l'état a changé. */
 export async function applyPendingAmendment(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<boolean> {
   return (await applyAmendment(s, e, cfg)).status !== 'none'
 }
 
 /**
- * Applique la première porte `amendement` approuvée non traitée, dès qu'aucun agent n'a de consigne en cours
+ * Applique la première porte `amendment` approuvée non traitée, dès qu'aucun agent n'a de consigne en cours
  * (`amendmentHold`). La proposition (`plan.proposed.md`, `spec.proposed.md` du dossier de mission) doit être celle
  * que l'utilisateur a validée (même hachage) ; elle est alors copiée dans le worktree, commitée, puis supprimée.
  * Si la tâche en cours change, son brief est réécrit avec une section « Reprise » et elle repart en `implement`
- * (même tour) ; une porte `agent-arret` qu'elle attendait n'est plus attendue. `none` : rien à faire ou attente.
+ * (même tour) ; une porte `agent-stopped` qu'elle attendait n'est plus attendue. `none` : rien à faire ou attente.
  */
 export type AmendmentResult = { status: 'none' | 'rejected' } | { status: 'applied'; resumed?: number | undefined }
 
@@ -505,10 +505,10 @@ async function taskChanged(s: MissionState, t: TaskState, body: PlanTask, approv
 
 /** La mission est bloquée par la tâche `n` elle-même (contrôle, arrêt sans commit, tours épuisés…). */
 const blockedByTask = (s: MissionState, n: number): boolean =>
-  s.step === 'bloquée' && s.blockedFrom === 'tasks' && (s.blockedReason ?? '').startsWith(`tâche ${n} :`)
+  s.step === 'blocked' && s.blockedFrom === 'tasks' && (s.blockedReason ?? '').startsWith(`tâche ${n} :`)
 
 /**
- * Mission bloquée : la tâche que relancerait la validation de ce plan amendé (elle bloque la mission et
+ * Mission blocked : la tâche que relancerait la validation de ce plan amendé (elle bloque la mission et
  * l'amendement change son texte), sinon `undefined`. Sert à annoncer l'effet de la porte à son ouverture.
  */
 export async function amendmentWouldResume(s: MissionState, plan: string): Promise<number | undefined> {
@@ -525,7 +525,7 @@ export const unblocksMission = (s: MissionState, resumed: number | undefined): b
 
 /**
  * Tâche en cours dont l'amendement change le texte : brief réécrit avec une reprise, retour en `implement` au même
- * tour, porte `agent-arret` caduque. Rend son numéro, ou `undefined` si rien ne change.
+ * tour, porte `agent-stopped` caduque. Rend son numéro, ou `undefined` si rien ne change.
  */
 async function resumeAmendedTask(
   s: MissionState,
@@ -548,11 +548,11 @@ async function resumeAmendedTask(
   if (t.stopGate) {
     const g = s.gates.find((x) => x.id === t.stopGate)
     if (g?.status === 'pending') {
-      g.status = 'caduque'
+      g.status = 'obsolete'
       g.decidedAt = e.now().toISOString()
     }
-    log(s, e, `tâche ${t.n} : porte ${t.stopGate} (agent-arret) caduque, la tâche reprend avec la consigne amendée`)
-    await informOrchestrator(s, e, `La porte ${t.stopGate} (agent-arret) est caduque : l'amendement a fait reprendre la tâche ${t.n} avec sa consigne amendée. Plus rien à valider sur cette porte.`)
+    log(s, e, `tâche ${t.n} : porte ${t.stopGate} (agent-stopped) caduque, la tâche reprend avec la consigne amendée`)
+    await informOrchestrator(s, e, `La porte ${t.stopGate} (agent-stopped) est caduque : l'amendement a fait reprendre la tâche ${t.n} avec sa consigne amendée. Plus rien à valider sur cette porte.`)
     delete t.stopGate
   }
   delete t.stopDecision

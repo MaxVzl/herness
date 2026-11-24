@@ -79,7 +79,7 @@ test('affiche revue globale, preflight, journal et PR', () => {
 
 test('affiche la raison de blocage', () => {
   const s = base()
-  s.step = 'bloquée'
+  s.step = 'blocked'
   s.blockedReason = '3 tours épuisés'
   expect(render(<TasksView state={s} />).lastFrame()!).toContain('3 tours épuisés')
 })
@@ -249,7 +249,7 @@ test('R depuis le panneau tasks passe par le redémarrage détaché', async () =
 
 test('p désactivé sur une mission fermée', async () => {
   const s = base()
-  s.step = 'fermée'
+  s.step = 'closed'
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={a} load={async () => s} />)
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')

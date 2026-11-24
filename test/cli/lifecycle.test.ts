@@ -193,7 +193,7 @@ test('fermer demande confirmation quand des commits ne sont pas poussés', async
   // Terminal, réponse oui : fermeture.
   answer = true
   expect(await closeMission('gh12', r.d)).toBe(true)
-  expect((await loadState('gh12')).step).toBe('fermée')
+  expect((await loadState('gh12')).step).toBe('closed')
 })
 
 test('fermer sans commit non poussé ne demande rien et ferme tout', async () => {
@@ -205,7 +205,7 @@ test('fermer sans commit non poussé ne demande rien et ferme tout', async () =>
   expect(fx.callsOf('herdr.paneSendKeys').map((c) => c[0])).toEqual([s.herdr.panes['engine'], s.herdr.panes['engine']])
   expect(fx.callsOf('git.worktreeRemove')).toEqual([[repo, s.worktree]])
   const after = await loadState('gh12')
-  expect(after).toMatchObject({ step: 'fermée', testDbUp: false })
+  expect(after).toMatchObject({ step: 'closed', testDbUp: false })
 })
 
 test('fermer depuis un panneau du worktree quitte le worktree avant de le supprimer', async () => {
@@ -234,13 +234,13 @@ test('fermer ne change pas le dossier courant hors du worktree', async () => {
 
 test('supprimer refuse une mission qui n\'est pas fermée', async () => {
   const { d } = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: true, confirm: async () => true })
-  await expect(deleteMission('gh12', d)).rejects.toThrow('mission gh12 pas fermée : herness fermer gh12 d\'abord')
+  await expect(deleteMission('gh12', d)).rejects.toThrow('mission gh12 pas closed : herness fermer gh12 d\'abord')
   expect(await exists(missionDir('gh12'))).toBe(true)
 })
 
 test('supprimer refuse une mission fermée dont l\'espace herdr existe encore', async () => {
   const { d } = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: true, confirm: async () => true })
-  await patch({ step: 'fermée' })
+  await patch({ step: 'closed' })
   await expect(deleteMission('gh12', d)).rejects.toThrow(/il reste l'espace herdr : relance herness fermer gh12/)
   expect(await exists(missionDir('gh12'))).toBe(true)
 })
@@ -301,19 +301,19 @@ test("fermer une mission déjà fermée nettoie ce qui reste (worktree, espace, 
   const { fx, d, s } = await started({ git: { unpushedCount: async () => 0 } })
   await mkdir(s.worktree!, { recursive: true })
   // Fermée par un abandon validé : le moteur a supprimé les bases, worktree et espace sont encore là.
-  await patch({ step: 'fermée', proofDbUp: true })
+  await patch({ step: 'closed', proofDbUp: true })
   expect(await closeMission('gh12', d)).toBe(true)
   expect(fx.callsOf('run').map((c) => (c[1] as string[]).slice(0, 2))).toContainEqual(['down', 'gh12-main'])
   expect(fx.callsOf('git.worktreeRemove')).toEqual([[repo, s.worktree]])
   expect(fx.callsOf('herdr.workspaceClose')).toEqual([[s.herdr.workspace]])
-  expect(await loadState('gh12')).toMatchObject({ step: 'fermée', proofDbUp: false })
+  expect(await loadState('gh12')).toMatchObject({ step: 'closed', proofDbUp: false })
 })
 
 test("fermer une mission fermée sans reste ne fait rien", async () => {
   const { fx, out, d, s } = await started({ git: { unpushedCount: async () => 0 } })
   fx.herdr.workspaces = fx.herdr.workspaces.filter((w) => w.workspaceId !== s.herdr.workspace)
   await rm(s.worktree!, { recursive: true, force: true })
-  await patch({ step: 'fermée' })
+  await patch({ step: 'closed' })
   expect(await closeMission('gh12', d)).toBe(true)
   expect(out.join('\n')).toContain('rien à fermer')
   expect(fx.callsOf('git.worktreeRemove')).toEqual([])
@@ -390,17 +390,17 @@ test("reprendre recrée l'onglet docs manquant, l'enregistre et y relance les vi
   )
 })
 
-test('reprendre une mission bloquée demande la porte reprise-bloquee', async () => {
+test('reprendre une mission bloquée demande la porte resume-blocked', async () => {
   const { out, d } = await started()
-  await patch({ step: 'bloquée', blockedFrom: 'tasks', blockedReason: 'tâche 2 : 3 tours de correction épuisés' })
+  await patch({ step: 'blocked', blockedFrom: 'tasks', blockedReason: 'tâche 2 : 3 tours de correction épuisés' })
   await resumeMission('gh12', d)
-  expect(await drainInbox('gh12')).toEqual([{ type: 'request-gate', kind: 'reprise-bloquee', summary: 'tâche 2 : 3 tours de correction épuisés' }])
+  expect(await drainInbox('gh12')).toEqual([{ type: 'request-gate', kind: 'resume-blocked', summary: 'tâche 2 : 3 tours de correction épuisés' }])
   expect(out.join('\n')).toContain('herness valider gh12')
 })
 
-test('reprendre une mission pr-ouverte ou fermée affiche son état et ne relance rien', async () => {
+test('reprendre une mission pr-open ou fermée affiche son état et ne relance rien', async () => {
   const { fx, out, d } = await started()
-  for (const step of ['pr-ouverte', 'fermée'] as const) {
+  for (const step of ['pr-open', 'closed'] as const) {
     await patch({ step, prUrl: 'https://github.com/o/r/pull/9' })
     out.length = 0
     await resumeMission('gh12', d)
@@ -434,8 +434,8 @@ test('statut liste les missions et détaille une mission', async () => {
     { n: 1, title: 'Un', testCommand: 't1', phase: 'done', round: 0 },
     { n: 2, title: 'Deux', testCommand: 't2', phase: 'review', round: 1 },
   ]
-  a.gates = [{ id: 'g1', kind: 'amendement', status: 'pending', summary: 'ajout', createdAt: 'x' }]
-  const b = { ...newState({ id: 'B-2', source: { kind: 'text', ref: 'y' }, project: 'demo', repoPath: repo }), step: 'pr-ouverte' as const, prUrl: 'https://github.com/o/r/pull/3' }
+  a.gates = [{ id: 'g1', kind: 'amendment', status: 'pending', summary: 'ajout', createdAt: 'x' }]
+  const b = { ...newState({ id: 'B-2', source: { kind: 'text', ref: 'y' }, project: 'demo', repoPath: repo }), step: 'pr-open' as const, prUrl: 'https://github.com/o/r/pull/3' }
   await saveState(a)
   await saveState(b)
   const lines = await missionStatus()
@@ -461,7 +461,7 @@ test('CLI fermer sur une mission inconnue échoue avec un message clair', async 
 })
 
 test('CLI supprimer --oui efface une mission fermée ; sans --oui hors terminal, refuse', async () => {
-  await saveState({ ...newState({ id: 'D-4', source: { kind: 'text', ref: 'x' }, project: 'demo', repoPath: repo }), step: 'fermée' })
+  await saveState({ ...newState({ id: 'D-4', source: { kind: 'text', ref: 'x' }, project: 'demo', repoPath: repo }), step: 'closed' })
   const env = { HERNESS_HOME: home }
   const no = await execa('node', ['bin/herness.js', 'supprimer', 'D-4'], { reject: false, stdin: 'ignore', env })
   expect(no.exitCode).toBe(1)
@@ -504,7 +504,7 @@ test('fermer n\'avance pas si le moteur ne s\'arrête pas', async () => {
 test('fermer tolère un panneau moteur injoignable', async () => {
   const { d } = await started({ git: { unpushedCount: async () => 0 }, herdr: { paneSendKeys: async () => { throw new Error('pane_not_found') } } })
   expect(await closeMission('gh12', d)).toBe(true)
-  expect((await loadState('gh12')).step).toBe('fermée')
+  expect((await loadState('gh12')).step).toBe('closed')
 })
 
 test('fermer compte les commits par rapport à la branche principale du projet et confirme un worktree sale', async () => {
@@ -706,7 +706,7 @@ test('fermer en terminal propose l\'envoi avant d\'arrêter le moteur', async ()
   expect(createAt).toBeGreaterThanOrEqual(0)
   expect(stopAt).toBeGreaterThan(createAt)
   expect(await exists(join(missionDir('gh12'), 'issues.json'))).toBe(true)
-  expect((await loadState('gh12')).step).toBe('fermée')
+  expect((await loadState('gh12')).step).toBe('closed')
 })
 
 test('fermer : l\'envoi refusé n\'empêche pas la fermeture', async () => {
@@ -716,7 +716,7 @@ test('fermer : l\'envoi refusé n\'empêche pas la fermeture', async () => {
     { isTTY: true, confirm: async (q) => !q.startsWith('Envoyer') },
   )
   expect(await closeMission('gh12', d, { signaler: true })).toBe(true)
-  expect((await loadState('gh12')).step).toBe('fermée')
+  expect((await loadState('gh12')).step).toBe('closed')
   expect(ghCreates(fx)).toEqual([])
 })
 
@@ -735,7 +735,7 @@ test('fermer : un échec de gh n\'empêche pas la fermeture', async () => {
   )
   expect(await closeMission('gh12', d, { signaler: true })).toBe(true)
   expect(out.join('\n')).toContain('erreurs herness non remontées (gh non connecté) : herness signaler gh12')
-  expect((await loadState('gh12')).step).toBe('fermée')
+  expect((await loadState('gh12')).step).toBe('closed')
 })
 
 test('fermer sans erreur à remonter ne dit rien de plus', async () => {
@@ -779,7 +779,7 @@ test('fermer sur une mission déjà fermée et nettoyée rappelle seulement la c
   )
   fx.herdr.workspaces = fx.herdr.workspaces.filter((w) => w.workspaceId !== s.herdr.workspace)
   await rm(s.worktree!, { recursive: true, force: true })
-  await patch({ step: 'fermée' })
+  await patch({ step: 'closed' })
   expect(await closeMission('gh12', d, { signaler: true })).toBe(true)
   const text = out.join('\n')
   expect(text).toContain('déjà fermée')

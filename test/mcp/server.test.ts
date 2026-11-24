@@ -96,7 +96,7 @@ test('mission_identifiee rend les chemins exacts de la spec et du plan', async (
 
 test('demander_arbitrage poste un request-gate arbitrage', async () => {
   await call('demander_arbitrage', { summary: 'trancher' })
-  expect(await drainInbox('T-1')).toEqual([{ type: 'request-gate', kind: 'arbitrage', summary: 'trancher' }])
+  expect(await drainInbox('T-1')).toEqual([{ type: 'request-gate', kind: 'arbitration', summary: 'trancher' }])
 })
 
 test('mission_identifiee refuse un type absent des préfixes du projet', async () => {
@@ -127,7 +127,7 @@ test('proposer_amendement lit plan.proposed.md du dossier de mission, refuse une
   await writeFile(proposed, next)
   const ok = await call('proposer_amendement', { summary: 's' })
   expect(ok.isError).toBeFalsy()
-  expect(await drainInbox('T-1')).toEqual([{ type: 'request-gate', kind: 'amendement', summary: 's', path: proposed, hash: proposalHash(next) }])
+  expect(await drainInbox('T-1')).toEqual([{ type: 'request-gate', kind: 'amendment', summary: 's', path: proposed, hash: proposalHash(next) }])
   // Le worktree n'est jamais modifié pendant la proposition.
   expect(await readFile(join(state.worktree!, planPath(state)), 'utf8')).toBe(PLAN)
 })

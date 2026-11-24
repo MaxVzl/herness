@@ -61,11 +61,11 @@ async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState>
 const prompts = (fx: FakeEffects) => fx.callsOf('herdr.agentPrompt').map((c) => c[1] as string)
 const notes = (fx: FakeEffects) => fx.callsOf('herdr.notify').map((c) => c[1] as string)
 
-test('stepPr pousse, crée la PR et passe en pr-ouverte', async () => {
+test('stepPr pousse, crée la PR et passe en pr-open', async () => {
   const { fx, eng } = await setup({ over: { git: { unpushedCount: async () => 3 } } })
   await eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('pr-ouverte')
+  expect(s.step).toBe('pr-open')
   expect(s.prUrl).toBe('https://github.com/o/r/pull/1')
   expect(fx.callsOf('git.fetchMain')[0]).toEqual([wt, 'main'])
   expect(fx.callsOf('git.isAncestor')[0]).toEqual([wt, 'origin/main', 'HEAD'])
@@ -106,7 +106,7 @@ test("l'ouverture de la PR arrête tous les agents restants de l'onglet agents",
   await saveState(s0)
   await eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('pr-ouverte')
+  expect(s.step).toBe('pr-open')
   expect(fx.herdr.pane(gr).busy).toBe(false)
   expect(s.log.map((l) => l.msg).join('\n')).toContain('PR ouverte : agent(s) arrêté(s) dans GR · claude-opus-5-5')
   expect(fx.callsOf('herdr.paneSendKeys').some((c) => c[0] === master.rootPaneId)).toBe(false)
@@ -125,7 +125,7 @@ test('stepPr bloque la mission sur un conflit de rebase et l\'annule', async () 
   const { fx, eng } = await setup({ over: { git: { isAncestor: async () => false, rebaseOnto: async () => ({ ok: false }) } } })
   await eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedFrom).toBe('pr')
   expect(s.blockedReason).toMatch(/conflit/)
   expect(fx.callsOf('git.rebaseOnto')).toEqual([[wt, 'origin/main']])
@@ -156,17 +156,17 @@ test('stepPr idempotent : branche déjà poussée et PR existante réutilisée',
   })
   await eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('pr-ouverte')
+  expect(s.step).toBe('pr-open')
   expect(s.prUrl).toBe('https://github.com/o/r/pull/7')
   expect(fx.callsOf('git.push')).toEqual([])
   expect(fx.callsOf('forge.findPr')).toEqual([[wt, 'feature/T-1-export-csv']])
   expect(fx.callsOf('forge.createPr')).toEqual([])
 })
 
-test('stepPr avec prUrl déjà enregistrée passe directement en pr-ouverte', async () => {
+test('stepPr avec prUrl déjà enregistrée passe directement en pr-open', async () => {
   const { fx, eng } = await setup({ patch: { prUrl: 'https://github.com/o/r/pull/9' } })
   await eng.tick()
-  expect((await loadState('T-1')).step).toBe('pr-ouverte')
+  expect((await loadState('T-1')).step).toBe('pr-open')
   expect(fx.callsOf('git.fetchMain')).toEqual([])
   expect(fx.callsOf('forge.createPr')).toEqual([])
 })
@@ -186,14 +186,14 @@ test('stepPr refuse de pousser la branche principale ou une autre branche que ce
   let r = await setup({ patch: { branch: 'main' }, over: { git: { currentBranch: async () => 'main' } } })
   await r.eng.tick()
   let s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedReason).toMatch(/branche principale/)
   expect(r.fx.callsOf('git.push')).toEqual([])
 
   r = await setup({ over: { git: { currentBranch: async () => 'feature/autre' } } })
   await r.eng.tick()
   s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedReason).toMatch(/feature\/autre/)
   expect(r.fx.callsOf('git.push')).toEqual([])
   expect(r.fx.callsOf('git.rebaseOnto')).toEqual([])
@@ -207,11 +207,11 @@ test('conflit résolu à la main puis reprise validée : retour au preflight, au
   })
   await eng.tick()
   let s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   // L'utilisateur rebase et résout le conflit : la tête change, main est désormais ancêtre.
   head = 'sha-resolue'
   ancestor = true
-  const g = openGate(s, 'reprise-bloquee', s.blockedReason!)
+  const g = openGate(s, 'resume-blocked', s.blockedReason!)
   await saveState(s)
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved' })
   await eng.tick()
@@ -226,14 +226,14 @@ test('conflit résolu à la main puis reprise validée : retour au preflight, au
 
 async function blocked(blockedFrom: MissionState['step'], patch: Partial<MissionState> = {}) {
   // En pause : le moteur traite la décision sans exécuter l'étape reprise.
-  const r = await setup({ patch: { step: 'bloquée', blockedFrom, blockedReason: '3 tours de correction épuisés', paused: true, ...patch } })
+  const r = await setup({ patch: { step: 'blocked', blockedFrom, blockedReason: '3 tours de correction épuisés', paused: true, ...patch } })
   const s = await loadState('T-1')
-  const g = openGate(s, 'reprise-bloquee', s.blockedReason!)
+  const g = openGate(s, 'resume-blocked', s.blockedReason!)
   await saveState(s)
   return { ...r, gate: g.id }
 }
 
-test('reprise-bloquee validée : retour à l\'étape bloquée, tours de la tâche en cours remis à zéro', async () => {
+test('resume-blocked validée : retour à l\'étape bloquée, tours de la tâche en cours remis à zéro', async () => {
   const tasks = [task({ n: 1, round: 2 }), task({ n: 2, title: 'Export', phase: 'test', round: 4 })]
   const { eng, gate } = await blocked('tasks', { tasks })
   await mkdir(join(missionDir('T-1'), 'taches', '2'), { recursive: true })
@@ -251,7 +251,7 @@ test('reprise-bloquee validée : retour à l\'étape bloquée, tours de la tâch
   expect(await readdir(dir)).toEqual([`correctifs-1.avant-${gate}.md`])
 })
 
-test("reprise-bloquee validée sur une tâche bloquée au contrôle sans commit : l'implémenteur est relancé avec son brief", async () => {
+test("resume-blocked validée sur une tâche bloquée au contrôle sans commit : l'implémenteur est relancé avec son brief", async () => {
   const pa = { agent: 'ct-1-t2', file: '/x/brief.md', fromSha: 'sha-head' }
   const tasks = [task({ n: 1 }), task({ n: 2, title: 'Export', phase: 'control', round: 1, baseSha: 'sha-head', pendingAsk: pa })]
   const { eng, gate } = await blocked('tasks', { tasks })
@@ -263,7 +263,7 @@ test("reprise-bloquee validée sur une tâche bloquée au contrôle sans commit 
   expect(s.tasks[1]!.pendingAsk).toBeUndefined()
 })
 
-test('reprise-bloquee validée sur une tâche au contrôle avec des commits : le contrôle est rejoué', async () => {
+test('resume-blocked validée sur une tâche au contrôle avec des commits : le contrôle est rejoué', async () => {
   const tasks = [task({ n: 1 }), task({ n: 2, title: 'Export', phase: 'control', round: 1, baseSha: 'b-avant' })]
   const { eng, gate } = await blocked('tasks', { tasks })
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: gate, decision: 'approved' })
@@ -271,7 +271,7 @@ test('reprise-bloquee validée sur une tâche au contrôle avec des commits : le
   expect((await loadState('T-1')).tasks[1]).toMatchObject({ phase: 'control', round: 0 })
 })
 
-test('reprise-bloquee validée depuis la revue globale ou le preflight : tours de la boucle remis à zéro', async () => {
+test('resume-blocked validée depuis la revue globale ou le preflight : tours de la boucle remis à zéro', async () => {
   const loops = freshLoops()
   loops.globalReview.round = 4
   loops.preflight.round = 4
@@ -293,20 +293,20 @@ test('reprise-bloquee validée depuis la revue globale ou le preflight : tours d
   expect(s.loops.globalReview.round).toBe(4)
 })
 
-test('reprise-bloquee refusée : la mission reste bloquée', async () => {
+test('resume-blocked refusée : la mission reste bloquée', async () => {
   const { eng, gate } = await blocked('tasks', { tasks: [task({ phase: 'test', round: 4 })] })
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: gate, decision: 'refused', note: 'pas encore' })
   await eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedFrom).toBe('tasks')
   expect(s.blockedReason).toBe('3 tours de correction épuisés')
   expect(s.tasks[0]!.round).toBe(4)
 })
 
-test('une demande de porte reprise-bloquee est ignorée si la mission n\'est pas bloquée', async () => {
-  const { fx, eng } = await setup({ patch: { step: 'pr-ouverte' } })
-  await postInbox('T-1', { type: 'request-gate', kind: 'reprise-bloquee', summary: 'x' })
+test('une demande de porte resume-blocked est ignorée si la mission n\'est pas bloquée', async () => {
+  const { fx, eng } = await setup({ patch: { step: 'pr-open' } })
+  await postInbox('T-1', { type: 'request-gate', kind: 'resume-blocked', summary: 'x' })
   await eng.tick()
   expect((await loadState('T-1')).gates).toEqual([])
   expect(fx.callsOf('herdr.notify')).toEqual([])
@@ -331,13 +331,13 @@ test('main bouge encore après un rebase automatique et son preflight : mission 
   await saveState(s)
   await eng.tick()
   s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedFrom).toBe('pr')
   expect(s.blockedReason).toContain('main a encore bougé pendant le preflight ; reprends la mission pour relancer')
   expect(fx.callsOf('git.rebaseOnto')).toHaveLength(1)
   expect(fx.callsOf('git.push')).toEqual([])
 
-  await postInbox('T-1', { type: 'request-gate', kind: 'reprise-bloquee', summary: 'r' })
+  await postInbox('T-1', { type: 'request-gate', kind: 'resume-blocked', summary: 'r' })
   await eng.tick()
   const g = (await loadState('T-1')).gates.at(-1)!
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved' })

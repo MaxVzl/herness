@@ -323,7 +323,7 @@ test('pendant une fermeture, aucun autre geste n ouvre de saisie ni ne lance d a
       calls.push(['close', id])
       await new Promise<void>((r) => { go = r })
       answer = await confirm('Fermer quand même ?')
-      return ok(['fermée'])
+      return ok(['closed'])
     },
   })
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
@@ -348,8 +348,8 @@ test('pendant une fermeture, aucun autre geste n ouvre de saisie ni ne lance d a
   expect(lastFrame()).toContain('Fermer quand même ?')
   stdin.write('\r')
   await until(() => answer === true)
-  await waitFor(lastFrame, 'fermée')
-  expect(lastFrame()).toContain('fermée')
+  await waitFor(lastFrame, 'closed')
+  expect(lastFrame()).toContain('closed')
   stdin.write('p')
   await until(() => calls.length === 2)
   expect(calls).toEqual([['close', 'T-1'], ['resume', 'T-1']])
@@ -381,7 +381,7 @@ test('une confirmation interne remplacée par une autre rend false', async () =>
 
 test('p désactivé sur une mission fermée ; actif sinon', async () => {
   const s = base()
-  s.step = 'fermée'
+  s.step = 'closed'
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
   await waitFor(lastFrame, 'AIDE')
@@ -569,7 +569,7 @@ test('missionActions relie les actions aux dépendances', async () => {
 })
 
 test('x supprime une mission fermée après confirmation ; Échap annule', async () => {
-  const s = { ...base(), step: 'fermée' as const }
+  const s = { ...base(), step: 'closed' as const }
   const { a, calls } = fakeActions()
   const r = render(<Harness state={s} actions={a} />)
   await waitFor(r.lastFrame, 'AIDE')
@@ -598,7 +598,7 @@ test('x refuse une mission pas fermée', async () => {
 
 test('x absent du panneau tasks de la mission', async () => {
   const { a, calls } = fakeActions()
-  const r = render(<Harness state={{ ...base(), step: 'fermée' }} actions={a} ownPanel />)
+  const r = render(<Harness state={{ ...base(), step: 'closed' }} actions={a} ownPanel />)
   await waitFor(r.lastFrame, 'AIDE')
   expect(r.lastFrame()).not.toContain('supprimer')
   r.stdin.write('x')

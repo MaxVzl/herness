@@ -27,12 +27,12 @@ const now = new Date('2026-11-10T12:00:00Z')
 
 test('bucketOf : porte en attente -> decision, même bloquée', () => {
   expect(bucketOf(mk({ step: 'plan', gates: [gate('g1')] }))).toBe('decision')
-  expect(bucketOf(mk({ step: 'bloquée', gates: [gate('g1')] }))).toBe('decision')
+  expect(bucketOf(mk({ step: 'blocked', gates: [gate('g1')] }))).toBe('decision')
 })
-test('bucketOf : bloquée', () => expect(bucketOf(mk({ step: 'bloquée' }))).toBe('bloquee'))
-test('bucketOf : pr-ouverte et fermée -> terminee', () => {
-  expect(bucketOf(mk({ step: 'pr-ouverte' }))).toBe('terminee')
-  expect(bucketOf(mk({ step: 'fermée' }))).toBe('terminee')
+test('bucketOf : bloquée', () => expect(bucketOf(mk({ step: 'blocked' }))).toBe('bloquee'))
+test('bucketOf : pr-open et fermée -> terminee', () => {
+  expect(bucketOf(mk({ step: 'pr-open' }))).toBe('terminee')
+  expect(bucketOf(mk({ step: 'closed' }))).toBe('terminee')
 })
 test('bucketOf : active sinon', () => {
   expect(bucketOf(mk({ step: 'tasks', gates: [gate('g1', 'approved')] }))).toBe('active')
@@ -45,37 +45,37 @@ test('shortId', () => {
 
 test('statusLabel', () => {
   expect(statusLabel(mk({ step: 'plan', gates: [gate('g3')] }))).toBe('porte g3')
-  expect(statusLabel(mk({ step: 'bloquée' }))).toBe('bloquée')
+  expect(statusLabel(mk({ step: 'blocked' }))).toBe('blocked')
   const t = (n: number, phase: 'done' | 'pending'): MissionState['tasks'][number] => ({ n, title: 't', testCommand: 'x', phase, round: 0 })
   expect(statusLabel(mk({ step: 'tasks', tasks: [t(1, 'done'), t(2, 'pending'), t(3, 'pending')] }))).toBe('tâche 2/3')
   expect(statusLabel(mk({ step: 'preflight' }))).toBe('preflight')
-  expect(statusLabel(mk({ step: 'pr-ouverte', prUrl: 'https://github.com/o/r/pull/1513' }))).toBe('PR #1513')
-  expect(statusLabel(mk({ step: 'fermée' }))).toBe('fermée')
+  expect(statusLabel(mk({ step: 'pr-open', prUrl: 'https://github.com/o/r/pull/1513' }))).toBe('PR #1513')
+  expect(statusLabel(mk({ step: 'closed' }))).toBe('closed')
 })
 
 const merged: PrInfo = { state: 'MERGED', checkedAt: now.toISOString() }
 const open: PrInfo = { state: 'OPEN', checkedAt: now.toISOString() }
 const url = 'https://github.com/o/r/pull/1'
 
-test('isHidden : pr-ouverte mergée cachée, ouverte visible', () => {
-  expect(isHidden(mk({ step: 'pr-ouverte', prUrl: url }), merged, now)).toBe(true)
-  expect(isHidden(mk({ step: 'pr-ouverte', prUrl: url }), open, now)).toBe(false)
-  expect(isHidden(mk({ step: 'pr-ouverte', prUrl: url }), undefined, now)).toBe(false)
+test('isHidden : pr-open mergée cachée, ouverte visible', () => {
+  expect(isHidden(mk({ step: 'pr-open', prUrl: url }), merged, now)).toBe(true)
+  expect(isHidden(mk({ step: 'pr-open', prUrl: url }), open, now)).toBe(false)
+  expect(isHidden(mk({ step: 'pr-open', prUrl: url }), undefined, now)).toBe(false)
 })
 test('isHidden : fermée sans PR depuis 8 jours cachée, 2 jours visible', () => {
-  const closed = (at: string): MissionState => mk({ step: 'fermée', createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission fermée (herness fermer)' }] })
+  const closed = (at: string): MissionState => mk({ step: 'closed', createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission fermée (herness fermer)' }] })
   expect(isHidden(closed('2026-11-02T12:00:00Z'), undefined, now)).toBe(true)
   expect(isHidden(closed('2026-11-08T12:00:00Z'), undefined, now)).toBe(false)
 })
 test('isHidden : fermée sans log de fermeture utilise createdAt', () => {
-  expect(isHidden(mk({ step: 'fermée', createdAt: '2026-10-01T00:00:00Z' }), undefined, now)).toBe(true)
+  expect(isHidden(mk({ step: 'closed', createdAt: '2026-10-01T00:00:00Z' }), undefined, now)).toBe(true)
 })
 test('isHidden : un log « PR fermée » ne compte pas comme fermeture de la mission', () => {
-  const s = mk({ step: 'fermée', createdAt: '2026-10-01T00:00:00Z', log: [{ at: '2026-11-09T00:00:00Z', msg: 'PR fermée' }] })
+  const s = mk({ step: 'closed', createdAt: '2026-10-01T00:00:00Z', log: [{ at: '2026-11-09T00:00:00Z', msg: 'PR fermée' }] })
   expect(isHidden(s, undefined, now)).toBe(true)
 })
 test('isHidden : fermée avec PR mergée cachée, sinon visible', () => {
-  const s = mk({ step: 'fermée', prUrl: url, createdAt: '2026-10-01T00:00:00Z' })
+  const s = mk({ step: 'closed', prUrl: url, createdAt: '2026-10-01T00:00:00Z' })
   expect(isHidden(s, merged, now)).toBe(true)
   expect(isHidden(s, open, now)).toBe(false)
   expect(isHidden(s, undefined, now)).toBe(false)
@@ -83,21 +83,21 @@ test('isHidden : fermée avec PR mergée cachée, sinon visible', () => {
 const closedPr: PrInfo = { state: 'CLOSED', checkedAt: now.toISOString() }
 test('isHidden : fermée avec PR CLOSED suit la règle des 7 jours depuis la fermeture', () => {
   const closed = (at: string): MissionState =>
-    mk({ step: 'fermée', prUrl: url, createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission fermée (herness fermer)' }] })
+    mk({ step: 'closed', prUrl: url, createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission fermée (herness fermer)' }] })
   expect(isHidden(closed('2026-11-02T12:00:00Z'), closedPr, now)).toBe(true)
   expect(isHidden(closed('2026-11-08T12:00:00Z'), closedPr, now)).toBe(false)
 })
-test('isHidden : pr-ouverte avec PR CLOSED reste visible (à traiter)', () => {
-  expect(isHidden(mk({ step: 'pr-ouverte', prUrl: url, createdAt: '2026-10-01T00:00:00Z' }), closedPr, now)).toBe(false)
+test('isHidden : pr-open avec PR CLOSED reste visible (à traiter)', () => {
+  expect(isHidden(mk({ step: 'pr-open', prUrl: url, createdAt: '2026-10-01T00:00:00Z' }), closedPr, now)).toBe(false)
 })
 test('needsPrRefresh : ni PR mergée, ni PR CLOSED d’une mission fermée depuis plus de 7 jours', () => {
   const closed = (at: string): MissionState =>
-    mk({ step: 'fermée', prUrl: url, createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission fermée (herness fermer)' }] })
+    mk({ step: 'closed', prUrl: url, createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission fermée (herness fermer)' }] })
   expect(needsPrRefresh(mk({ step: 'tasks' }), undefined, now)).toBe(false)
-  expect(needsPrRefresh(mk({ step: 'pr-ouverte', prUrl: url }), undefined, now)).toBe(true)
-  expect(needsPrRefresh(mk({ step: 'pr-ouverte', prUrl: url }), open, now)).toBe(true)
-  expect(needsPrRefresh(mk({ step: 'pr-ouverte', prUrl: url }), merged, now)).toBe(false)
-  expect(needsPrRefresh(mk({ step: 'pr-ouverte', prUrl: url, createdAt: '2026-10-01T00:00:00Z' }), closedPr, now)).toBe(true)
+  expect(needsPrRefresh(mk({ step: 'pr-open', prUrl: url }), undefined, now)).toBe(true)
+  expect(needsPrRefresh(mk({ step: 'pr-open', prUrl: url }), open, now)).toBe(true)
+  expect(needsPrRefresh(mk({ step: 'pr-open', prUrl: url }), merged, now)).toBe(false)
+  expect(needsPrRefresh(mk({ step: 'pr-open', prUrl: url, createdAt: '2026-10-01T00:00:00Z' }), closedPr, now)).toBe(true)
   expect(needsPrRefresh(closed('2026-11-08T12:00:00Z'), closedPr, now)).toBe(true)
   expect(needsPrRefresh(closed('2026-11-02T12:00:00Z'), closedPr, now)).toBe(false)
 })
@@ -107,9 +107,9 @@ test('isHidden : mission active jamais cachée', () => {
 
 test('sortMissions : décision, bloquée, active, terminée, puis createdAt décroissant', () => {
   const list = [
-    mk({ id: 'a', step: 'fermée', createdAt: '2026-11-01T00:00:00Z' }),
+    mk({ id: 'a', step: 'closed', createdAt: '2026-11-01T00:00:00Z' }),
     mk({ id: 'b', step: 'tasks', createdAt: '2026-11-01T00:00:00Z' }),
-    mk({ id: 'c', step: 'bloquée', createdAt: '2026-11-01T00:00:00Z' }),
+    mk({ id: 'c', step: 'blocked', createdAt: '2026-11-01T00:00:00Z' }),
     mk({ id: 'd', step: 'plan', gates: [gate('g1')], createdAt: '2026-11-01T00:00:00Z' }),
     mk({ id: 'e', step: 'tasks', createdAt: '2026-11-03T00:00:00Z' }),
   ]

@@ -3,25 +3,28 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { missionDir } from '../paths.ts'
 
+/** On-disk state format. Absent means a mission written by herness 0.8 or earlier. */
+export const STATE_FORMAT = 2
+
 export const StepSchema = z.enum([
   'env', 'prepare', 'classify', 'brainstorm', 'spec', 'plan', 'tasks',
-  'global-review', 'preflight', 'pr', 'pr-ouverte', 'fermée', 'bloquée',
+  'global-review', 'preflight', 'pr', 'pr-open', 'closed', 'blocked',
 ])
 export type Step = z.infer<typeof StepSchema>
 
 export const GateKindSchema = z.enum([
-  'spec', 'plan', 'amendement', 'arbitrage', 'pr-malgre-main', 'agent-bloque', 'agent-arret', 'reprise-bloquee', 'abandon',
+  'spec', 'plan', 'amendment', 'arbitration', 'pr-despite-main', 'agent-blocked', 'agent-stopped', 'resume-blocked', 'abandon',
 ])
 export type GateKind = z.infer<typeof GateKindSchema>
 
 export const GateSchema = z.object({
   id: z.string(),
   kind: GateKindSchema,
-  /** `caduque` : plus rien n'attend la porte (ex. `agent-arret` d'une tâche reprise par un amendement) ; non décidable. */
-  status: z.enum(['pending', 'approved', 'refused', 'caduque']),
+  /** `obsolete` : plus rien n'attend la porte (ex. `agent-stopped` d'une tâche reprise par un amendement) ; non décidable. */
+  status: z.enum(['pending', 'approved', 'refused', 'obsolete']),
   summary: z.string(),
   path: z.string().optional(),
-  /** Porte `amendement` : sha256 de la proposition au moment de la demande (`proposalHash`). */
+  /** Porte `amendment` : sha256 de la proposition au moment de la demande (`proposalHash`). */
   hash: z.string().optional(),
   note: z.string().optional(),
   createdAt: z.string(),
@@ -58,9 +61,9 @@ export const TaskStateSchema = z.object({
   lastFailure: z.string().optional(),
   /** Qui corrige le tour en cours (décidé par `nextTaskPhase`). */
   fixer: z.enum(['same', 'strong']).optional(),
-  /** Porte `agent-bloque` ouverte pour un agent de cette tâche, en attente de décision. */
+  /** Porte `agent-blocked` ouverte pour un agent de cette tâche, en attente de décision. */
   blockedGate: z.string().optional(),
-  /** Porte `agent-arret` ouverte : l'implémenteur s'est arrêté sans commit en laissant un compte rendu. */
+  /** Porte `agent-stopped` ouverte : l'implémenteur s'est arrêté sans commit en laissant un compte rendu. */
   stopGate: z.string().optional(),
   /** Décision de l'utilisateur sur cette porte, à transmettre dans le prochain fichier de correctifs. */
   stopDecision: z.string().optional(),
@@ -96,7 +99,7 @@ export const GlobalReviewStateSchema = z.object({
   fixBase: z.string().optional(),
   pendingAsk: PendingAskSchema.optional(),
   blockedGate: z.string().optional(),
-  /** Porte `agent-arret` ouverte : l'implémenteur s'est arrêté sans commit en laissant un compte rendu. */
+  /** Porte `agent-stopped` ouverte : l'implémenteur s'est arrêté sans commit en laissant un compte rendu. */
   stopGate: z.string().optional(),
   /** Décision de l'utilisateur sur cette porte, à transmettre dans le prochain fichier de correctifs. */
   stopDecision: z.string().optional(),
@@ -109,7 +112,7 @@ export type GlobalReviewState = z.infer<typeof GlobalReviewStateSchema>
 export const PreflightStateSchema = z.object({
   round: z.number().int(),
   results: z.array(PreflightResultSchema),
-  /** Checks rouges aussi sur main, PR validée malgré tout (porte `pr-malgre-main`) : à citer dans la PR. */
+  /** Checks rouges aussi sur main, PR validée malgré tout (porte `pr-despite-main`) : à citer dans la PR. */
   acceptedRed: z.array(z.string()).default([]),
   phase: z.enum(['diagnose', 'proof', 'gate', 'fix', 'control', 'rereview']).optional(),
   /** Tête validée par le dernier passage complet du preflight : la PR ne part que de cette tête. */
@@ -131,7 +134,7 @@ export const PreflightStateSchema = z.object({
   lastReview: z.string().optional(),
   pendingAsk: PendingAskSchema.optional(),
   blockedGate: z.string().optional(),
-  /** Porte `agent-arret` ouverte : l'implémenteur s'est arrêté sans commit en laissant un compte rendu. */
+  /** Porte `agent-stopped` ouverte : l'implémenteur s'est arrêté sans commit en laissant un compte rendu. */
   stopGate: z.string().optional(),
   /** Décision de l'utilisateur sur cette porte, à transmettre dans le prochain fichier de correctifs. */
   stopDecision: z.string().optional(),
@@ -145,6 +148,7 @@ export function freshLoops(): { globalReview: GlobalReviewState; preflight: Pref
 }
 
 export const MissionStateSchema = z.object({
+  format: z.literal(STATE_FORMAT).optional(),
   id: z.string(),
   source: z.object({ kind: z.enum(['wrike', 'github', 'text']), ref: z.string() }),
   project: z.string(),
@@ -183,9 +187,9 @@ export const MissionStateSchema = z.object({
   /** Génération des boucles revue globale / preflight : +1 à chaque remise à zéro (agents et dossiers neufs). */
   loopGeneration: z.number().int().default(1),
   paused: z.boolean().default(false),
-  /** Portes `amendement` approuvées déjà traitées (appliquées ou écartées). */
+  /** Portes `amendment` approuvées déjà traitées (appliquées ou écartées). */
   appliedAmendments: z.array(z.string()).default([]),
-  /** Portes `arbitrage` dont la note est déjà entrée dans un fichier de correctifs. */
+  /** Portes `arbitration` dont la note est déjà entrée dans un fichier de correctifs. */
   consumedArbitrages: z.array(z.string()).default([]),
   log: z.array(z.object({ at: z.string(), msg: z.string() })),
 })
@@ -196,6 +200,7 @@ export function newState(
 ): MissionState {
   return {
     ...init,
+    format: STATE_FORMAT,
     createdAt: new Date().toISOString(),
     step: 'env',
     tasks: [],
@@ -216,12 +221,74 @@ function stateFile(id: string): string {
   return join(missionDir(id), 'state.json')
 }
 
+const LEGACY_STEPS: Record<string, string> = {
+  'pr-ouverte': 'pr-open',
+  'fermée': 'closed',
+  'bloquée': 'blocked',
+}
+
+const LEGACY_KINDS: Record<string, string> = {
+  amendement: 'amendment',
+  arbitrage: 'arbitration',
+  'pr-malgre-main': 'pr-despite-main',
+  'agent-bloque': 'agent-blocked',
+  'agent-arret': 'agent-stopped',
+  'reprise-bloquee': 'resume-blocked',
+}
+
+const LEGACY_STATUSES: Record<string, string> = {
+  caduque: 'obsolete',
+}
+
+function fromLegacy(value: unknown, table: Record<string, string>): unknown {
+  if (typeof value !== 'string') return value
+  return table[value] ?? value
+}
+
+/** Translates French state values written before `format` existed. A value already in English, or unknown, is kept. */
+export function migrateLegacy(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return raw
+  if ('format' in raw) return raw
+  const copy = structuredClone(raw) as Record<string, unknown>
+  if ('step' in copy) copy.step = fromLegacy(copy.step, LEGACY_STEPS)
+  if ('blockedFrom' in copy) copy.blockedFrom = fromLegacy(copy.blockedFrom, LEGACY_STEPS)
+  if (Array.isArray(copy.gates)) {
+    copy.gates = copy.gates.map((gate) => {
+      if (gate === null || typeof gate !== 'object' || Array.isArray(gate)) return gate
+      const next = { ...(gate as Record<string, unknown>) }
+      if ('kind' in next) next.kind = fromLegacy(next.kind, LEGACY_KINDS)
+      if ('status' in next) next.status = fromLegacy(next.status, LEGACY_STATUSES)
+      return next
+    })
+  }
+  return copy
+}
+
+export function isLegacy(s: MissionState): boolean {
+  return s.format !== STATE_FORMAT
+}
+
+export function isFinished(s: MissionState): boolean {
+  return s.step === 'pr-open' || s.step === 'closed'
+}
+
+export class LegacyMissionError extends Error {}
+
+export function assertResumable(s: MissionState): void {
+  if (isLegacy(s) && !isFinished(s)) {
+    throw new LegacyMissionError(
+      `mission ${s.id} was created by herness 0.8 or earlier and is still running: finish it with that version (herness update --version 0.8.1) or close it (herness close ${s.id})`,
+    )
+  }
+}
+
 export async function loadState(id: string): Promise<MissionState> {
   const raw = await readFile(stateFile(id), 'utf8')
-  return MissionStateSchema.parse(JSON.parse(raw))
+  return MissionStateSchema.parse(migrateLegacy(JSON.parse(raw)))
 }
 
 export async function saveState(s: MissionState): Promise<void> {
+  s.format = STATE_FORMAT
   MissionStateSchema.parse(s)
   const file = stateFile(s.id)
   await mkdir(missionDir(s.id), { recursive: true })

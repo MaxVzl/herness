@@ -10,20 +10,20 @@ const SEVEN_DAYS_MS = 7 * 24 * 3600 * 1000
 
 export function bucketOf(s: MissionState): Bucket {
   if (s.gates.some((g) => g.status === 'pending')) return 'decision'
-  if (s.step === 'bloquée') return 'bloquee'
-  if (s.step === 'pr-ouverte' || s.step === 'fermée') return 'terminee'
+  if (s.step === 'blocked') return 'bloquee'
+  if (s.step === 'pr-open' || s.step === 'closed') return 'terminee'
   return 'active'
 }
 
 export function statusLabel(s: MissionState): string {
   const gate = s.gates.find((g) => g.status === 'pending')
   if (gate) return `porte ${gate.id}`
-  if (s.step === 'bloquée') return 'bloquée'
+  if (s.step === 'blocked') return 'blocked'
   if (s.step === 'tasks' && s.tasks.length > 0) {
     const done = s.tasks.filter((t) => t.phase === 'done').length
     return `tâche ${Math.min(done + 1, s.tasks.length)}/${s.tasks.length}`
   }
-  if (s.step === 'pr-ouverte') {
+  if (s.step === 'pr-open') {
     const n = s.prUrl?.match(/\/pull\/(\d+)/)?.[1]
     return n ? `PR #${n}` : 'PR ouverte'
   }
@@ -42,11 +42,11 @@ function closedAt(s: MissionState): number {
 
 /**
  * Mission terminée masquée : PR mergée, ou mission fermée depuis plus de 7 jours sans PR ou avec une PR CLOSED.
- * Une `pr-ouverte` dont la PR est CLOSED reste visible : elle demande une action.
+ * Une `pr-open` dont la PR est CLOSED reste visible : elle demande une action.
  */
 export function isHidden(s: MissionState, pr: PrInfo | undefined, now: Date): boolean {
-  if (s.step === 'pr-ouverte') return pr?.state === 'MERGED'
-  if (s.step === 'fermée') {
+  if (s.step === 'pr-open') return pr?.state === 'MERGED'
+  if (s.step === 'closed') {
     if (pr?.state === 'MERGED') return true
     if (s.prUrl && pr?.state !== 'CLOSED') return false
     return now.getTime() - closedAt(s) > SEVEN_DAYS_MS

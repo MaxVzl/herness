@@ -96,7 +96,7 @@ test('installation en échec : aucune mission touchée', async () => {
 })
 
 test('missions en cours : ni PR ouverte, ni fermée, ni bloquée', async () => {
-  for (const [id, step] of [['a1', 'tasks'], ['b2', 'pr-ouverte'], ['c3', 'fermée'], ['d4', 'bloquée'], ['e5', 'preflight']] as const) {
+  for (const [id, step] of [['a1', 'tasks'], ['b2', 'pr-open'], ['c3', 'closed'], ['d4', 'blocked'], ['e5', 'preflight']] as const) {
     await saveState(mission(id, step))
   }
   expect((await runningMissions()).map((s) => s.id)).toEqual(['a1', 'e5'])

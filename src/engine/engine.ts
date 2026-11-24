@@ -46,14 +46,14 @@ export async function notify(s: MissionState, e: Effects, body: string): Promise
   }
 }
 
-/** Passe la mission en `bloquée`, prévient l'utilisateur et l'orchestrateur. */
+/** Passe la mission en `blocked`, prévient l'utilisateur et l'orchestrateur. */
 export async function block(s: MissionState, e: Effects, reason: string): Promise<StepResult> {
-  if (s.step !== 'bloquée') s.blockedFrom = s.step
-  s.step = 'bloquée'
+  if (s.step !== 'blocked') s.blockedFrom = s.step
+  s.step = 'blocked'
   s.blockedReason = reason
-  log(s, e, `mission bloquée : ${reason}`)
-  await notify(s, e, `Mission bloquée : ${reason.split('\n')[0]}`)
-  await informOrchestrator(s, e, `Mission bloquée : ${reason}`)
+  log(s, e, `mission blocked : ${reason}`)
+  await notify(s, e, `Mission blocked : ${reason.split('\n')[0]}`)
+  await informOrchestrator(s, e, `Mission blocked : ${reason}`)
   return 'continue'
 }
 
@@ -90,7 +90,7 @@ export function proofDbDown(s: MissionState, e: Effects, cfg: ProjectConfig): Pr
 
 /** Bloque la mission parce qu'une base de test n'a pas pu être supprimée (`testDbUp`/`proofDbUp` restent vrais). */
 export async function blockDbNotDown(s: MissionState, e: Effects, id: string, error: string): Promise<StepResult> {
-  const previous = s.step === 'bloquée' && s.blockedReason ? `\n(blocage précédent : ${s.blockedReason})` : ''
+  const previous = s.step === 'blocked' && s.blockedReason ? `\n(blocage précédent : ${s.blockedReason})` : ''
   return block(s, e, `base de test ${id} non supprimée : ${error}${previous}`)
 }
 
@@ -227,9 +227,9 @@ export const steps: Record<Step, StepFn> = {
   'global-review': (s, e, cfg) => stepGlobalReview(s, e, cfg),
   preflight: (s, e, cfg) => stepPreflight(s, e, cfg),
   pr: afterAmendment((s, e, cfg) => stepPr(s, e, cfg)),
-  bloquée: waiting,
-  'pr-ouverte': stopped,
-  fermée: stopped,
+  blocked: waiting,
+  'pr-open': stopped,
+  closed: stopped,
 }
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
@@ -246,14 +246,14 @@ async function archiveCorrections(s: MissionState, e: Effects, dir: string, gate
 }
 
 /**
- * Porte `reprise-bloquee` validée (R12/R13), ou amendement validé sur une mission bloquée dans la boucle des tâches :
+ * Porte `resume-blocked` validée (R12/R13), ou amendement validé sur une mission bloquée dans la boucle des tâches :
  * la mission repart de l'étape où elle s'était arrêtée, avec un budget de tours neuf pour la boucle concernée
  * (tâche en cours, revue globale ou preflight). `why` : la décision de l'utilisateur, pour l'orchestrateur.
  */
 async function resumeBlocked(s: MissionState, e: Effects, gateId: string, why = 'la reprise de la mission'): Promise<void> {
   const from = s.blockedFrom
-  if (s.step !== 'bloquée' || !from) {
-    log(s, e, `reprise ${gateId} ignorée : mission ${s.step === 'bloquée' ? "sans étape d'origine connue" : 'non bloquée'}`)
+  if (s.step !== 'blocked' || !from) {
+    log(s, e, `reprise ${gateId} ignorée : mission ${s.step === 'blocked' ? "sans étape d'origine connue" : 'non bloquée'}`)
     return
   }
   const dir = missionDir(s.id)
@@ -292,12 +292,12 @@ function correctionWaiting(s: MissionState): boolean {
   return s.tasks.some((t) => t.phase === 'fix') || s.loops.globalReview.phase === 'fix' || s.loops.preflight.phase === 'fix'
 }
 
-/** Vrai si une tâche, la revue globale ou le preflight attend encore cette porte `agent-arret`. */
+/** Vrai si une tâche, la revue globale ou le preflight attend encore cette porte `agent-stopped`. */
 function stopGateHeld(s: MissionState, id: string): boolean {
   return s.tasks.some((t) => t.stopGate === id) || s.loops.globalReview.stopGate === id || s.loops.preflight.stopGate === id
 }
 
-/** Porte `abandon` validée : bases de test supprimées, puis mission `fermée` ; un échec bloque la mission. */
+/** Porte `abandon` validée : bases de test supprimées, puis mission `closed` ; un échec bloque la mission. */
 async function abandonMission(s: MissionState, e: Effects, cfg: ProjectConfig, gateId: string): Promise<void> {
   const test = await testDbDown(s, e, cfg)
   const proof = await proofDbDown(s, e, cfg)
@@ -306,7 +306,7 @@ async function abandonMission(s: MissionState, e: Effects, cfg: ProjectConfig, g
     return
   }
   log(s, e, `abandon validé (${gateId}) : mission fermée`)
-  s.step = 'fermée'
+  s.step = 'closed'
   await stopAgentsTab(s, e, 'all', 'abandon validé')
   await informOrchestrator(s, e, `L'utilisateur a validé l'abandon (porte ${gateId}) : la mission est fermée.`)
 }
@@ -353,28 +353,28 @@ export class Engine {
           }
           return
         }
-        if (g.kind === 'reprise-bloquee') {
+        if (g.kind === 'resume-blocked') {
           if (g.status === 'approved') await resumeBlocked(s, e, g.id)
           else log(s, e, `reprise refusée (${g.id}) : la mission reste bloquée${g.note ? ` (${g.note})` : ''}`)
           return
         }
-        if (g.kind === 'arbitrage' && !correctionWaiting(s)) {
+        if (g.kind === 'arbitration' && !correctionWaiting(s)) {
           // Consommée : sa note n'entrera pas dans un fichier de correctifs ultérieur sans rapport avec elle.
           s.consumedArbitrages.push(g.id)
           log(s, e, `arbitrage ${g.id} ${g.status === 'approved' ? 'validé' : 'refusé'} sans effet : aucune correction n'attendait de décision`)
-          const hint = s.step === 'bloquée' ? ` La mission reste bloquée : l'utilisateur la reprend avec herness reprendre ${s.id} puis validation, ou la débloque en validant un amendement.` : ''
+          const hint = s.step === 'blocked' ? ` La mission reste blocked : l'utilisateur la reprend avec herness reprendre ${s.id} puis validation, ou la débloque en validant un amendement.` : ''
           await informOrchestrator(s, e, `arbitrage ${g.id} sans effet : aucune correction n'attendait de décision.${hint}`)
           return
         }
-        if (g.kind === 'agent-arret' && !stopGateHeld(s, g.id)) {
+        if (g.kind === 'agent-stopped' && !stopGateHeld(s, g.id)) {
           // Un amendement a déjà fait reprendre la tâche : rien n'attend plus cette décision.
-          log(s, e, `porte ${g.id} (agent-arret) ${g.status === 'approved' ? 'validée' : 'refusée'} sans effet : la tâche a déjà repris avec sa consigne amendée`)
+          log(s, e, `porte ${g.id} (agent-stopped) ${g.status === 'approved' ? 'validée' : 'refusée'} sans effet : la tâche a déjà repris avec sa consigne amendée`)
           return
         }
         if (g.status === 'approved') {
           log(s, e, `porte ${g.id} (${g.kind}) validée`)
           await informOrchestrator(s, e, `L'utilisateur a validé la porte ${g.id} (${g.kind})${g.note ? `, avec la note : ${g.note}` : ''}.`)
-          if (g.kind === 'amendement' && s.step === 'bloquée' && s.blockedFrom === 'tasks') await this.amendBlocked(s, g.id)
+          if (g.kind === 'amendment' && s.step === 'blocked' && s.blockedFrom === 'tasks') await this.amendBlocked(s, g.id)
         } else {
           log(s, e, `porte ${g.id} (${g.kind}) refusée : ${g.note ?? ''}`)
           const again = g.kind === 'spec' || g.kind === 'plan' ? ` Corrige puis redemande la validation avec demander_validation('${g.kind}').` : ''
@@ -383,8 +383,8 @@ export class Engine {
         return
       }
       case 'request-gate': {
-        const summary = m.kind === 'amendement' ? m.summary + (await this.blockedAmendmentNote(s)) : m.summary
-        if (m.kind === 'reprise-bloquee' && s.step !== 'bloquée') {
+        const summary = m.kind === 'amendment' ? m.summary + (await this.blockedAmendmentNote(s)) : m.summary
+        if (m.kind === 'resume-blocked' && s.step !== 'blocked') {
           log(s, e, `demande de reprise ignorée : la mission n'est pas bloquée (étape ${s.step})`)
           return
         }
@@ -466,15 +466,15 @@ export class Engine {
       return
     }
     log(s, e, `amendement ${gateId} appliqué, la mission reste bloquée (${s.blockedReason ?? '?'})`)
-    await informOrchestrator(s, e, `Amendement ${gateId} appliqué, mission toujours bloquée : herness reprendre ${s.id} pour la relancer.`)
+    await informOrchestrator(s, e, `Amendement ${gateId} appliqué, mission toujours blocked : herness reprendre ${s.id} pour la relancer.`)
   }
 
-  /** Mission bloquée : ce que changera la validation d'un amendement, à ajouter au résumé de sa porte. */
+  /** Mission blocked : ce que changera la validation d'un amendement, à ajouter au résumé de sa porte. */
   private async blockedAmendmentNote(s: MissionState): Promise<string> {
-    if (s.step !== 'bloquée') return ''
+    if (s.step !== 'blocked') return ''
     const plan = await readFile(proposedPlanPath(s.id), 'utf8').catch(() => '')
     const n = plan ? await amendmentWouldResume(s, plan) : undefined
-    return n !== undefined ? ` (mission bloquée : valider cet amendement relancera la tâche ${n})` : " (mission bloquée : valider n'enlève pas le blocage)"
+    return n !== undefined ? ` (mission blocked : valider cet amendement relancera la tâche ${n})` : " (mission blocked : valider n'enlève pas le blocage)"
   }
 
   async tick(): Promise<StepResult> {
@@ -484,7 +484,7 @@ export class Engine {
     for (const m of msgs) await this.handle(s, m)
     if (msgs.length > 0) await saveState(s)
     let r: StepResult
-    if (s.step === 'pr-ouverte' || s.step === 'fermée') r = 'stop'
+    if (s.step === 'pr-open' || s.step === 'closed') r = 'stop'
     else if (s.paused) r = 'wait'
     else {
       r = await steps[s.step](s, this.e, this.cfg)
@@ -494,7 +494,7 @@ export class Engine {
     return r
   }
 
-  /** Erreur imprévue : la mission passe en `bloquée` (base de test arrêtée) et le moteur continue. */
+  /** Erreur imprévue : la mission passe en `blocked` (base de test arrêtée) et le moteur continue. */
   private async fail(err: unknown): Promise<void> {
     const msg = `erreur du moteur : ${errMsg(err)}`
     console.error(`herness ${this.id} : ${msg}`)
@@ -545,7 +545,7 @@ export class Engine {
   /** Démarrage du moteur : arrête les agents déjà terminés ; toute la mission si elle est déjà close. */
   private async releaseFinishedAgents(): Promise<void> {
     const s = await loadState(this.id)
-    await stopAgentsTab(s, this.e, s.step === 'pr-ouverte' || s.step === 'fermée' ? 'all' : 'done', 'démarrage du moteur')
+    await stopAgentsTab(s, this.e, s.step === 'pr-open' || s.step === 'closed' ? 'all' : 'done', 'démarrage du moteur')
     await saveState(s)
   }
 

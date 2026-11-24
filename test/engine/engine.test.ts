@@ -49,7 +49,7 @@ test('env avec un KO passe la mission en bloquée avec la commande à lancer', a
   const { fx, eng } = engine({ run: notCursor })
   expect(await eng.tick()).toBe('continue')
   const s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedReason).toContain('cursor')
   expect(s.blockedReason).toContain('! cursor-agent login')
   const prompts = fx.callsOf('herdr.agentPrompt')
@@ -81,7 +81,7 @@ test("prepare lance la préparation du projet dans l'onglet process, puis classi
   const ko = engine({ runInPane: async () => ({ exitCode: 2, logPath: '/l.log', tail: 'erreur', durationMs: 1 }) })
   await ko.eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedReason).toContain('/l.log')
 })
 
@@ -225,7 +225,7 @@ test("abandon ouvre une porte abandon sans rien fermer ; l'utilisateur la valide
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   expect(await eng.tick()).toBe('stop')
   s = await loadState('T-1')
-  expect(s.step).toBe('fermée')
+  expect(s.step).toBe('closed')
   expect(s.testDbUp).toBe(false)
   expect(fx.callsOf('run')).toEqual([[demo.testDb!.down[0], ['down', 'T-1', wt], { cwd: wt, reject: false }]])
 })
@@ -248,7 +248,7 @@ test("abandon validé avec une base impossible à supprimer : mission bloquée, 
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   await eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedReason).toContain('base de test T-1 non supprimée')
   expect(s.testDbUp).toBe(true)
 })
@@ -282,7 +282,7 @@ test('run : une exception bloque la mission sans arrêter le moteur, qui continu
   })
   await eng.run()
   const s = await loadState('T-1')
-  expect(s.step).toBe('fermée')
+  expect(s.step).toBe('closed')
   expect(s.blockedReason).toContain('branche verrouillée')
   expect(s.blockedReason?.split('\n')[0]?.startsWith('erreur du moteur : ')).toBe(true)
   expect(s.blockedReason?.endsWith(`\ndétail : ${join(home, 'erreurs.log')}`)).toBe(true)
@@ -334,8 +334,8 @@ test('état illisible persistant : une seule paire d\'entrées pour plusieurs to
   expect(journal.match(/moteur : enregistrement du blocage/g)).toHaveLength(1)
 })
 
-test('pr-ouverte et fermée arrêtent la boucle', async () => {
-  await mission({ step: 'pr-ouverte' })
+test('pr-open et fermée arrêtent la boucle', async () => {
+  await mission({ step: 'pr-open' })
   expect(await engine().eng.tick()).toBe('stop')
 })
 
@@ -393,21 +393,21 @@ test('block enregistre l\'étape d\'où la mission a été bloquée', async () =
   await mission({ step: 'prepare' })
   const { eng } = engine({ runInPane: async () => ({ exitCode: 1, logPath: '/l', tail: '', durationMs: 1 }) })
   await eng.tick()
-  expect(await loadState('T-1')).toMatchObject({ step: 'bloquée', blockedFrom: 'prepare' })
+  expect(await loadState('T-1')).toMatchObject({ step: 'blocked', blockedFrom: 'prepare' })
 })
 
 test("request-gate amendement : le hachage de la proposition est enregistré dans la porte (mis à jour sur doublon)", async () => {
-  await mission({ step: 'bloquée', slug: 'x' })
+  await mission({ step: 'blocked', slug: 'x' })
   const { eng } = engine()
-  await postInbox('T-1', { type: 'request-gate', kind: 'amendement', summary: 'a', path: '/m/plan.proposed.md', hash: 'h1' })
+  await postInbox('T-1', { type: 'request-gate', kind: 'amendment', summary: 'a', path: '/m/plan.proposed.md', hash: 'h1' })
   await eng.tick()
-  expect((await loadState('T-1')).gates[0]).toMatchObject({ kind: 'amendement', hash: 'h1', path: '/m/plan.proposed.md' })
-  await postInbox('T-1', { type: 'request-gate', kind: 'amendement', summary: 'b', path: '/m/plan.proposed.md', hash: 'h2' })
+  expect((await loadState('T-1')).gates[0]).toMatchObject({ kind: 'amendment', hash: 'h1', path: '/m/plan.proposed.md' })
+  await postInbox('T-1', { type: 'request-gate', kind: 'amendment', summary: 'b', path: '/m/plan.proposed.md', hash: 'h2' })
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.gates).toHaveLength(1)
-  // Mission bloquée : le résumé dit ce que changera la validation.
-  expect(s.gates[0]).toMatchObject({ summary: "b (mission bloquée : valider n'enlève pas le blocage)", hash: 'h2' })
+  // Mission blocked : le résumé dit ce que changera la validation.
+  expect(s.gates[0]).toMatchObject({ summary: "b (mission blocked : valider n'enlève pas le blocage)", hash: 'h2' })
 })
 
 test("classified : l'orchestrateur reçoit les chemins exacts de la spec et du plan", async () => {
@@ -428,7 +428,7 @@ test('spec validée mais absente du worktree : mission bloquée avec le chemin, 
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   await eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedReason).toContain(join(wt, specPath(s0)))
   expect(s.log.map((l) => l.msg).join('\n')).not.toContain('déjà commitée')
   expect(fx.callsOf('git.commitFiles')).toEqual([])
@@ -441,7 +441,7 @@ test('plan validé mais absent du worktree : mission bloquée avec le chemin', a
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   await eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedFrom).toBe('plan')
   expect(s.blockedReason).toContain(join(wt, planPath(s0)))
   expect(s.blockedReason).not.toContain('erreur du moteur')
@@ -458,7 +458,7 @@ test('au démarrage du moteur, les commandes restées en cours dans checks et pr
   const p2 = fx.herdr.addPane(proc.tabId, { x: 0, y: 30, width: 200, height: 30 }, 'base de test …')
   const a1 = fx.herdr.addPane(agents.tabId, { x: 0, y: 30, width: 200, height: 30 }, 'T1 · grok …')
   for (const p of [c1, p2, a1]) fx.herdr.pane(p).busy = true
-  await mission({ step: 'pr-ouverte', herdr: { workspace: ws, tabs: { checks, process: proc.tabId, agents: agents.tabId }, panes: {} } })
+  await mission({ step: 'pr-open', herdr: { workspace: ws, tabs: { checks, process: proc.tabId, agents: agents.tabId }, panes: {} } })
   fx.calls.length = 0
   await eng.run()
   const keys = fx.callsOf('herdr.paneSendKeys')
@@ -485,7 +485,7 @@ test('au démarrage du moteur, une mission bloquée arrête les agents des panne
   const live = fx.herdr.addPane(tab, { x: 0, y: 30, width: 200, height: 30 }, 'T2 · grok')
   for (const p of [done, live]) fx.herdr.pane(p).busy = true
   await mission({
-    step: 'bloquée',
+    step: 'blocked',
     blockedFrom: 'tasks',
     blockedReason: 'contrôle en échec',
     herdr: { workspace: ws, tabs: { agents: tab }, panes: {} },
@@ -513,14 +513,14 @@ test("un abandon validé arrête tous les agents de l'onglet agents", async () =
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   expect(await eng.tick()).toBe('stop')
   const s = await loadState('T-1')
-  expect(s.step).toBe('fermée')
+  expect(s.step).toBe('closed')
   expect(fx.herdr.pane(done).busy).toBe(false)
   expect(fx.herdr.pane(live).busy).toBe(false)
   expect(s.log.some((l) => l.msg.startsWith('abandon validé : agent(s) arrêté(s) dans'))).toBe(true)
 })
 
 test("orchestrator-started : le moteur enregistre que le prompt d'ouverture est parti", async () => {
-  await mission({ step: 'bloquée' })
+  await mission({ step: 'blocked' })
   const { eng } = engine()
   await postInbox('T-1', { type: 'orchestrator-started' })
   await eng.tick()

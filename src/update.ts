@@ -91,7 +91,7 @@ export async function runningMissions(): Promise<MissionState[]> {
     try {
       const s = await loadState(id)
       // Bloquée : rien ne tourne, et `reprendre` y ouvrirait une porte de reprise.
-      if (s.step !== 'pr-ouverte' && s.step !== 'fermée' && s.step !== 'bloquée') out.push(s)
+      if (s.step !== 'pr-open' && s.step !== 'closed' && s.step !== 'blocked') out.push(s)
     } catch {
       // état illisible ou dossier étranger : ignoré
     }
