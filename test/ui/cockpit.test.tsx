@@ -63,59 +63,90 @@ function fakePrCache(entries: Record<string, PrInfo> = {}) {
   }
 }
 
-test('la mission avec une porte est en tête et en ambre', async () => {
-  const active = mission('26110201-1', 'actif', '2026-11-02T10:00:00.000Z')
-  const gated = mission('26110201-2', 'avec-porte', '2026-11-01T10:00:00.000Z')
-  openGate(gated, 'spec', 'Spec à valider')
+test('the mission with a gate is first and amber', async () => {
+  const active = mission('26110201-1', 'active', '2026-11-02T10:00:00.000Z')
+  const gated = mission('26110201-2', 'with-gate', '2026-11-01T10:00:00.000Z')
+  openGate(gated, 'spec', 'Spec to approve')
   const { lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => [active, gated]} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140} />,
   )
-  await waitFor(lastFrame, '2 missions actives')
+  await waitFor(lastFrame, '2 active missions')
   const f = lastFrame()!
-  expect(f).toContain('herness · demo · 2 missions actives')
-  expect(f).toContain('1 porte en attente')
+  expect(f).toContain('herness · demo · 2 active missions')
+  expect(f).toContain('1 pending gate')
   const lines = f.split('\n')
-  const iGated = lines.findIndex((l) => l.includes('01-2') && l.includes('avec-porte'))
-  const iActive = lines.findIndex((l) => l.includes('01-1') && l.includes('actif'))
+  const iGated = lines.findIndex((l) => l.includes('01-2') && l.includes('with-gate'))
+  const iActive = lines.findIndex((l) => l.includes('01-1') && l.includes('active'))
   expect(iGated).toBeGreaterThan(-1)
   expect(iActive).toBeGreaterThan(iGated)
-  expect(lines[iGated]).toContain('porte g1')
-  // ambre (ink n'émet pas de couleurs sous test : on vérifie la couleur choisie)
+  expect(lines[iGated]).toContain('gate g1')
+  // amber (ink emits no colors under test: check the chosen color)
   expect(rowColor(gated)).toBe('yellow')
   expect(rowColor(active)).toBeUndefined()
-  // la sélection initiale est la première ligne : son détail est affiché
-  expect(f).toContain('Spec à valider')
+  // the initial selection is the first row: its detail is shown
+  expect(f).toContain('Spec to approve')
 })
 
-test('une PR mergée est masquée, visible après a', async () => {
-  const done = mission('26110201-3', 'livree', '2026-11-01T10:00:00.000Z')
+test('a merged PR is hidden, visible after f', async () => {
+  const done = mission('26110201-3', 'shipped', '2026-11-01T10:00:00.000Z')
   done.step = 'pr-open'
   done.prUrl = 'https://example.test/o/r/pull/7'
-  const active = mission('26110201-4', 'encours', '2026-11-02T10:00:00.000Z')
+  const active = mission('26110201-4', 'ongoing', '2026-11-02T10:00:00.000Z')
   const pr = fakePrCache({ [done.prUrl]: { state: 'MERGED', checkedAt: '2026-11-02T10:00:00.000Z' } })
   const { stdin, lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => [done, active]} actions={fakeActions().a} prCache={pr.cache} columns={140} />,
   )
-  await waitFor(lastFrame, 'encours')
-  expect(lastFrame()).toContain('encours')
-  expect(lastFrame()).not.toContain('livree')
-  // la PR mergée (masquée et déjà connue comme mergée) n'est pas revérifiée
+  await waitFor(lastFrame, 'ongoing')
+  expect(lastFrame()).toContain('ongoing')
+  expect(lastFrame()).not.toContain('shipped')
+  // the merged PR (hidden and already known merged) is not refreshed
   expect(pr.refreshed).toEqual([])
-  stdin.write('a')
-  await waitFor(lastFrame, 'livree')
-  expect(lastFrame()).toContain('livree')
+  stdin.write('f')
+  await waitFor(lastFrame, 'shipped')
+  expect(lastFrame()).toContain('shipped')
   expect(lastFrame()).toContain('PR #7')
-  stdin.write('a')
-  await waitGone(lastFrame, 'livree')
-  expect(lastFrame()).not.toContain('livree')
+  stdin.write('f')
+  await waitGone(lastFrame, 'shipped')
+  expect(lastFrame()).not.toContain('shipped')
 })
 
-test('PR CLOSED : fermée depuis plus de 7 jours masquée et jamais revérifiée ; pr-ouverte CLOSED visible et revérifiée', async () => {
-  const old = mission('26110201-31', 'abandonnee', '2026-10-01T10:00:00.000Z')
+test('no key triggers two actions with the detail open in the cockpit', async () => {
+  const visible = mission('26110201-50', 'open-one', '2026-11-02T10:00:00.000Z')
+  openGate(visible, 'spec', 'A')
+  const hidden = mission('26110201-51', 'done-one', '2026-11-01T10:00:00.000Z')
+  hidden.step = 'pr-open'
+  hidden.prUrl = 'https://example.test/o/r/pull/51'
+  const pr = fakePrCache({ [hidden.prUrl]: { state: 'MERGED', checkedAt: '2026-11-02T10:00:00.000Z' } })
+  const { a, calls } = fakeActions()
+  const { stdin, lastFrame } = render(
+    <Cockpit repoPath="/r" name="demo" load={async () => [visible, hidden]} actions={a} prCache={pr.cache} columns={140} />,
+  )
+  await waitFor(lastFrame, 'a approve')
+  expect(lastFrame()).toContain('a approve')
+  expect(lastFrame()).toContain('r reject')
+  expect(lastFrame()).toContain('f show finished')
+  expect(lastFrame()).toContain('+ new mission')
+  expect(lastFrame()).toContain('q quit')
+  expect(lastFrame()).not.toContain('done-one')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1')
+  stdin.write('\r')
+  await until(() => calls.filter((c) => c[0] === 'validate').length === 1)
+  expect(calls.filter((c) => c[0] === 'validate')).toEqual([['validate', '26110201-50', 'g1', undefined]])
+  expect(lastFrame()).not.toContain('done-one')
+  stdin.write('c')
+  await waitFor(lastFrame, 'Close 26110201-50 ?')
+  stdin.write('\r')
+  await until(() => calls.filter((c) => c[0] === 'close').length === 1)
+  expect(calls.map((c) => c[0])).toEqual(['validate', 'close'])
+})
+
+test('PR CLOSED: closed for more than 7 days is hidden and never refreshed; pr-open CLOSED is visible and refreshed', async () => {
+  const old = mission('26110201-31', 'abandoned', '2026-10-01T10:00:00.000Z')
   old.step = 'closed'
   old.prUrl = 'https://example.test/o/r/pull/31'
-  old.log = [{ at: '2026-10-20T10:00:00.000Z', msg: 'mission fermée (herness fermer)' }]
-  const open = mission('26110201-32', 'a-traiter', '2026-10-01T10:00:00.000Z')
+  old.log = [{ at: '2026-10-20T10:00:00.000Z', msg: 'mission closed (herness close)' }]
+  const open = mission('26110201-32', 'needs-action', '2026-10-01T10:00:00.000Z')
   open.step = 'pr-open'
   open.prUrl = 'https://example.test/o/r/pull/32'
   const closed = (at: string): PrInfo => ({ state: 'CLOSED', checkedAt: at })
@@ -124,213 +155,213 @@ test('PR CLOSED : fermée depuis plus de 7 jours masquée et jamais revérifiée
     <Cockpit repoPath="/r" name="demo" load={async () => [old, open]} actions={fakeActions().a} prCache={pr.cache} columns={140}
       now={() => new Date('2026-11-02T10:00:00.000Z')} intervalMs={20} />,
   )
-  await waitFor(lastFrame, 'a-traiter')
-  expect(lastFrame()).toContain('a-traiter')
-  expect(lastFrame()).not.toContain('abandonnee')
-  stdin.write('a')
-  await waitFor(lastFrame, 'abandonnee')
+  await waitFor(lastFrame, 'needs-action')
+  expect(lastFrame()).toContain('needs-action')
+  expect(lastFrame()).not.toContain('abandoned')
+  stdin.write('f')
+  await waitFor(lastFrame, 'abandoned')
   await until(() => pr.refreshed.length > 0)
-  expect(lastFrame()).toContain('abandonnee')
+  expect(lastFrame()).toContain('abandoned')
   expect(pr.refreshed.length).toBeGreaterThan(0)
   expect(pr.refreshed.flat()).not.toContain(old.prUrl)
   expect(pr.refreshed.flat()).toContain(open.prUrl)
 })
 
-test('↓ puis v puis Entrée valide la porte de la deuxième mission', async () => {
-  const first = mission('26110201-5', 'premiere', '2026-11-02T10:00:00.000Z')
-  const second = mission('26110201-6', 'seconde', '2026-11-01T10:00:00.000Z')
+test('down then a then Enter approves the second mission gate', async () => {
+  const first = mission('26110201-5', 'first', '2026-11-02T10:00:00.000Z')
+  const second = mission('26110201-6', 'second', '2026-11-01T10:00:00.000Z')
   openGate(first, 'spec', 'A')
   openGate(second, 'plan', 'B')
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => [first, second]} actions={a} prCache={fakePrCache().cache} columns={140} intervalMs={20} />,
   )
-  await waitFor(lastFrame, 'premiere')
+  await waitFor(lastFrame, 'first')
   stdin.write('\u001b[B')
-  await waitFor(lastFrame, '26110201-6 · feat/26110201-6-seconde')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1 (plan) de 01-6 ?')
+  await waitFor(lastFrame, '26110201-6 · feat/26110201-6-second')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1 (plan) of 01-6 ?')
   expect(calls).toEqual([])
-  expect(lastFrame()).toContain('Valider g1 (plan) de 01-6 ?')
+  expect(lastFrame()).toContain('Approve g1 (plan) of 01-6 ?')
   stdin.write('\r')
   await until(() => calls.length === 1)
-  await waitFor(lastFrame, 'g1 validée')
+  await waitFor(lastFrame, 'g1 approved')
   expect(calls).toEqual([['validate', '26110201-6', 'g1', undefined]])
-  expect(lastFrame()).toContain('g1 validée')
+  expect(lastFrame()).toContain('g1 approved')
 })
 
-test('+ puis texte puis Entrée appelle startNew et affiche son erreur', async () => {
+test('+ then text then Enter calls startNew and shows its error', async () => {
   const { a, calls } = fakeActions({
-    startNew: async (input) => { calls.push(['startNew', input]); return { ok: false, lines: ['mission déjà existante'] } },
+    startNew: async (input) => { calls.push(['startNew', input]); return { ok: false, lines: ['mission already exists'] } },
   })
-  const s = mission('26110201-7', 'seule', '2026-11-02T10:00:00.000Z')
+  const s = mission('26110201-7', 'only', '2026-11-02T10:00:00.000Z')
   openGate(s, 'spec', 'A')
   const { stdin, lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={a} prCache={fakePrCache().cache} columns={140} />,
   )
-  await waitFor(lastFrame, 'seule')
+  await waitFor(lastFrame, 'only')
   stdin.write('+')
-  await waitFor(lastFrame, 'Lien Wrike, issue GitHub ou texte :')
-  expect(lastFrame()).toContain('Lien Wrike, issue GitHub ou texte :')
-  stdin.write('voir q et a')
-  await waitFor(lastFrame, 'voir q et a')
-  expect(lastFrame()).toContain('voir q et a')
+  await waitFor(lastFrame, 'Wrike link, GitHub issue, or text:')
+  expect(lastFrame()).toContain('Wrike link, GitHub issue, or text:')
+  stdin.write('see q and a')
+  await waitFor(lastFrame, 'see q and a')
+  expect(lastFrame()).toContain('see q and a')
   stdin.write('\r')
   await waitFor(lastFrame, NOTE_LABEL)
   stdin.write('\x13')
   await until(() => calls.length === 1)
-  await waitFor(lastFrame, 'mission déjà existante')
-  await waitGone(lastFrame, 'Lien Wrike, issue GitHub ou texte :')
-  expect(calls).toEqual([['startNew', 'voir q et a']])
-  expect(lastFrame()).toContain('mission déjà existante')
-  expect(lastFrame()).not.toContain('Lien Wrike, issue GitHub ou texte :')
+  await waitFor(lastFrame, 'mission already exists')
+  await waitGone(lastFrame, 'Wrike link, GitHub issue, or text:')
+  expect(calls).toEqual([['startNew', 'see q and a']])
+  expect(lastFrame()).toContain('mission already exists')
+  expect(lastFrame()).not.toContain('Wrike link, GitHub issue, or text:')
 })
 
-test('un échec de startNew garde les KO et l erreur finale', async () => {
-  const lines = ['OK git : présent', 'KO gh : non connecté', 'OK node : 24', 'OK a', 'OK b', 'OK c', 'OK d', 'environnement incomplet : corrige les KO ci-dessus']
+test('a startNew failure keeps the KO lines and the final error', async () => {
+  const lines = ['OK git: present', 'KO gh: not connected', 'OK node : 24', 'OK a', 'OK b', 'OK c', 'OK d', 'incomplete environment: fix the KO lines above']
   const pending: { fn: () => void; ms: number }[] = []
   const timer = (fn: () => void, ms: number) => { const e = { fn, ms }; pending.push(e); return () => { pending.splice(pending.indexOf(e), 1) } }
   const { a } = fakeActions({ startNew: async () => ({ ok: false, lines }) })
   const { stdin, lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => []} actions={a} prCache={fakePrCache().cache} columns={140} timer={timer} />,
   )
-  await waitFor(lastFrame, 'aucune mission')
+  await waitFor(lastFrame, 'no missions')
   stdin.write('+')
-  await waitFor(lastFrame, 'Lien Wrike')
-  stdin.write('texte')
-  await waitFor(lastFrame, 'texte▏')
+  await waitFor(lastFrame, 'Wrike link')
+  stdin.write('text')
+  await waitFor(lastFrame, 'text▏')
   stdin.write('\r')
   await waitFor(lastFrame, NOTE_LABEL)
   stdin.write('\x13')
-  await waitFor(lastFrame, 'environnement incomplet')
-  expect(lastFrame()).toContain('KO gh : non connecté')
-  expect(lastFrame()).toContain('environnement incomplet')
+  await waitFor(lastFrame, 'incomplete environment')
+  expect(lastFrame()).toContain('KO gh: not connected')
+  expect(lastFrame()).toContain('incomplete environment')
   expect(lastFrame()).not.toContain('OK d')
-  // seul le message « démarrage… » (réussi) a une expiration, annulée par l'erreur
+  // only the successful starting message expires, and the error cancels it
   expect(pending).toEqual([])
 })
 
-test('+ pendant une fermeture est refusé ; la confirmation interne n est jamais active avec un champ', async () => {
+test('+ during a close is refused; the internal confirmation is never active with a field', async () => {
   let go: () => void = () => {}
   let answer: boolean | undefined
   const { a, calls } = fakeActions({
     close: async (id, confirm) => {
       calls.push(['close', id])
       await new Promise<void>((r) => { go = r })
-      answer = await confirm('Fermer quand même ?')
+      answer = await confirm('Close anyway?')
       return { ok: true, lines: [] }
     },
   })
-  const s = mission('26110201-33', 'fermer', '2026-11-02T10:00:00.000Z')
+  const s = mission('26110201-33', 'closing', '2026-11-02T10:00:00.000Z')
   const { stdin, lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={a} prCache={fakePrCache().cache} columns={140} />,
   )
-  await waitFor(lastFrame, 'fermer')
-  stdin.write('f')
-  await waitFor(lastFrame, 'Fermer 26110201-33 ?')
+  await waitFor(lastFrame, 'closing')
+  stdin.write('c')
+  await waitFor(lastFrame, 'Close 26110201-33 ?')
   stdin.write('\r')
   await until(() => calls.length === 1)
   stdin.write('+')
-  await waitFor(lastFrame, 'action en cours')
-  expect(lastFrame()).not.toContain('Lien Wrike')
-  expect(lastFrame()).toContain('action en cours')
+  await waitFor(lastFrame, 'action in progress')
+  expect(lastFrame()).not.toContain('Wrike link')
+  expect(lastFrame()).toContain('action in progress')
   go()
-  await waitFor(lastFrame, 'Fermer quand même ?')
-  expect(lastFrame()).toContain('Fermer quand même ?')
-  expect(lastFrame()).not.toContain('Lien Wrike')
+  await waitFor(lastFrame, 'Close anyway?')
+  expect(lastFrame()).toContain('Close anyway?')
+  expect(lastFrame()).not.toContain('Wrike link')
   stdin.write('\r')
   await until(() => answer === true)
-  await waitGone(lastFrame, 'Fermer quand même ?')
-  await waitGone(lastFrame, 'action en cours')
+  await waitGone(lastFrame, 'Close anyway?')
+  await waitGone(lastFrame, 'action in progress')
   expect(answer).toBe(true)
   expect(calls).toEqual([['close', '26110201-33']])
   stdin.write('+')
-  await waitFor(lastFrame, 'Lien Wrike')
-  expect(lastFrame()).toContain('Lien Wrike')
+  await waitFor(lastFrame, 'Wrike link')
+  expect(lastFrame()).toContain('Wrike link')
 })
 
-const NOTE_LABEL = 'Note pour la mission (facultatif)'
+const NOTE_LABEL = 'Note for the mission (optional)'
 
-test('+ puis lien puis note : startNew reçoit la note ; Échap sur la note annule', async () => {
+test('+ then link then note: startNew receives the note; Esc on the note cancels', async () => {
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => []} actions={a} prCache={fakePrCache().cache} columns={140} />,
   )
-  await waitFor(lastFrame, 'aucune mission')
+  await waitFor(lastFrame, 'no missions')
   stdin.write('+')
-  await waitFor(lastFrame, 'Lien Wrike')
+  await waitFor(lastFrame, 'Wrike link')
   stdin.write('https://www.wrike.com/open.htm?id=1')
   await waitFor(lastFrame, 'id=1▏')
   stdin.write('\r')
   await waitFor(lastFrame, NOTE_LABEL)
-  expect(lastFrame()).not.toContain('Lien Wrike')
+  expect(lastFrame()).not.toContain('Wrike link')
   stdin.write('\u001b')
-  await waitFor(lastFrame, 'lancement annulé')
+  await waitFor(lastFrame, 'start cancelled')
   expect(calls).toEqual([])
 
   stdin.write('+')
-  await waitFor(lastFrame, 'Lien Wrike')
+  await waitFor(lastFrame, 'Wrike link')
   stdin.write('https://www.wrike.com/open.htm?id=1')
   await waitFor(lastFrame, 'id=1▏')
   stdin.write('\r')
   await waitFor(lastFrame, NOTE_LABEL)
-  stdin.write('pas le PDF')
-  await waitFor(lastFrame, 'pas le PDF▏')
+  stdin.write('skip the PDF')
+  await waitFor(lastFrame, 'skip the PDF▏')
   stdin.write('\r')
-  stdin.write('base vide')
-  await waitFor(lastFrame, 'base vide▏')
+  stdin.write('empty base')
+  await waitFor(lastFrame, 'empty base▏')
   stdin.write('\x13')
   await until(() => calls.length === 1)
-  expect(calls).toEqual([['startNew', 'https://www.wrike.com/open.htm?id=1', 'pas le PDF\nbase vide']])
+  expect(calls).toEqual([['startNew', 'https://www.wrike.com/open.htm?id=1', 'skip the PDF\nempty base']])
   await waitGone(lastFrame, NOTE_LABEL)
 })
 
-test('+ puis lien vide : pas de champ note', async () => {
+test('+ then an empty link: no note field', async () => {
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => []} actions={a} prCache={fakePrCache().cache} columns={140} />,
   )
-  await waitFor(lastFrame, 'aucune mission')
+  await waitFor(lastFrame, 'no missions')
   stdin.write('+')
-  await waitFor(lastFrame, 'Lien Wrike')
+  await waitFor(lastFrame, 'Wrike link')
   stdin.write('\r')
-  await waitFor(lastFrame, 'demande vide : rien à démarrer')
+  await waitFor(lastFrame, 'empty request: nothing to start')
   expect(lastFrame()).not.toContain(NOTE_LABEL)
   expect(calls).toEqual([])
 })
 
-test('+ puis Échap annule sans démarrer', async () => {
+test('+ then Esc cancels without starting', async () => {
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => []} actions={a} prCache={fakePrCache().cache} columns={140} />,
   )
-  await waitFor(lastFrame, 'aucune mission')
+  await waitFor(lastFrame, 'no missions')
   stdin.write('+')
-  await waitFor(lastFrame, 'Lien Wrike')
+  await waitFor(lastFrame, 'Wrike link')
   stdin.write('abc')
   await waitFor(lastFrame, 'abc▏')
   stdin.write('\u001b')
-  await waitGone(lastFrame, 'Lien Wrike')
-  expect(lastFrame()).not.toContain('Lien Wrike')
+  await waitGone(lastFrame, 'Wrike link')
+  expect(lastFrame()).not.toContain('Wrike link')
   expect(calls).toEqual([])
-  expect(lastFrame()).toContain('aucune mission')
+  expect(lastFrame()).toContain('no missions')
 })
 
-test('état illisible : la liste garde les autres missions', async () => {
-  await saveState(mission('26110201-8', 'lisible', '2026-11-02T10:00:00.000Z', '/projet'))
-  await saveState(mission('26110201-9', 'autre-projet', '2026-11-02T10:00:00.000Z', '/ailleurs'))
+test('unreadable state: the list keeps the other missions', async () => {
+  await saveState(mission('26110201-8', 'readable', '2026-11-02T10:00:00.000Z', '/project'))
+  await saveState(mission('26110201-9', 'other-project', '2026-11-02T10:00:00.000Z', '/elsewhere'))
   await mkdir(missionDir('26110201-10'), { recursive: true })
-  await writeFile(join(missionDir('26110201-10'), 'state.json'), '{ pas du json')
+  await writeFile(join(missionDir('26110201-10'), 'state.json'), '{ not json')
   const { lastFrame } = render(
-    <Cockpit repoPath="/projet" name="demo" actions={fakeActions().a} prCache={fakePrCache().cache} columns={140} />,
+    <Cockpit repoPath="/project" name="demo" actions={fakeActions().a} prCache={fakePrCache().cache} columns={140} />,
   )
-  await waitFor(lastFrame, '1 mission active')
-  expect(lastFrame()).toContain('lisible')
-  expect(lastFrame()).not.toContain('autre-projet')
-  expect(lastFrame()).toContain('1 mission active')
+  await waitFor(lastFrame, '1 active mission')
+  expect(lastFrame()).toContain('readable')
+  expect(lastFrame()).not.toContain('other-project')
+  expect(lastFrame()).toContain('1 active mission')
 })
 
-test('la sélection suit la mission à travers les relectures', async () => {
+test('the selection follows the mission across reloads', async () => {
   const x = mission('26110201-11', 'xx', '2026-11-02T10:00:00.000Z')
   const y = mission('26110201-12', 'yy', '2026-11-01T10:00:00.000Z')
   let list = [x, y]
@@ -341,18 +372,18 @@ test('la sélection suit la mission à travers les relectures', async () => {
   stdin.write('\u001b[B')
   await waitFor(lastFrame, '26110201-12 · feat/26110201-12-yy')
   expect(lastFrame()).toContain('26110201-12 · feat/26110201-12-yy')
-  // une nouvelle mission plus récente arrive en tête : la sélection reste sur y
+  // a newer mission arrives first: the selection stays on y
   const z = mission('26110201-13', 'zz', '2026-11-03T10:00:00.000Z')
   list = [z, x, y]
   await waitFor(lastFrame, 'zz')
   expect(lastFrame()).toContain('26110201-12 · feat/26110201-12-yy')
-  // y disparaît : retour à la première ligne
+  // y disappears: back to the first row
   list = [z, x]
   await waitFor(lastFrame, '26110201-13 · feat/26110201-13-zz')
   expect(lastFrame()).toContain('26110201-13 · feat/26110201-13-zz')
 })
 
-test('sans ↓ préalable, la sélection reste sur la mission affichée quand la liste se réordonne', async () => {
+test('without a prior down key, the selection stays on the shown mission when the list reorders', async () => {
   const x = mission('26110201-20', 'xx', '2026-11-02T10:00:00.000Z')
   let list = [x]
   const { lastFrame } = render(
@@ -365,10 +396,10 @@ test('sans ↓ préalable, la sélection reste sur la mission affichée quand la
   expect(lastFrame()).toContain('26110201-20 · feat/26110201-20-xx')
 })
 
-test('une relecture lente ne chevauche pas la suivante et un résultat périmé n est pas appliqué', async () => {
-  const stale = mission('26110201-22', 'vieux', '2026-11-02T10:00:00.000Z')
+test('a slow reload does not overlap the next one and a stale result is not applied', async () => {
+  const stale = mission('26110201-22', 'old', '2026-11-02T10:00:00.000Z')
   openGate(stale, 'spec', 'A')
-  const fresh = { ...stale, slug: 'neuf', gates: stale.gates.map((g) => ({ ...g, status: 'approved' as const })) }
+  const fresh = { ...stale, slug: 'fresh', gates: stale.gates.map((g) => ({ ...g, status: 'approved' as const })) }
   let calls = 0
   let release: () => void = () => {}
   const gate = new Promise<void>((r) => { release = r })
@@ -384,16 +415,16 @@ test('une relecture lente ne chevauche pas la suivante et un résultat périmé 
     <Cockpit repoPath="/r" name="demo" load={load} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140} intervalMs={20} />,
   )
   await until(() => calls === 1)
-  await tick(90) // absence : tant que la première relecture dure, aucune autre ne démarre
+  await tick(90) // absence: while the first reload runs, no other one starts
   expect(calls).toBe(1)
   release()
   await until(() => calls > 1)
-  await waitFor(lastFrame, ' neuf ')
-  expect(lastFrame()).toContain(' neuf ')
-  expect(lastFrame()).not.toContain('porte en attente')
+  await waitFor(lastFrame, ' fresh ')
+  expect(lastFrame()).toContain(' fresh ')
+  expect(lastFrame()).not.toContain('pending gate')
 })
 
-test('un rafraîchissement des PR lent n est pas relancé à chaque relecture', async () => {
+test('a slow PR refresh is not started again on every reload', async () => {
   const s = mission('26110201-23', 'pr', '2026-11-02T10:00:00.000Z')
   s.step = 'pr-open'
   s.prUrl = 'https://example.test/o/r/pull/8'
@@ -403,14 +434,14 @@ test('un rafraîchissement des PR lent n est pas relancé à chaque relecture', 
   const cache = { get: () => undefined, refresh: async () => { refreshes++; await slow } }
   render(<Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={fakeActions().a} prCache={cache} columns={140} intervalMs={20} />)
   await until(() => refreshes === 1)
-  await tick(100) // absence : plusieurs relectures passent sans relancer le rafraîchissement
+  await tick(100) // absence: several reloads pass without starting the refresh again
   expect(refreshes).toBe(1)
   release()
   await until(() => refreshes >= 2)
   expect(refreshes).toBeGreaterThanOrEqual(2)
 })
 
-test('un rafraîchissement des PR qui lève n affiche pas l erreur de lecture', async () => {
+test('a PR refresh that throws does not show the read error', async () => {
   const s = mission('26110201-24', 'pr', '2026-11-02T10:00:00.000Z')
   s.step = 'pr-open'
   s.prUrl = 'https://example.test/o/r/pull/9'
@@ -419,38 +450,38 @@ test('un rafraîchissement des PR qui lève n affiche pas l erreur de lecture', 
     <Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={fakeActions().a} prCache={cache} columns={140} intervalMs={20} />,
   )
   await waitFor(lastFrame, 'PR #9')
-  await tick(60) // absence : on laisse passer une relecture
+  await tick(60) // absence: let one reload pass
   expect(lastFrame()).toContain('PR #9')
-  expect(lastFrame()).not.toContain('lecture des missions impossible')
+  expect(lastFrame()).not.toContain('cannot read missions')
 })
 
-test('seules les PR visibles et non mergées sont rafraîchies', async () => {
-  const open = mission('26110201-25', 'ouverte', '2026-11-02T10:00:00.000Z')
+test('only visible non-merged PRs are refreshed', async () => {
+  const open = mission('26110201-25', 'open-pr', '2026-11-02T10:00:00.000Z')
   open.step = 'pr-open'
   open.prUrl = 'https://example.test/o/r/pull/10'
-  const merged = mission('26110201-26', 'mergee', '2026-11-01T10:00:00.000Z')
+  const merged = mission('26110201-26', 'merged-pr', '2026-11-01T10:00:00.000Z')
   merged.step = 'pr-open'
   merged.prUrl = 'https://example.test/o/r/pull/11'
   const pr = fakePrCache({ [merged.prUrl]: { state: 'MERGED', checkedAt: '2026-11-02T10:00:00.000Z' } })
   const { stdin, lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => [open, merged]} actions={fakeActions().a} prCache={pr.cache} columns={140} intervalMs={20} />,
   )
-  await waitFor(lastFrame, 'ouverte')
-  stdin.write('a')
-  await waitFor(lastFrame, 'mergee')
+  await waitFor(lastFrame, 'open-pr')
+  stdin.write('f')
+  await waitFor(lastFrame, 'merged-pr')
   await until(() => pr.refreshed.length > 0)
   expect(pr.refreshed.length).toBeGreaterThan(0)
   for (const urls of pr.refreshed) expect(urls).toEqual([open.prUrl])
 })
 
-test('q quitte quand rien n est ouvert : la relecture s arrête', async () => {
+test('q quits when nothing is open: reloading stops', async () => {
   let calls = 0
   const { stdin } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => { calls++; return [] }} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140} intervalMs={20} />,
   )
   await until(() => calls > 0)
   stdin.write('q')
-  // la relecture s'arrête : le compteur reste stable sur plus d'une période
+  // reloading stops: the counter stays stable for more than one period
   let last = -1
   await until(() => { const stable = calls === last; last = calls; return stable }, 3000, 60)
   const n = calls
@@ -458,7 +489,7 @@ test('q quitte quand rien n est ouvert : la relecture s arrête', async () => {
   expect(calls).toBe(n)
 })
 
-test('le démontage arrête la relecture', async () => {
+test('unmount stops reloading', async () => {
   let calls = 0
   const { unmount } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => { calls++; return [] }} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140} intervalMs={20} />,
@@ -470,7 +501,7 @@ test('le démontage arrête la relecture', async () => {
   expect(calls).toBe(n)
 })
 
-test('une liste réordonnée pendant la confirmation garde la mission et la porte visées', async () => {
+test('a list reordered during confirmation keeps the targeted mission and gate', async () => {
   const x = mission('26110201-27', 'xx', '2026-11-02T10:00:00.000Z')
   openGate(x, 'spec', 'A')
   let list = [x]
@@ -479,9 +510,9 @@ test('une liste réordonnée pendant la confirmation garde la mission et la port
     <Cockpit repoPath="/r" name="demo" load={async () => list} actions={a} prCache={fakePrCache().cache} columns={140} intervalMs={20} />,
   )
   await waitFor(lastFrame, '26110201-27 · feat/26110201-27-xx')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1 (spec) de 01-27 ?')
-  expect(lastFrame()).toContain('Valider g1 (spec) de 01-27 ?')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1 (spec) of 01-27 ?')
+  expect(lastFrame()).toContain('Approve g1 (spec) of 01-27 ?')
   const y = mission('26110201-28', 'yy', '2026-11-03T10:00:00.000Z')
   openGate(y, 'plan', 'B')
   list = [y, x]
@@ -491,7 +522,7 @@ test('une liste réordonnée pendant la confirmation garde la mission et la port
   expect(calls).toEqual([['validate', '26110201-27', 'g1', undefined]])
 })
 
-test('le choix v/r d une note vise la mission de son ouverture, même disparue de la liste', async () => {
+test('the a/r choice of a note targets the mission from when it opened, even if it left the list', async () => {
   const x = mission('26110201-34', 'xx', '2026-11-02T10:00:00.000Z')
   openGate(x, 'spec', 'A')
   const y = mission('26110201-35', 'yy', '2026-11-01T10:00:00.000Z')
@@ -503,23 +534,23 @@ test('le choix v/r d une note vise la mission de son ouverture, même disparue d
   )
   await waitFor(lastFrame, '26110201-34 · feat/26110201-34-xx')
   stdin.write('n')
-  await waitFor(lastFrame, 'ctrl+s valider · ctrl+e éditeur')
+  await waitFor(lastFrame, 'ctrl+s submit · ctrl+e editor')
   stdin.write('voir')
   await waitFor(lastFrame, 'voir▏')
   stdin.write('\x13')
-  await waitFor(lastFrame, 'v valider · r refuser · échap annuler')
-  expect(lastFrame()).toContain('v valider · r refuser · échap annuler')
+  await waitFor(lastFrame, 'a approve · r reject · esc cancel')
+  expect(lastFrame()).toContain('a approve · r reject · esc cancel')
   list = [y]
   await waitGone(lastFrame, '01-34')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1 (spec) de 01-34 ?')
-  expect(lastFrame()).toContain('Valider g1 (spec) de 01-34 ?')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1 (spec) of 01-34 ?')
+  expect(lastFrame()).toContain('Approve g1 (spec) of 01-34 ?')
   stdin.write('\r')
   await until(() => calls.length === 1)
   expect(calls).toEqual([['validate', '26110201-34', 'g1', 'voir']])
 })
 
-test('q quitte seulement hors saisie', async () => {
+test('q quits only outside an input', async () => {
   const s = mission('26110201-14', 'q', '2026-11-02T10:00:00.000Z')
   openGate(s, 'spec', 'A')
   const { a, calls } = fakeActions()
@@ -528,18 +559,18 @@ test('q quitte seulement hors saisie', async () => {
   )
   await waitFor(lastFrame, '26110201-14 · feat')
   stdin.write('r')
-  await waitFor(lastFrame, 'ctrl+s valider · ctrl+e éditeur')
-  stdin.write('quoi')
-  await waitFor(lastFrame, 'quoi▏')
+  await waitFor(lastFrame, 'ctrl+s submit · ctrl+e editor')
+  stdin.write('why')
+  await waitFor(lastFrame, 'why▏')
   stdin.write('\x13')
-  await waitFor(lastFrame, 'Refuser g1 (spec) de 01-14 ?')
+  await waitFor(lastFrame, 'Reject g1 (spec) of 01-14 ?')
   stdin.write('\r')
   await until(() => calls.length === 1)
-  expect(calls).toEqual([['refuse', '26110201-14', 'g1', 'quoi']])
-  expect(lastFrame()).toContain('q quitter')
+  expect(calls).toEqual([['refuse', '26110201-14', 'g1', 'why']])
+  expect(lastFrame()).toContain('q quit')
 })
 
-test('R depuis le cockpit redémarre directement', async () => {
+test('R from the cockpit restarts directly', async () => {
   const s = mission('26110201-15', 'r', '2026-11-02T10:00:00.000Z')
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(
@@ -551,14 +582,14 @@ test('R depuis le cockpit redémarre directement', async () => {
   expect(calls).toEqual([['restart', '26110201-15', false]])
 })
 
-test('le cockpit affiche le bandeau de version sous le titre', async () => {
-  const s = mission('26110201-40', 'bandeau', '2026-11-02T10:00:00.000Z')
-  const message = 'herness 0.8.0 installé, ce cockpit tourne en 0.6.0 : quitte-le et relance herness'
+test('the cockpit shows the version banner under the title', async () => {
+  const s = mission('26110201-40', 'banner', '2026-11-02T10:00:00.000Z')
+  const message = 'herness 0.8.0 is installed, this cockpit is running 0.6.0: quit and start herness again'
   const { lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140}
       notice={() => message} />,
   )
-  await waitFor(lastFrame, 'installé, ce cockpit tourne en')
+  await waitFor(lastFrame, 'is installed, this cockpit is running')
   const lines = lastFrame()!.split('\n')
   const iTitle = lines.findIndex((l) => l.includes('herness · demo'))
   const iNotice = lines.findIndex((l) => l.includes(message))
@@ -566,59 +597,59 @@ test('le cockpit affiche le bandeau de version sous le titre', async () => {
   expect(iNotice).toBeGreaterThan(iTitle)
 })
 
-test('pas de bandeau quand notice renvoie null', async () => {
-  const s = mission('26110201-41', 'sans-bandeau', '2026-11-02T10:00:00.000Z')
+test('no banner when notice returns null', async () => {
+  const s = mission('26110201-41', 'no-banner', '2026-11-02T10:00:00.000Z')
   const { lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140}
       notice={() => null} />,
   )
-  await waitFor(lastFrame, 'sans-bandeau')
-  expect(lastFrame()).not.toContain('installé, ce cockpit tourne en')
+  await waitFor(lastFrame, 'no-banner')
+  expect(lastFrame()).not.toContain('is installed, this cockpit is running')
 })
 
-test('le bandeau suit les rafraîchissements', async () => {
+test('the banner follows refreshes', async () => {
   let text: string | null = null
-  const message = 'herness 0.8.0 installé, ce cockpit tourne en 0.6.0 : quitte-le et relance herness'
+  const message = 'herness 0.8.0 is installed, this cockpit is running 0.6.0: quit and start herness again'
   const { lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => []} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140}
       intervalMs={20} notice={() => text} />,
   )
-  await waitFor(lastFrame, 'aucune mission')
-  expect(lastFrame()).not.toContain('installé, ce cockpit tourne en')
+  await waitFor(lastFrame, 'no missions')
+  expect(lastFrame()).not.toContain('is installed, this cockpit is running')
   text = message
   await waitFor(lastFrame, message)
   expect(lastFrame()).toContain(message)
 })
 
-test("une notice qui lève n'empêche pas l'affichage des missions", async () => {
-  const s = mission('26110201-42', 'malgre-notice', '2026-11-02T10:00:00.000Z')
+test("a notice that throws does not prevent showing missions", async () => {
+  const s = mission('26110201-42', 'despite-notice', '2026-11-02T10:00:00.000Z')
   const { lastFrame } = render(
     <Cockpit repoPath="/r" name="demo" load={async () => [s]} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140}
       notice={() => { throw new Error('x') }} />,
   )
-  await waitFor(lastFrame, 'malgre-notice')
-  expect(lastFrame()).toContain('malgre-notice')
-  expect(lastFrame()).not.toContain('installé, ce cockpit tourne en')
+  await waitFor(lastFrame, 'despite-notice')
+  expect(lastFrame()).toContain('despite-notice')
+  expect(lastFrame()).not.toContain('is installed, this cockpit is running')
 })
 
-test("le bandeau s'affiche même quand la lecture des missions échoue", async () => {
-  const message = 'herness 0.8.0 installé, ce cockpit tourne en 0.6.0 : quitte-le et relance herness'
+test("the banner shows even when reading missions fails", async () => {
+  const message = 'herness 0.8.0 is installed, this cockpit is running 0.6.0: quit and start herness again'
   const { lastFrame } = render(
-    <Cockpit repoPath="/r" name="demo" load={async () => { throw new Error('illisible') }} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140}
+    <Cockpit repoPath="/r" name="demo" load={async () => { throw new Error('unreadable') }} actions={fakeActions().a} prCache={fakePrCache().cache} columns={140}
       notice={() => message} />,
   )
   await waitFor(lastFrame, message)
-  expect(lastFrame()).toContain('lecture des missions impossible')
+  expect(lastFrame()).toContain('cannot read missions')
 })
 
-test('herness cockpit hors TTY affiche une image et sort', async () => {
+test('herness cockpit outside a TTY shows a snapshot and exits', async () => {
   const projects = await mkdtemp(join(tmpdir(), 'herness-projects-'))
   const repo = await realpath(await mkdtemp(join(tmpdir(), 'herness-repo-')))
   try {
     await mkdir(join(projects, 'demo'), { recursive: true })
     await writeFile(join(projects, 'demo', 'config.ts'), `export default ${JSON.stringify({ ...demo, repoPath: repo })}\n`)
     const s = mission('26110201-16', 'image', '2026-11-02T10:00:00.000Z', repo)
-    openGate(s, 'spec', 'Spec de test')
+    openGate(s, 'spec', 'Test spec')
     await saveState(s)
     const r = await execa('node', [resolve('bin/herness.js'), 'cockpit'], {
       reject: false,
@@ -630,9 +661,9 @@ test('herness cockpit hors TTY affiche une image et sort', async () => {
     })
     expect(r.stderr).toBe('')
     expect(r.exitCode).toBe(0)
-    expect(r.stdout).toContain('herness · demo · 1 mission active')
+    expect(r.stdout).toContain('herness · demo · 1 active mission')
     expect(r.stdout).toContain('image')
-    expect(r.stdout).toContain('Spec de test')
+    expect(r.stdout).toContain('Test spec')
   } finally {
     await rm(projects, { recursive: true, force: true })
     await rm(repo, { recursive: true, force: true })

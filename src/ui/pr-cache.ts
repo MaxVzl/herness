@@ -22,13 +22,13 @@ export class PrCache {
         }
       }
     } catch {
-      // fichier absent ou illisible : cache vide
+      // missing or unreadable file: empty cache
     }
     return out
   }
 
   private entries: Record<string, PrInfo> = {}
-  /** Dernier appel à gh par URL, réussi ou non : un gh en échec n'est pas rappelé à chaque rafraîchissement. */
+  /** Last gh call per URL, success or not: a failed gh is not called again on every refresh. */
   private lastAttempt: Record<string, number> = {}
 
   constructor(
@@ -59,12 +59,12 @@ export class PrCache {
         this.entries[url] = { state: state as PrInfo['state'], checkedAt: this.now().toISOString() }
         changed = true
       } catch {
-        // gh absent, réseau coupé, sortie invalide : on garde l'entrée existante
+        // gh missing, network down, invalid output: keep the existing entry
       }
     }
     if (!changed) return
     try {
-      // Relit juste avant d'écrire : on garde l'entrée la plus récente de chaque URL (autre instance possible).
+      // Reread just before writing: keep the newest entry for each URL (another instance may exist).
       const merged = this.readFile()
       for (const [url, e] of Object.entries(this.entries)) {
         const o = merged[url]
@@ -76,7 +76,7 @@ export class PrCache {
       await writeFile(tmp, JSON.stringify(merged, null, 2) + '\n')
       await rename(tmp, this.file)
     } catch {
-      // cache non persisté : sans conséquence
+      // cache not persisted: no consequence
     }
   }
 }

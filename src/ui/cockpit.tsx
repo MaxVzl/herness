@@ -11,29 +11,29 @@ import { LineInput, NoteInput } from './inputs.tsx'
 import { bucketOf, isHidden, needsPrRefresh, projectMissions, shortId, sortMissions, statusLabel, type Bucket, type PrInfo } from './model.ts'
 import { PrCache } from './pr-cache.ts'
 
-/** Gestes du cockpit : ceux d'une mission, plus le démarrage d'une nouvelle mission. */
+/** Cockpit gestures: a mission's gestures, plus starting a new mission. */
 export interface CockpitActions extends MissionActions {
   startNew(input: string, note?: string): Promise<ActionResult>
 }
 
-/** Ce que le cockpit utilise du cache des PR (injectable pour les tests). */
+/** What the cockpit uses from the PR cache (injectable for tests). */
 export interface PrLookup {
   get(url: string): PrInfo | undefined
   refresh(urls: string[]): Promise<void>
 }
 
 const NARROW_COLUMNS = 100
-const NEW_MISSION_LABEL = 'Lien Wrike, issue GitHub ou texte :'
-const NOTE_LABEL = 'Note pour la mission (facultatif)'
+const NEW_MISSION_LABEL = 'Wrike link, GitHub issue, or text:'
+const NOTE_LABEL = 'Note for the mission (optional)'
 
 const BUCKET_COLOR: Record<Bucket, string | undefined> = {
   decision: 'yellow',
-  bloquee: 'red',
+  blocked: 'red',
   active: undefined,
-  terminee: 'gray',
+  finished: 'gray',
 }
 
-/** Couleur du statut d'une ligne : décision ambre, bloquée rouge, active normale, terminée grisée. */
+/** Row status color: decision amber, blocked red, active normal, finished gray. */
 export function rowColor(s: MissionState): string | undefined {
   return BUCKET_COLOR[bucketOf(s)]
 }
@@ -46,12 +46,12 @@ function visibleMissions(all: MissionState[], pr: Pick<PrLookup, 'get'>, now: Da
 }
 
 function Title({ name, all }: { name: string; all: MissionState[] }): React.ReactElement {
-  const active = all.filter((s) => bucketOf(s) !== 'terminee').length
+  const active = all.filter((s) => bucketOf(s) !== 'finished').length
   const gates = all.reduce((n, s) => n + s.gates.filter((g) => g.status === 'pending').length, 0)
   return (
     <Text>
-      <Text bold>{`herness · ${name} · ${plural(active, 'mission active', 'missions actives')}`}</Text>
-      {gates > 0 ? <Text color="yellow">{` · ${plural(gates, 'porte en attente', 'portes en attente')}`}</Text> : null}
+      <Text bold>{`herness · ${name} · ${plural(active, 'active mission', 'active missions')}`}</Text>
+      {gates > 0 ? <Text color="yellow">{` · ${plural(gates, 'pending gate', 'pending gates')}`}</Text> : null}
     </Text>
   )
 }
@@ -63,12 +63,12 @@ function MissionRow({ s, selected }: { s: MissionState; selected: boolean }): Re
     <Text wrap="truncate" bold={selected}>
       {`${selected ? '▸' : ' '} ${shortId(s.id)} ${s.slug ?? s.source.ref} `}
       <Text {...(color ? { color } : {})}>{statusLabel(s)}</Text>
-      {bucket === 'terminee' && s.prUrl ? <Text color="gray">{` ${s.prUrl}`}</Text> : null}
+      {bucket === 'finished' && s.prUrl ? <Text color="gray">{` ${s.prUrl}`}</Text> : null}
     </Text>
   )
 }
 
-/** Mise en page du cockpit : titre, liste à gauche (au-dessus si étroit), détail à droite, puis bas d'écran. */
+/** Cockpit layout: title, list on the left (above when narrow), detail on the right, then the footer. */
 function CockpitLayout({ name, all, visible, selected, columns, hiddenCount, detail, footer, notice }: {
   name: string
   all: MissionState[]
@@ -83,9 +83,9 @@ function CockpitLayout({ name, all, visible, selected, columns, hiddenCount, det
   const narrow = columns < NARROW_COLUMNS
   const list = (
     <Box flexDirection="column" {...(narrow ? {} : { width: '40%', paddingRight: 1 })}>
-      {visible.length === 0 ? <Text dimColor>aucune mission</Text> : null}
+      {visible.length === 0 ? <Text dimColor>no missions</Text> : null}
       {visible.map((s) => <MissionRow key={s.id} s={s} selected={s === selected} />)}
-      {hiddenCount > 0 ? <Text dimColor>{`${plural(hiddenCount, 'mission terminée masquée', 'missions terminées masquées')} (a)`}</Text> : null}
+      {hiddenCount > 0 ? <Text dimColor>{`${plural(hiddenCount, 'finished mission hidden', 'finished missions hidden')} (f)`}</Text> : null}
     </Box>
   )
   return (
@@ -101,7 +101,7 @@ function CockpitLayout({ name, all, visible, selected, columns, hiddenCount, det
   )
 }
 
-/** Une seule image du cockpit (hors TTY) : missions masquées filtrées, première mission détaillée. */
+/** A single cockpit frame (not a TTY): hidden missions filtered, first mission detailed. */
 export function CockpitSnapshot({ name, missions, prCache, now = new Date(), columns = 80 }: {
   name: string
   missions: MissionState[]
@@ -156,18 +156,18 @@ export function Cockpit({
   const [unreadable, setUnreadable] = useState(false)
   const [selectedId, setSelectedId] = useState<string | undefined>()
   const [showAll, setShowAll] = useState(false)
-  // `+` : d'abord la demande (une ligne), puis une note facultative qui la complète.
+  // `+`: first the request (one line), then an optional note that completes it.
   const [adding, setAdding] = useState<false | 'line' | { input: string }>(false)
   const starting = useRef(false)
   const [, bump] = useState(0)
 
-  // Journaux de herdr et du cycle de vie : dans la zone de message, jamais directement dans le terminal.
+  // Herdr and lifecycle logs: in the message area, never directly in the terminal.
   const sayRef = useRef<(text: string, ok?: boolean) => void>(() => {})
   const log = useMemo(() => (m: string): void => sayRef.current(m, false), [])
   const acts = useMemo<CockpitActions>(() => {
     if (actions) return actions
     const deps = act.realActionDeps(repoPath, log)
-    // p/R ne quittent pas le cockpit : `o` est le geste explicite pour ouvrir l'espace de la mission.
+    // u/R do not leave the cockpit: `o` is the explicit gesture to open the mission workspace.
     return { ...missionActions(deps, undefined, { focus: false }), startNew: (input, note) => act.startNew(input, deps, note) }
   }, [actions, repoPath, log])
   const prs = useMemo<PrLookup>(() => prCache ?? new PrCache(), [prCache])
@@ -175,11 +175,11 @@ export function Cockpit({
   const noticeRef = useRef(notice)
   noticeRef.current = notice
 
-  // Relectures : une seule à la fois, et seul le résultat le plus récent est appliqué (numéro de séquence).
+  // Reloads: one at a time, and only the newest result is applied (sequence number).
   const polling = useRef(false)
   const seq = useRef(0)
   const applied = useRef(0)
-  // Rafraîchissement des PR : jamais relancé tant que le précédent tourne.
+  // PR refresh: never started again while the previous one is running.
   const refreshing = useRef(false)
   const showAllRef = useRef(showAll)
   showAllRef.current = showAll
@@ -198,10 +198,10 @@ export function Cockpit({
         if (alive) bump((n) => n + 1)
       }
       try {
-        // Sans attendre : le cache limite les appels à gh ; on redessine quand il a répondu.
+        // Do not wait: the cache limits gh calls; redraw when it has answered.
         void Promise.resolve(prs.refresh(urls)).then(done, done)
       } catch {
-        // échec du rafraîchissement des PR : sans rapport avec la lecture des missions
+        // PR refresh failure: unrelated to reading missions
         done()
       }
     }
@@ -214,7 +214,7 @@ export function Cockpit({
         try {
           nextNotice = noticeRef.current()
         } catch {
-          // bandeau illisible : la lecture des missions continue
+          // unreadable banner: reading missions continues
         }
         if (alive) setNoticeText(nextNotice)
         const list = sortMissions(await read())
@@ -240,7 +240,7 @@ export function Cockpit({
 
   const visible = visibleMissions(all, prs, now(), showAll)
   const selected = visible.find((s) => s.id === selectedId) ?? visible[0]
-  // La sélection est épinglée à un identifiant dès qu'une ligne existe : un réordonnancement ne change jamais la cible.
+  // The selection is pinned to an id as soon as a row exists: a reorder never changes the target.
   useEffect(() => {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id)
   }, [selected?.id, selectedId])
@@ -252,7 +252,7 @@ export function Cockpit({
     ...(timer ? { timer } : {}),
   })
   sayRef.current = keys.say
-  // Jamais de champ actif en même temps qu'une saisie du hook (confirmation interne d'une fermeture, par exemple).
+  // Never an active field at the same time as a hook input (an internal close confirmation, for example).
   const overlayOpen = keys.overlay !== null
   useEffect(() => {
     if (overlayOpen) setAdding(false)
@@ -263,7 +263,7 @@ export function Cockpit({
     const input = raw.trim()
     if (input === '') {
       setAdding(false)
-      return keys.say('demande vide : rien à démarrer', false)
+      return keys.say('empty request: nothing to start', false)
     }
     setAdding({ input })
   }
@@ -271,18 +271,20 @@ export function Cockpit({
   const startNew = (input: string, rawNote: string): void => {
     setAdding(false)
     const note = rawNote.trim()
-    if (starting.current) return keys.say('démarrage déjà en cours', false)
+    if (starting.current) return keys.say('start already in progress', false)
     starting.current = true
-    keys.say('démarrage de la mission…')
+    keys.say('starting the mission…')
     void acts
       .startNew(input, note === '' ? undefined : note)
       .then(
-        (r) => keys.say((r.ok && r.lines.length === 0 ? ['mission lancée'] : resultLines(r)).join('\n'), r.ok),
+        (r) => keys.say((r.ok && r.lines.length === 0 ? ['mission started'] : resultLines(r)).join('\n'), r.ok),
         (e: unknown) => keys.say(e instanceof Error ? e.message : String(e), false),
       )
       .finally(() => { starting.current = false })
   }
 
+  // Active together with useMissionKeys. Those keys (a r n u R c o D, and b when onBack is set)
+  // stay disjoint from these: up/down, +, f, q.
   useInput((input, key) => {
     if (key.upArrow || key.downArrow) {
       if (visible.length === 0) return
@@ -291,22 +293,22 @@ export function Cockpit({
       setSelectedId(visible[next]!.id)
       return
     }
-    if (input === '+') return keys.busy ? keys.say('action en cours', false) : setAdding('line')
-    if (input === 'a') return setShowAll((v) => !v)
+    if (input === '+') return keys.busy ? keys.say('action in progress', false) : setAdding('line')
+    if (input === 'f') return setShowAll((v) => !v)
     if (input === 'q') exit()
   }, { isActive: !adding && keys.overlay === null })
 
   const helpItems: HelpItem[] = [
     { key: '↑/↓', label: 'mission', enabled: visible.length > 1 },
     ...(selected ? keys.helpItems : []),
-    { key: '+', label: 'nouvelle mission', enabled: true },
-    { key: 'a', label: showAll ? 'masquer les terminées' : 'tout afficher', enabled: true },
-    { key: 'q', label: 'quitter', enabled: true },
+    { key: '+', label: 'new mission', enabled: true },
+    { key: 'f', label: showAll ? 'hide finished' : 'show finished', enabled: true },
+    { key: 'q', label: 'quit', enabled: true },
   ]
 
   const footer = (
     <Box flexDirection="column">
-      {unreadable ? <Text color="red">lecture des missions impossible, nouvel essai…</Text> : null}
+      {unreadable ? <Text color="red">cannot read missions, retrying…</Text> : null}
       {inputOpen ? (
         <Box marginTop={1}>
           {adding === 'line' ? (
@@ -319,7 +321,7 @@ export function Cockpit({
                 onSubmit={(note) => startNew(adding.input, note)}
                 onCancel={() => {
                   setAdding(false)
-                  keys.say('lancement annulé')
+                  keys.say('start cancelled')
                 }}
               />
             </Box>
@@ -345,7 +347,7 @@ export function Cockpit({
       detail={
         selected ? (
           <MissionDetail state={selected} sentGates={keys.sentGates} {...(keys.selectedGate ? { selectedGate: keys.selectedGate } : {})} />
-        ) : loaded ? null : <Text>chargement…</Text>
+        ) : loaded ? null : <Text>loading…</Text>
       }
       footer={footer}
       notice={noticeText}

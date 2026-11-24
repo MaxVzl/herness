@@ -10,21 +10,21 @@ const specFile = join('/wt', specPath({ id: 'gh12', slug: 'export-csv', createdA
 const planFile = join('/wt', planPath({ id: 'gh12', slug: 'export-csv', createdAt: base.createdAt }))
 
 describe('resolveDoc', () => {
-  test('la proposition en attente gagne sur le fichier du worktree', () => {
+  test('a pending proposal wins over the worktree file', () => {
     const files = new Set([join(dir, 'plan.proposed.md'), planFile])
     expect(resolveDoc('plan', withSlug, dir, (p) => files.has(p))).toEqual({ path: join(dir, 'plan.proposed.md'), proposed: true })
   })
-  test('sans proposition, le fichier du worktree', () => {
+  test('without a proposal, the worktree file', () => {
     expect(resolveDoc('spec', withSlug, dir, (p) => p === specFile)).toEqual({ path: specFile, proposed: false })
     expect(resolveDoc('plan', withSlug, dir, (p) => p === planFile)).toEqual({ path: planFile, proposed: false })
   })
-  test('une proposition de spec ne concerne pas le plan', () => {
+  test('a spec proposal does not apply to the plan', () => {
     expect(resolveDoc('plan', withSlug, dir, (p) => p === join(dir, 'spec.proposed.md'))).toEqual({ missing: true, expected: planFile })
   })
-  test('slug connu mais fichier absent : manquant, avec le chemin attendu', () => {
+  test('known slug but missing file: missing, with the expected path', () => {
     expect(resolveDoc('spec', withSlug, dir, () => false)).toEqual({ missing: true, expected: specFile })
   })
-  test('slug (ou worktree) inconnu : manquant sans chemin', () => {
+  test('unknown slug or worktree: missing without a path', () => {
     expect(resolveDoc('spec', base, dir, () => false)).toEqual({ missing: true })
     expect(resolveDoc('spec', { ...base, slug: 'x' }, dir, () => false)).toEqual({ missing: true })
   })
@@ -72,7 +72,7 @@ function setup(initial: DocState = withSlug) {
         failSpawn--
         throw new Error('ENOENT')
       }
-      const c = new FakeChild(proposed ? `proposition:${f}` : f, slowKill)
+      const c = new FakeChild(proposed ? `proposal:${f}` : f, slowKill)
       children.push(c)
       return c
     },
@@ -99,21 +99,21 @@ function setup(initial: DocState = withSlug) {
 }
 
 describe('DocViewer', () => {
-  test('fichier absent : message avec le chemin attendu, une seule fois, sans afficheur', async () => {
+  test('missing file: message with the expected path, once, without a viewer', async () => {
     const t = setup()
     await t.viewer.tick()
     await t.viewer.tick()
-    expect(t.printed).toEqual([`spec pas encore écrite\n${specFile}`])
+    expect(t.printed).toEqual([`spec not written yet\n${specFile}`])
     expect(t.children).toEqual([])
   })
 
-  test('slug inconnu : message sans chemin', async () => {
+  test('unknown slug: message without a path', async () => {
     const t = setup(base)
     await t.viewer.tick()
-    expect(t.printed).toEqual(['spec pas encore écrite'])
+    expect(t.printed).toEqual(['spec not written yet'])
   })
 
-  test('le fichier apparaît : afficheur lancé ; inchangé : pas de relance', async () => {
+  test('file appears: viewer started; unchanged: not restarted', async () => {
     const t = setup()
     await t.viewer.tick()
     t.files.set(specFile, 1)
@@ -122,7 +122,7 @@ describe('DocViewer', () => {
     expect(t.children.map((c) => c.file)).toEqual([specFile])
   })
 
-  test('mtime modifié : ancien afficheur tué, nouveau lancé', async () => {
+  test('mtime changed: old viewer killed, new one started', async () => {
     const t = setup()
     t.files.set(specFile, 1)
     await t.viewer.tick()
@@ -134,25 +134,25 @@ describe('DocViewer', () => {
     expect(t.children[1]!.killed).toBe(false)
   })
 
-  test("une proposition qui apparaît remplace le fichier (copie avec l'en-tête)", async () => {
+  test("a proposal that appears replaces the file (copy with the header)", async () => {
     const t = setup()
     t.files.set(specFile, 1)
     await t.viewer.tick()
     t.files.set(join(dir, 'spec.proposed.md'), 5)
     await t.viewer.tick()
     await t.viewer.tick()
-    expect(t.children.map((c) => c.file)).toEqual([specFile, `proposition:${join(dir, 'spec.proposed.md')}`])
+    expect(t.children.map((c) => c.file)).toEqual([specFile, `proposal:${join(dir, 'spec.proposed.md')}`])
     expect(t.children[0]!.killed).toBe(true)
   })
 
-  test('sortie volontaire : invite à appuyer sur Entrée, pas de relance seule, Entrée rouvre', async () => {
+  test('voluntary exit: prompts to press Enter, no restart alone, Enter reopens', async () => {
     const t = setup()
     t.files.set(specFile, 1)
     await t.viewer.tick()
     t.children[0]!.exit()
     await t.viewer.tick()
     await t.viewer.tick()
-    expect(t.printed).toEqual(['appuie sur Entrée pour rouvrir'])
+    expect(t.printed).toEqual(['press Enter to reopen'])
     expect(t.inputOn()).toBe(true)
     expect(t.children).toHaveLength(1)
     t.press()
@@ -161,7 +161,7 @@ describe('DocViewer', () => {
     expect(t.inputOn()).toBe(false)
   })
 
-  test("sortie volontaire puis fichier modifié : rouvre sans attendre Entrée", async () => {
+  test("voluntary exit then file changed: reopens without waiting for Enter", async () => {
     const t = setup()
     t.files.set(specFile, 1)
     await t.viewer.tick()
@@ -173,31 +173,31 @@ describe('DocViewer', () => {
     expect(t.children[0]!.killed).toBe(false)
   })
 
-  test("le fichier disparaît : afficheur tué et message d'attente", async () => {
+  test("file disappears: viewer killed and waiting message", async () => {
     const t = setup()
     t.files.set(specFile, 1)
     await t.viewer.tick()
     t.files.delete(specFile)
     await t.viewer.tick()
     expect(t.children[0]!.killed).toBe(true)
-    expect(t.printed.at(-1)).toContain('spec pas encore écrite')
+    expect(t.printed.at(-1)).toContain('spec not written yet')
   })
 
-  test("erreur de lecture de l'état : message puis nouvel essai, l'afficheur en cours est conservé", async () => {
+  test("state read error: message then retry, the current viewer is kept", async () => {
     const t = setup()
     t.files.set(specFile, 1)
     await t.viewer.tick()
-    t.setState(new Error('JSON invalide'))
+    t.setState(new Error('invalid JSON'))
     await t.viewer.tick()
     await t.viewer.tick()
-    expect(t.printed).toEqual(['état illisible, nouvel essai : JSON invalide'])
+    expect(t.printed).toEqual(['unreadable state, retrying: invalid JSON'])
     expect(t.children[0]!.killed).toBe(false)
     t.setState(withSlug)
     await t.viewer.tick()
     expect(t.children).toHaveLength(1)
   })
 
-  test('debounce : un fichier qui change encore à chaque tick ne relance rien', async () => {
+  test('debounce: a file that still changes on every tick restarts nothing', async () => {
     const t = setup()
     t.files.set(specFile, 1)
     await t.viewer.tick()
@@ -211,7 +211,7 @@ describe('DocViewer', () => {
     expect(t.children).toHaveLength(2)
   })
 
-  test("le nouvel afficheur n'est lancé qu'une fois l'ancien vraiment sorti", async () => {
+  test("the new viewer starts only once the old one has really exited", async () => {
     const t = setup()
     t.slowKill()
     t.files.set(specFile, 1)
@@ -228,18 +228,18 @@ describe('DocViewer', () => {
     expect(t.children).toHaveLength(2)
   })
 
-  test('lancement impossible (fichier disparu) : message, pas de plantage, nouvel essai au tick suivant', async () => {
+  test('spawn failure (file gone): message, no crash, retry on the next tick', async () => {
     const t = setup()
     t.files.set(specFile, 1)
     t.failSpawnOnce()
     await t.viewer.tick()
     expect(t.children).toEqual([])
-    expect(t.printed.at(-1)).toContain('nouvel essai : ENOENT')
+    expect(t.printed.at(-1)).toContain('retrying: ENOENT')
     await t.viewer.tick()
     expect(t.children.map((c) => c.file)).toEqual([specFile])
   })
 
-  test('close tue l’afficheur', async () => {
+  test('close kills the viewer', async () => {
     const t = setup()
     t.files.set(specFile, 1)
     await t.viewer.tick()

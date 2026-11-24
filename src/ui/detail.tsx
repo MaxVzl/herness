@@ -13,12 +13,12 @@ const SUCCESS_LINES = 5
 const FAILURE_LINES = 8
 
 /**
- * Lignes affichées pour le résultat d'une action. Réussite : les 5 dernières (plus `success`). Échec : les lignes
- * « KO … » et l'erreur finale (sinon les dernières lignes), 8 au plus.
+ * Lines shown for an action result. Success: the last 5 (plus `success`). Failure: the
+ * "KO …" lines and the final error (otherwise the last lines), 8 at most.
  */
 export function resultLines(r: ActionResult, success?: string): string[] {
   const lines = r.ok && success ? [...r.lines, success] : r.lines
-  if (lines.length === 0) return [r.ok ? 'fait' : 'échec']
+  if (lines.length === 0) return [r.ok ? 'done' : 'failed']
   if (r.ok) return lines.slice(-SUCCESS_LINES)
   const last = lines[lines.length - 1]!
   const kos = lines.slice(0, -1).filter((l) => /^KO\b/.test(l))
@@ -37,15 +37,15 @@ function currentTask(s: MissionState): TaskState | undefined {
 function agentsLine(s: MissionState): string | undefined {
   const t = currentTask(s)
   const parts: string[] = []
-  if (t?.pendingAsk) parts.push(`en attente de ${t.pendingAsk.agent}`)
-  if (t?.implementer) parts.push(`implémenteur ${t.implementer}`)
-  if (t?.reviewer) parts.push(`relecteur ${t.reviewer}`)
+  if (t?.pendingAsk) parts.push(`waiting for ${t.pendingAsk.agent}`)
+  if (t?.implementer) parts.push(`implementer ${t.implementer}`)
+  if (t?.reviewer) parts.push(`reviewer ${t.reviewer}`)
   return parts.length > 0 ? parts.join(' · ') : undefined
 }
 
 /**
- * Détail d'une mission. `selectedGate` est mise en évidence (aucune marque sans sélection) ; `sentGates` sont les portes
- * encore en attente dont la décision est déjà partie depuis cette interface.
+ * Mission detail. `selectedGate` is highlighted (no mark without a selection); `sentGates` are the gates
+ * still pending whose decision has already been sent from this interface.
  */
 export function MissionDetail({ state: s, selectedGate, sentGates = [] }: {
   state: MissionState
@@ -62,8 +62,8 @@ export function MissionDetail({ state: s, selectedGate, sentGates = [] }: {
   return (
     <Box flexDirection="column">
       <Text>
-        <Text bold>{`${s.id} · ${s.branch ?? '(pas de branche)'} · ${s.step}`}</Text>
-        {s.paused ? <Text color="yellow">{' · EN PAUSE'}</Text> : null}
+        <Text bold>{`${s.id} · ${s.branch ?? '(no branch)'} · ${s.step}`}</Text>
+        {s.paused ? <Text color="yellow">{' · PAUSED'}</Text> : null}
         {s.step === 'blocked' && s.blockedReason ? <Text color="red">{` · ${s.blockedReason}`}</Text> : null}
       </Text>
       {s.tasks.map((t) => (
@@ -71,28 +71,28 @@ export function MissionDetail({ state: s, selectedGate, sentGates = [] }: {
           {t.phase === 'done' ? (
             <Text color="green">{`✓ ${t.n}. ${t.title}`}</Text>
           ) : t === cur ? (
-            <Text color="cyan">{`▶ ${t.n}. ${t.title} — ${t.phase}, tour ${t.round}/3`}</Text>
+            <Text color="cyan">{`▶ ${t.n}. ${t.title} — ${t.phase}, round ${t.round}/3`}</Text>
           ) : (
             <Text dimColor>{`· ${t.n}. ${t.title}`}</Text>
           )}
         </Text>
       ))}
-      {agents ? <Text>{`Agents : ${agents}`}</Text> : null}
+      {agents ? <Text>{`Agents: ${agents}`}</Text> : null}
       {pending.map((g) => (
         <Box key={g.id} flexDirection="column" marginTop={1}>
           <Text color="yellow" bold inverse={g.id === selected && pending.length > 1}>
             {`${g.id === selected ? '▸' : ' '} ⚑ ${g.id} · ${g.kind} : ${g.summary}`}
-            {sentGates.includes(g.id) ? <Text color="cyan" bold={false}>{' · décision envoyée'}</Text> : null}
+            {sentGates.includes(g.id) ? <Text color="cyan" bold={false}>{' · decision sent'}</Text> : null}
           </Text>
           {g.path ? <Text color="yellow">{`    ${g.path}`}</Text> : null}
         </Box>
       ))}
       {pending.length > 0 ? (
-        <Text color="yellow">{`v valider · r refuser${pending.length > 1 ? ' · ←/→ choisir la porte' : ''}`}</Text>
+        <Text color="yellow">{`a approve · r reject${pending.length > 1 ? ' · ←/→ choose gate' : ''}`}</Text>
       ) : null}
       {showReview ? (
         <Box flexDirection="column" marginTop={1}>
-          <Text>{`Revue globale : tour ${gr.round}/3 · Preflight : tour ${pf.round}/3`}</Text>
+          <Text>{`Global review: round ${gr.round}/3 · Preflight: round ${pf.round}/3`}</Text>
           {pf.results.map((r) => (
             <Text key={r.label} color={r.exitCode === 0 ? 'green' : 'red'}>
               {`  ${r.label} ${r.exitCode === 0 ? '✓' : '✗'} (${duration(r.durationMs)})`}
@@ -112,16 +112,16 @@ export function MissionDetail({ state: s, selectedGate, sentGates = [] }: {
   )
 }
 
-/** Gestes sur une mission ; `missionActions` les relie aux vraies dépendances, les tests injectent des faux. */
+/** Gestures on a mission; `missionActions` wires them to the real dependencies, tests inject fakes. */
 export interface MissionActions {
   validate(id: string, gateId: string, note: string | undefined): Promise<ActionResult>
   refuse(id: string, gateId: string, note: string): Promise<ActionResult>
   resume(id: string): Promise<ActionResult>
-  /** `detached` : redémarrage lancé hors de ce processus (depuis le panneau `tasks` de la mission elle-même). */
+  /** `detached`: restart launched outside this process (from the mission's own `tasks` panel). */
   restart(id: string, opts?: { detached?: boolean }): Promise<ActionResult>
   close(id: string, confirm: (question: string) => Promise<boolean>): Promise<ActionResult>
   open(s: MissionState): Promise<ActionResult>
-  /** Supprime le dossier d'une mission fermée (confirmation déjà faite). */
+  /** Deletes a closed mission's directory (confirmation already done). */
   remove(id: string): Promise<ActionResult>
 }
 
@@ -137,7 +137,7 @@ export function missionActions(d: ActionDeps, spawn?: Spawner, opts: act.ResumeO
   }
 }
 
-/** Programme `fn` après `ms` ; rend la fonction d'annulation. Injectable pour les tests. */
+/** Schedules `fn` after `ms`; returns the cancel function. Injectable for tests. */
 export type Timer = (fn: () => void, ms: number) => () => void
 const realTimer: Timer = (fn, ms) => {
   const t = setTimeout(fn, ms)
@@ -146,21 +146,21 @@ const realTimer: Timer = (fn, ms) => {
 
 export interface HelpItem { key: string; label: string; enabled: boolean }
 
-/** Gestes refusés pendant une fermeture : ils ouvrent une saisie ou lancent une action. */
-const GESTURES = new Set(['v', 'r', 'n', 'p', 'R', 'f', 'o', 'x'])
+/** Gestures refused during a close: they open an input or start an action. */
+const GESTURES = new Set(['a', 'r', 'n', 'u', 'R', 'c', 'o', 'D'])
 
 type Overlay =
   | { kind: 'confirm'; question: string; onYes: () => void; onNo: () => void }
   | { kind: 'note'; title: string; onSubmit: (note: string) => void }
-  // Mission capturée à l'ouverture : le choix vise toujours celle-ci, même si la sélection a changé depuis.
+  // Mission captured when opened: the choice always targets this one, even if the selection changed since.
   | { kind: 'choose'; note: string; gate: Gate; mission: MissionState }
 
-function Chooser({ onPick, onCancel }: { onPick: (k: 'v' | 'r') => void; onCancel: () => void }): React.ReactElement {
+function Chooser({ onPick, onCancel }: { onPick: (k: 'a' | 'r') => void; onCancel: () => void }): React.ReactElement {
   useInput((input, key) => {
     if (key.escape) onCancel()
-    else if (input === 'v' || input === 'r') onPick(input)
+    else if (input === 'a' || input === 'r') onPick(input)
   })
-  return <Text color="yellow">v valider · r refuser · échap annuler</Text>
+  return <Text color="yellow">a approve · r reject · esc cancel</Text>
 }
 
 export function HelpLine({ items }: { items: HelpItem[] }): React.ReactElement {
@@ -174,26 +174,26 @@ export function HelpLine({ items }: { items: HelpItem[] }): React.ReactElement {
 }
 
 export interface MissionKeys {
-  /** Saisie en cours (Confirm, NoteInput, choix v/r) ; tant qu'elle est ouverte, les touches du hook sont inactives. */
+  /** Input in progress (Confirm, NoteInput, a/r choice); while it is open, the hook keys are inactive. */
   overlay: React.ReactElement | null
   help: string
   helpItems: HelpItem[]
   message?: string
   messageOk: boolean
   selectedGate?: string
-  /** Portes de la mission encore en attente dont la décision est partie d'ici (à passer à `MissionDetail`). */
+  /** Gates of the mission still pending whose decision was sent from here (pass them to `MissionDetail`). */
   sentGates: string[]
-  /** Affiche un message dans la zone de retour (ex. journal de herdr). */
+  /** Shows a message in the result area (for example a herdr log). */
   say: (text: string, ok?: boolean) => void
-  /** Une fermeture est en cours et peut demander une confirmation : aucune autre saisie ne doit s'ouvrir. */
+  /** A close is in progress and may ask for confirmation: no other input should open. */
   busy: boolean
 }
 
 /**
- * Touches partagées par le cockpit et le panneau `tasks` : ←/→/tab porte, v, r, n, p, R, f, o, x (hors panneau `tasks`),
- * et c si `onBack`.
- * Garde anti-doublon par (mission, porte) : rien n'est renvoyé pendant qu'une décision part, et une porte décidée
- * ici est ignorée tant que l'état la montre encore en attente.
+ * Keys shared by the cockpit and the `tasks` panel: ←/→/tab gate, a, r, n, u, R, c, o, D (not on the `tasks` panel),
+ * and b if `onBack`.
+ * Dedup guard per (mission, gate): nothing is sent again while a decision is in flight, and a gate decided
+ * here is ignored while the state still shows it pending.
  */
 export function useMissionKeys({
   state,
@@ -210,16 +210,16 @@ export function useMissionKeys({
   onBack?: () => Promise<void> | void
   isActive?: boolean
   timer?: Timer
-  /** Vrai dans le panneau `tasks` de la mission : `R` y redémarre en détaché pour ne pas s'interrompre lui-même. */
+  /** True in the mission's `tasks` panel: `R` restarts detached there so it does not interrupt itself. */
   ownPanel?: boolean
 }): MissionKeys {
   const [overlay, setOverlayState] = useState<Overlay | null>(null)
-  // `gate` : clé (mission/porte) du message « gN validée/refusée », effacé quand cette porte est libérée.
+  // `gate`: (mission/gate) key of the "gN approved/rejected" message, cleared when that gate is released.
   const [message, setMessage] = useState<{ text: string; ok: boolean; gate?: string } | undefined>()
   const [selection, setSelection] = useState<{ mission: string; gate: string } | undefined>()
   const selected = selection && selection.mission === state?.id ? selection.gate : undefined
-  // Résolution en attente d'une confirmation demandée par une action (ex. closeMission) : rendue `false` si la
-  // saisie est remplacée ou démontée avant la réponse.
+  // Pending resolution of a confirmation asked by an action (for example closeMission): resolved `false` if the
+  // input is replaced or unmounted before the answer.
   const pendingAnswer = useRef<((yes: boolean) => void) | null>(null)
   const abandonAnswer = (): void => {
     const resolve = pendingAnswer.current
@@ -248,17 +248,17 @@ export function useMissionKeys({
   }
   const failed = (e: unknown): void => say(e instanceof Error ? e.message : String(e), false)
 
-  // Un succès s'efface après 5 s ; une erreur reste jusqu'à l'action ou la touche suivante.
+  // A success clears after 5 s; an error stays until the next action or key.
   useEffect(() => {
     if (!message?.ok) return
     return timer(() => setMessage(undefined), MESSAGE_MS)
   }, [message, timer])
-  // Déclaré avant les gestes : une touche efface l'erreur affichée, puis son geste peut en afficher une autre.
+  // Declared before the gestures: a key clears the shown error, then its gesture may show another.
   useInput(() => {
     setMessage((m) => (m && !m.ok ? undefined : m))
   })
 
-  // Une porte décidée ici redevient visible dès que l'état ne la montre plus en attente.
+  // A gate decided here becomes visible again as soon as the state no longer shows it pending.
   useEffect(() => {
     if (!state) return
     const stillPending = new Set(state.gates.filter((g) => g.status === 'pending').map((g) => `${state.id}/${g.id}`))
@@ -272,7 +272,7 @@ export function useMissionKeys({
     if (released.size > 0) setMessage((m) => (m?.gate && released.has(m.gate) ? undefined : m))
   }, [state])
 
-  // Fermeture en cours (quelle que soit la mission) : elle peut ouvrir une confirmation à tout moment.
+  // Close in progress (whichever mission): it may open a confirmation at any time.
   const busy = [...running.current].some((k) => k.endsWith('/close'))
   const keyOf = (g: Gate): string => `${state?.id}/${g.id}`
   const gates = state
@@ -286,13 +286,13 @@ export function useMissionKeys({
 
   const send = async (decision: 'approved' | 'refused', id: string, g: Gate, note: string | undefined): Promise<void> => {
     const k = `${id}/${g.id}`
-    if (inflight.current.has(k) || decided.current.has(k)) return say(`décision déjà envoyée pour ${g.id}`, false)
+    if (inflight.current.has(k) || decided.current.has(k)) return say(`decision already sent for ${g.id}`, false)
     inflight.current.add(k)
     bump((n) => n + 1)
     try {
       const r = decision === 'approved' ? await actions.validate(id, g.id, note) : await actions.refuse(id, g.id, note ?? '')
       if (r.ok) decided.current.add(k)
-      show(r, `${g.id} ${decision === 'approved' ? 'validée' : 'refusée'}`, k)
+      show(r, `${g.id} ${decision === 'approved' ? 'approved' : 'rejected'}`, k)
     } catch (e) {
       failed(e)
     } finally {
@@ -311,14 +311,14 @@ export function useMissionKeys({
   }
 
   const askDecision = (decision: 'approved' | 'refused', s: MissionState, g: Gate, note: string | undefined): void => {
-    const verb = decision === 'approved' ? 'Valider' : 'Refuser'
-    confirmThen(`${verb} ${g.id} (${g.kind}) de ${shortId(s.id)} ?`, () => void send(decision, s.id, g, note))
+    const verb = decision === 'approved' ? 'Approve' : 'Reject'
+    confirmThen(`${verb} ${g.id} (${g.kind}) of ${shortId(s.id)} ?`, () => void send(decision, s.id, g, note))
   }
 
   const runOnce = async (name: string, fn: () => Promise<ActionResult>, success?: string): Promise<void> => {
     if (!state) return
     const k = `${state.id}/${name}`
-    if (running.current.has(k)) return say('action déjà en cours', false)
+    if (running.current.has(k)) return say('action already running', false)
     running.current.add(k)
     bump((n) => n + 1)
     try {
@@ -332,7 +332,7 @@ export function useMissionKeys({
   }
 
   const askClose = (s: MissionState): void => {
-    confirmThen(`Fermer ${s.id} ?`, () => {
+    confirmThen(`Close ${s.id} ?`, () => {
       const confirm = (q: string): Promise<boolean> =>
         new Promise((resolve) => {
           confirmThen(q, () => resolve(true), () => resolve(false))
@@ -340,15 +340,15 @@ export function useMissionKeys({
         })
       void runOnce('close', async () => {
         const r = await actions.close(s.id, confirm)
-        return r.ok || r.lines.length > 0 ? r : { ok: false, lines: ['fermeture annulée'] }
+        return r.ok || r.lines.length > 0 ? r : { ok: false, lines: ['close cancelled'] }
       })
-    }, () => say('fermeture annulée'))
+    }, () => say('close cancelled'))
   }
 
   useInput((input, key) => {
     if (!state) return
-    // Une fermeture peut encore demander une confirmation : aucune autre saisie ne doit pouvoir la croiser.
-    if (busy && GESTURES.has(input)) return say('action en cours', false)
+    // A close may still ask for confirmation: no other input may cross it.
+    if (busy && GESTURES.has(input)) return say('action in progress', false)
     if (key.tab || key.leftArrow || key.rightArrow) {
       if (gates.length < 2 || !gate) return
       const i = gates.indexOf(gate)
@@ -357,52 +357,52 @@ export function useMissionKeys({
       return
     }
     switch (input) {
-      case 'v':
-        if (!gate) return say('aucune porte en attente', false)
+      case 'a':
+        if (!gate) return say('no pending gate', false)
         return askDecision('approved', state, gate, undefined)
       case 'r': {
-        if (!gate) return say('aucune porte en attente', false)
+        if (!gate) return say('no pending gate', false)
         const g = gate
         const s = state
         return setOverlay({
           kind: 'note',
-          title: `Note de refus pour ${g.id}`,
+          title: `Rejection note for ${g.id}`,
           onSubmit: (raw) => {
             const note = raw.trim()
-            if (note === '') return say('une note est obligatoire pour refuser', false)
+            if (note === '') return say('a note is required to reject', false)
             askDecision('refused', s, g, note)
           },
         })
       }
       case 'n': {
-        if (!gate) return say('aucune porte en attente', false)
+        if (!gate) return say('no pending gate', false)
         const g = gate
         const s = state
-        return setOverlay({ kind: 'note', title: `Note pour ${g.id}`, onSubmit: (note) => setOverlay({ kind: 'choose', note: note.trim(), gate: g, mission: s }) })
+        return setOverlay({ kind: 'note', title: `Note for ${g.id}`, onSubmit: (note) => setOverlay({ kind: 'choose', note: note.trim(), gate: g, mission: s }) })
       }
-      case 'p':
-        if (finished) return say('reprendre indisponible : mission terminée', false)
-        return void runOnce('resume', () => actions.resume(state.id), 'reprise demandée')
+      case 'u':
+        if (finished) return say('resume unavailable: mission finished', false)
+        return void runOnce('resume', () => actions.resume(state.id), 'resume requested')
       case 'R':
         return ownPanel
           ? void runOnce('restart', () => actions.restart(state.id, { detached: true }))
-          : void runOnce('restart', () => actions.restart(state.id), 'redémarrage demandé')
-      case 'f':
+          : void runOnce('restart', () => actions.restart(state.id), 'restart requested')
+      case 'c':
         return askClose(state)
       case 'o':
         return void runOnce('open', () => actions.open(state))
-      case 'x': {
-        // Le panneau `tasks` disparaît avec sa mission fermée : supprimer se fait depuis le cockpit.
+      case 'D': {
+        // The `tasks` panel disappears with its closed mission: delete is done from the cockpit.
         if (ownPanel) return
-        if (state.step !== 'closed') return say("supprimer indisponible : ferme d'abord la mission (f)", false)
+        if (state.step !== 'closed') return say('delete unavailable: close the mission first (c)', false)
         const id = state.id
         return confirmThen(
-          `Supprimer définitivement ${id} (état, spec, plan, journaux) ?`,
+          `Permanently delete ${id} (state, spec, plan, logs)?`,
           () => void runOnce('remove', () => actions.remove(id)),
-          () => say('suppression annulée'),
+          () => say('delete cancelled'),
         )
       }
-      case 'c':
+      case 'b':
         if (!onBack) return
         return void Promise.resolve()
           .then(() => onBack())
@@ -427,24 +427,24 @@ export function useMissionKeys({
         key="choose"
         onCancel={() => setOverlay(null)}
         onPick={(k) => {
-          if (k === 'r' && o.note === '') return say('une note est obligatoire pour refuser', false)
-          askDecision(k === 'v' ? 'approved' : 'refused', o.mission, o.gate, o.note === '' ? undefined : o.note)
+          if (k === 'r' && o.note === '') return say('a note is required to reject', false)
+          askDecision(k === 'a' ? 'approved' : 'refused', o.mission, o.gate, o.note === '' ? undefined : o.note)
         }}
       />
     )
   }
 
   const helpItems: HelpItem[] = [
-    { key: '←/→', label: 'porte', enabled: gates.length > 1 },
-    { key: 'v', label: 'valider', enabled: gate !== undefined },
-    { key: 'r', label: 'refuser', enabled: gate !== undefined },
+    { key: '←/→', label: 'gate', enabled: gates.length > 1 },
+    { key: 'a', label: 'approve', enabled: gate !== undefined },
+    { key: 'r', label: 'reject', enabled: gate !== undefined },
     { key: 'n', label: 'note', enabled: gate !== undefined },
-    { key: 'p', label: 'reprendre', enabled: !finished },
-    { key: 'R', label: 'redémarrer', enabled: true },
-    { key: 'f', label: 'fermer', enabled: true },
-    { key: 'o', label: 'ouvrir', enabled: true },
-    ...(ownPanel ? [] : [{ key: 'x', label: 'supprimer', enabled: state?.step === 'closed' }]),
-    ...(onBack ? [{ key: 'c', label: 'cockpit', enabled: true }] : []),
+    { key: 'u', label: 'resume', enabled: !finished },
+    { key: 'R', label: 'restart', enabled: true },
+    { key: 'c', label: 'close', enabled: true },
+    { key: 'o', label: 'open', enabled: true },
+    ...(ownPanel ? [] : [{ key: 'D', label: 'delete', enabled: state?.step === 'closed' }]),
+    ...(onBack ? [{ key: 'b', label: 'back', enabled: true }] : []),
   ]
   const help = helpItems.map((it) => (it.enabled ? `${it.key} ${it.label}` : `(${it.key} ${it.label})`)).join(' · ')
 

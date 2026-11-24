@@ -22,7 +22,7 @@ async function readSpots(file: string): Promise<Record<string, Spot>> {
       }
     }
   } catch {
-    // fichier absent ou invalide : rien d'enregistré
+    // missing or invalid file: nothing recorded
   }
   return out
 }
@@ -53,23 +53,23 @@ export async function openCockpit(
   h: HerdrApi,
   file: string = cockpitFile(),
   loadConfig: (cwd: string) => Promise<ProjectConfig> = loadProjectConfig,
-): Promise<'ouvert' | 'créé'> {
+): Promise<'opened' | 'created'> {
   const cfg = await loadConfig(cwd)
   const { workspaceId } = await h.paneCurrent()
   const existing = (await h.tabList(workspaceId)).find((t) => t.label === LABEL)
   if (existing) {
     await h.tabFocus(existing.tabId)
     await saveSpot(file, cfg.repoPath, { workspace: workspaceId, tab: existing.tabId })
-    return 'ouvert'
+    return 'opened'
   }
   await createTab(cfg.repoPath, workspaceId, h, file)
-  return 'créé'
+  return 'created'
 }
 
 export async function focusCockpit(repoPath: string, h: HerdrApi, file: string = cockpitFile()): Promise<void> {
   const spot = (await readSpots(file))[repoPath]
-  if (!spot) throw new Error("aucun cockpit pour ce projet : lance herness dans l'espace du projet")
-  const gone = new Error("cockpit introuvable : relance herness dans l'espace du projet")
+  if (!spot) throw new Error("no cockpit for this project: run herness in the project workspace")
+  const gone = new Error("cockpit not found: run herness again in the project workspace")
   const tabs = await h.tabList(spot.workspace).catch(() => [])
   const tab = tabs.find((t) => t.tabId === spot.tab)
   try {

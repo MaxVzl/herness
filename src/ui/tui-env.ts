@@ -1,6 +1,6 @@
 /**
- * Environnement des interfaces ink (`herness cockpit`, `herness tasks`) : aucune commande lancée d'ici (git, ssh) ne
- * doit ouvrir d'invite d'identifiants dans le terminal qu'ink dessine. À appeler avant toute action.
+ * Environment for ink interfaces (`herness cockpit`, `herness tasks`): no command launched from here (git, ssh)
+ * may open a credential prompt in the terminal ink is drawing. Call this before any action.
  */
 export function prepareTuiEnv(env: NodeJS.ProcessEnv = process.env): void {
   env.GIT_TERMINAL_PROMPT = '0'
