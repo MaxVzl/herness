@@ -521,7 +521,7 @@ test('at engine startup, a blocked mission stops agents in ✓ panes and keeps t
   expect(fx.herdr.pane(done).busy).toBe(false)
   expect(fx.herdr.pane(live).busy).toBe(true)
   const s = await loadState('T-1')
-  expect(s.log.map((l) => l.msg).join('\n')).toContain('engine startup : agent(s) arrêté(s) dans T1 · grok ✓')
+  expect(s.log.map((l) => l.msg).join('\n')).toContain('engine startup: agent(s) stopped in T1 · grok ✓')
 })
 
 test('an approved abandon stops every agent in the agents tab', async () => {
@@ -543,7 +543,7 @@ test('an approved abandon stops every agent in the agents tab', async () => {
   expect(s.step).toBe('closed')
   expect(fx.herdr.pane(done).busy).toBe(false)
   expect(fx.herdr.pane(live).busy).toBe(false)
-  expect(s.log.some((l) => l.msg.startsWith('abandon approved : agent(s) arrêté(s) dans'))).toBe(true)
+  expect(s.log.some((l) => l.msg.startsWith('abandon approved: agent(s) stopped in'))).toBe(true)
 })
 
 test('orchestrator-started: the engine records that the opening prompt was sent', async () => {

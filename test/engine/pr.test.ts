@@ -110,7 +110,7 @@ test("l'ouverture de la PR arrête tous les agents restants de l'onglet agents",
   const s = await loadState('T-1')
   expect(s.step).toBe('pr-open')
   expect(fx.herdr.pane(gr).busy).toBe(false)
-  expect(s.log.map((l) => l.msg).join('\n')).toContain('PR ouverte : agent(s) arrêté(s) dans GR · claude-opus-5-5')
+  expect(s.log.map((l) => l.msg).join('\n')).toContain('PR ouverte: agent(s) stopped in GR · claude-opus-5-5')
   expect(fx.callsOf('herdr.paneSendKeys').some((c) => c[0] === master.rootPaneId)).toBe(false)
   expect(fx.herdr.pane(master.rootPaneId).busy).toBe(true)
 })

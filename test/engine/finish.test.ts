@@ -178,7 +178,7 @@ test('revue globale en corrections démarre un implémenteur neuf puis re-revue 
   // Le correcteur est arrêté au ✓, avant le contrôle de ses commits ; le relecteur global reste vivant jusqu'à la fin du preflight.
   expect(s.step).toBe('preflight')
   expect(fx.herdr.pane(s.herdr.panes['cgt-1-1']!).busy).toBe(false)
-  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent cgt-1-1 arrêté')
+  expect(s.log.map((l) => l.msg)).toContain('fin de mission: agent cgt-1-1 stopped')
   expect(fx.herdr.pane(s.herdr.panes['rgt-1']!).busy).toBe(true)
 })
 
@@ -186,7 +186,7 @@ test('le relecteur global est arrêté quand le preflight est terminé', async (
   const { fx, eng } = await setup({ over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROVED'] }) } } })
   const s = await until(eng, (x) => x.step === 'pr')
   expect(fx.herdr.pane(s.herdr.panes['rgt-1']!).busy).toBe(false)
-  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent rgt-1 arrêté')
+  expect(s.log.map((l) => l.msg)).toContain('fin de mission: agent rgt-1 stopped')
 })
 
 test('revue globale : des tests rouges après correction lancent un nouveau tour avec la sortie rouge', async () => {
@@ -418,10 +418,10 @@ test('un diagnostic et un correcteur de preflight sont arrêtés à la fin de le
   })
   let s = await until(eng, (x) => x.loops.preflight.phase === 'fix')
   expect(fx.herdr.pane(s.herdr.panes['rdt-1-1']!).busy).toBe(false)
-  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent rdt-1-1 arrêté')
+  expect(s.log.map((l) => l.msg)).toContain('fin de mission: agent rdt-1-1 stopped')
   s = await until(eng, (x) => x.step !== 'preflight')
   expect(fx.herdr.pane(s.herdr.panes['cpt-1-1']!).busy).toBe(false)
-  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent cpt-1-1 arrêté')
+  expect(s.log.map((l) => l.msg)).toContain('fin de mission: agent cpt-1-1 stopped')
 })
 
 test('une exception pendant un check supprime quand même la base de test', async () => {
@@ -649,7 +649,7 @@ test('revue globale : une remarque « imposé par le plan » ouvre un arbitrage 
   expect(await eng.tick()).toBe('wait')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1'])
   await expect(readFile(join(gdir(), 'correctifs-1.md'))).rejects.toThrow()
-  expect(fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).some((p) => p.startsWith('[herness] revue globale : revue CORRECTIONS (tour 1)'))).toBe(true)
+  expect(fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).some((p) => p.startsWith('[herness] revue globale: review CORRECTIONS (round 1)'))).toBe(true)
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'refused', note: 'suivre le plan' })
   s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
@@ -675,7 +675,7 @@ test("revue globale : correcteur arrêté sans commit avec compte rendu, porte a
   await writeFile(join(gdir(), 'report.md'), 'Je ne peux pas renommer : le nom est imposé par la spec.\n')
   let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   const g = s.gates.find((x) => x.kind === 'agent-stopped')!
-  expect(g.summary).toMatch(/^revue globale : l'implémenteur s'est arrêté sans commit\n/)
+  expect(g.summary).toMatch(/^revue globale: the implementer stopped without a commit\n/)
   expect(g.summary).toContain('imposé par la spec')
   expect(s.loops.globalReview).toMatchObject({ round: 1, phase: 'control', stopGate: g.id })
   expect(await eng.tick()).toBe('wait')
@@ -714,7 +714,7 @@ test('preflight : correcteur arrêté sans commit avec compte rendu ; porte vali
   await writeFile(join(pdir(), 'report.md'), 'Arrêt : la règle de lint contredit la spec.\n')
   let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   const g1 = s.gates.find((x) => x.kind === 'agent-stopped')!
-  expect(g1.summary).toMatch(/^preflight : l'implémenteur s'est arrêté sans commit\n/)
+  expect(g1.summary).toMatch(/^preflight: the implementer stopped without a commit\n/)
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g1.id, decision: 'approved', note: 'désactive la règle localement' })
   s = await until(eng, (x) => x.gates.filter((g) => g.kind === 'agent-stopped').length === 2)
   expect(s.loops.preflight.round).toBe(2)
@@ -727,7 +727,7 @@ test('preflight : correcteur arrêté sans commit avec compte rendu ; porte vali
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g2.id, decision: 'refused', note: 'stop' })
   s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedFrom).toBe('preflight')
-  expect(s.blockedReason).toContain("arrêté sans commit")
+  expect(s.blockedReason).toContain('stopped without a commit')
 })
 
 test("M1 : revue globale, compte rendu inchangé depuis l'envoi des correctifs : blocage, pas de porte", async () => {
@@ -777,5 +777,5 @@ test("preflight : correcteur vu au repos sans compte rendu, le commit n'est cont
   await writeFile(join(pdir(), 'report.md'), 'ancien\n')
   const s = await until(eng, () => fx.callsOf('git.controlCommits').length > 0)
   expect(sleeps).toBe(2)
-  expect(s.log.map((l) => l.msg)).toContain('preflight : cpt-1-1 vu au repos sans compte rendu, attente de la fin réelle')
+  expect(s.log.map((l) => l.msg)).toContain('preflight: cpt-1-1 seen idle without a report, waiting for the real end')
 })
