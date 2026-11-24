@@ -41,15 +41,15 @@ function fakeRunner(open: unknown[] = [], failOn?: string): { runner: Runner; ca
     if (args[1] === 'list') return { stdout: JSON.stringify(open), stderr: '', exitCode: 0 }
     if (args[1] === 'create') return { stdout: `${CREATE_URL}\n`, stderr: '', exitCode: 0 }
     if (args[1] === 'comment') return { stdout: `${COMMENT_URL}\n`, stderr: '', exitCode: 0 }
-    throw new Error(`commande inattendue : ${args.join(' ')}`)
+    throw new Error(`unexpected command: ${args.join(' ')}`)
   }
   return { runner, calls }
 }
 
-async function deuxErreurs(): Promise<{ runner: Runner; calls: Call[] }> {
-  await logHernessError({ mission: 'm1', origin: 'moteur', step: 'un' }, new Error('répétée'))
-  await logHernessError({ mission: 'm1', origin: 'moteur', step: 'two' }, new Error('known'))
-  await logHernessError({ mission: 'm1', origin: 'moteur', step: 'trois' }, new Error('répétée'))
+async function twoErrors(): Promise<{ runner: Runner; calls: Call[] }> {
+  await logHernessError({ mission: 'm1', origin: 'engine', step: 'one' }, new Error('repeated'))
+  await logHernessError({ mission: 'm1', origin: 'engine', step: 'two' }, new Error('known'))
+  await logHernessError({ mission: 'm1', origin: 'engine', step: 'three' }, new Error('repeated'))
   const pending = await pendingEntries('m1')
   const known = pending.find((entry) => entry.body.includes('known'))
   if (!known) throw new Error('known entry missing')
@@ -63,10 +63,10 @@ test('pendingEntries reads entries from legacy erreurs.log and errors.log', asyn
   )
   await writeFile(
     join(home, 'errors.log'),
-    '=== 2026-01-02T00:00:00.000Z · mission m1 · herness 1.0.0 · moteur (step preflight)\nnouveau\n\n',
+    '=== 2026-01-02T00:00:00.000Z · mission m1 · herness 1.0.0 · engine (step preflight)\nnew\n\n',
   )
   const pending = await pendingEntries('m1')
-  expect(pending.map((entry) => entry.body)).toEqual(['ancien', 'nouveau'])
+  expect(pending.map((entry) => entry.body)).toEqual(['ancien', 'new'])
   expect(pending.map((entry) => entry.step)).toEqual(['tasks', 'preflight'])
 })
 
@@ -77,16 +77,16 @@ test("with no log, nothing to prepare and gh is not called", async () => {
 })
 
 test('only entries of the exact mission are taken', async () => {
-  await logHernessError({ mission: 'gh1', origin: 'moteur' }, new Error('un'))
-  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('deux'))
+  await logHernessError({ mission: 'gh1', origin: 'engine' }, new Error('one'))
+  await logHernessError({ mission: 'gh12', origin: 'engine' }, new Error('two'))
   const pending = await pendingEntries('gh1')
   expect(pending).toHaveLength(1)
   expect(pending[0]?.mission).toBe('gh1')
-  expect(pending[0]?.body).toContain('Error: un')
+  expect(pending[0]?.body).toContain('Error: one')
 })
 
 test('a new error makes an issue, a known one a comment', async () => {
-  await logHernessError({ mission: 'm1', origin: 'moteur' }, new Error('nouvelle'))
+  await logHernessError({ mission: 'm1', origin: 'engine' }, new Error('fresh'))
   await logHernessError({ mission: 'm1', origin: 'other' }, new Error('known'))
   const pending = await pendingEntries('m1')
   const second = pending[1]
@@ -99,7 +99,7 @@ test('a new error makes an issue, a known one a comment', async () => {
 })
 
 test('sendReport creates, comments and records each entry', async () => {
-  const { runner, calls } = await deuxErreurs()
+  const { runner, calls } = await twoErrors()
   const plan = await planReport('m1', runner)
   const issue = plan.find((item) => item.kind === 'issue')
   const comment = plan.find((item) => item.kind === 'comment')
@@ -122,9 +122,9 @@ test('sendReport creates, comments and records each entry', async () => {
 })
 
 test('a failure on the second send keeps the first', async () => {
-  const { runner } = await deuxErreurs()
+  const { runner } = await twoErrors()
   const plan = await planReport('m1', runner)
-  const failing = fakeRunner([{ number: 42, title: 'T', url: 'u42', body: 'ignoré' }], 'comment').runner
+  const failing = fakeRunner([{ number: 42, title: 'T', url: 'u42', body: 'ignored' }], 'comment').runner
   await expect(sendReport('m1', plan, failing)).rejects.toThrow(/comment/)
   const stored = JSON.parse(await readFile(issuesFilePath('m1'), 'utf8')) as { sent: { url: string }[] }
   expect(stored.sent).toHaveLength(2)
@@ -135,7 +135,7 @@ test('a failure on the second send keeps the first', async () => {
 })
 
 test("unreadable issues.json: nothing is sent", async () => {
-  await logHernessError({ mission: 'm1', origin: 'moteur' }, 'boum')
+  await logHernessError({ mission: 'm1', origin: 'engine' }, 'boom')
   await mkdir(missionDir('m1'), { recursive: true })
   await writeFile(issuesFilePath('m1'), '{')
   const { runner, calls } = fakeRunner()
@@ -144,17 +144,17 @@ test("unreadable issues.json: nothing is sent", async () => {
   expect(await readFile(issuesFilePath('m1'), 'utf8')).toBe('{')
 })
 
-test('previewLines et confirmQuestion', () => {
+test('previewLines and confirmQuestion', () => {
   const issue: PlannedSend = {
     kind: 'issue',
-    title: '[herness error] moteur: boom',
-    body: 'corps issue',
+    title: '[herness error] engine: boom',
+    body: 'issue body',
     group: { signature: 'herness-sig-aaaaaaaaaaaa', entries: [] },
   }
   const comment: PlannedSend = {
     kind: 'comment',
     issue: { number: 42, title: 'T', url: 'u42' },
-    body: 'corps commentaire',
+    body: 'comment body',
     group: { signature: 'herness-sig-bbbbbbbbbbbb', entries: [] },
   }
   const lines = previewLines('m1', [issue, comment])
@@ -163,6 +163,6 @@ test('previewLines et confirmQuestion', () => {
   expect(lines.join('\n')).toContain('── Comment on #42 (T)')
   expect(lines.at(-1)).toBe('Review: everything shown will be public.')
   expect(confirmQuestion([issue, comment])).toBe('Send 1 issue and 1 comment to MaxVzl/herness?')
-  const autre: PlannedSend = { ...issue, title: '[herness error] autre: boom' }
-  expect(confirmQuestion([issue, autre])).toBe('Send 2 issues to MaxVzl/herness?')
+  const other: PlannedSend = { ...issue, title: '[herness error] other: boom' }
+  expect(confirmQuestion([issue, other])).toBe('Send 2 issues to MaxVzl/herness?')
 })

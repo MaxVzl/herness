@@ -80,7 +80,7 @@ test('dev creates the workspace, saves the state, then starts the engine, dashbo
   expect(prompt).toMatch(/\bfr\b/)
   expect(prompt).not.toContain('Tu réponds en français')
   expect(prompt).toContain(join(missionDir('gh12'), 'request.md'))
-  // Après la PR : branche de la mission lue dans le worktree (elle est renommée au classement), main du projet et
+  // After the PR: the mission branch read from the worktree (renamed at classification), the project main and
   // preflight de la config, en clair.
   expect(prompt).toContain('git push --force-with-lease origin HEAD')
   expect(prompt).toContain('git branch --show-current')
@@ -111,24 +111,24 @@ test('dev creates the workspace, saves the state, then starts the engine, dashbo
 
 test('startMission writes request.md', async () => {
   const { d } = deps({ now: () => new Date(2026, 9, 30, 9) })
-  const id = await startMission('  ajoute un export CSV  ', repo, d)
-  expect(await readFile(join(missionDir(id), 'request.md'), 'utf8')).toBe('ajoute un export CSV\n')
+  const id = await startMission('  add a CSV export  ', repo, d)
+  expect(await readFile(join(missionDir(id), 'request.md'), 'utf8')).toBe('add a CSV export\n')
 })
 
 test('dev with free text: today\'s id and the request written as given', async () => {
   const { d } = deps({ now: () => new Date(2026, 9, 30, 9) })
-  const id = await startMission('  ajoute un export CSV  ', repo, d)
+  const id = await startMission('  add a CSV export  ', repo, d)
   expect(id).toBe('20261030-1')
-  expect(await readFile(join(missionDir(id), 'request.md'), 'utf8')).toBe('ajoute un export CSV\n')
+  expect(await readFile(join(missionDir(id), 'request.md'), 'utf8')).toBe('add a CSV export\n')
   expect(await readFile(join(missionDir(id), 'orchestrator.md'), 'utf8')).toContain('a written request (free text)')
-  expect((await loadState(id)).source).toEqual({ kind: 'text', ref: 'ajoute un export CSV' })
+  expect((await loadState(id)).source).toEqual({ kind: 'text', ref: 'add a CSV export' })
 })
 
 test('dev with a note: note.md is written and mentioned to the orchestrator', async () => {
   const { d } = deps()
-  await startMission('https://github.com/o/r/issues/12', repo, d, { note: '  ne touche pas à l\'export PDF\n' })
+  await startMission('https://github.com/o/r/issues/12', repo, d, { note: '  do not touch the PDF export\n' })
   const note = join(missionDir('gh12'), 'note.md')
-  expect(await readFile(note, 'utf8')).toBe("ne touche pas à l'export PDF\n")
+  expect(await readFile(note, 'utf8')).toBe("do not touch the PDF export\n")
   const prompt = await readFile(join(missionDir('gh12'), 'orchestrator.md'), 'utf8')
   expect(prompt).toContain(`Also read the user's note, \`${note}\``)
 })
@@ -165,11 +165,11 @@ test('dev stops on an environment KO without creating anything', async () => {
 
 // ---------- missions existantes ----------
 
-/** Mission créée par `dev` avec la doublure herdr (espace, onglets, panneaux réels de la doublure). */
+/** Mission created by `dev` with the herdr fake (workspace, tabs, real panes of the fake). */
 async function started(over: FakeOverrides = {}, extra: Extra = {}) {
   const r = deps(over, extra)
   await startMission('https://github.com/o/r/issues/12', repo, r.d)
-  // Le moteur a traité le message `orchestrator-started`.
+  // The engine has handled the `orchestrator-started` message.
   await drainInbox('gh12')
   await patch({ orchestrator: { ...(await loadState('gh12')).orchestrator, started: true } })
   r.fx.calls.length = 0
@@ -303,7 +303,7 @@ test('close stops when the test database cannot be removed', async () => {
   })
   await patch({ testDbUp: true })
   await expect(closeMission('gh12', d)).rejects.toThrow(/docker absent/)
-  // Le moteur est arrêté d'abord (seul écrivain), mais ni le worktree ni l'espace ne sont touchés.
+  // The engine is stopped first (sole writer), but neither the worktree nor the workspace is touched.
   expect(fx.callsOf('herdr.workspaceClose')).toEqual([])
   expect(fx.callsOf('git.worktreeRemove')).toEqual([])
   expect((await loadState('gh12')).step).toBe('env')
@@ -320,7 +320,7 @@ test('close also removes the proof database on main', async () => {
 test("close of an already closed mission cleans what remains (worktree, workspace, databases), otherwise \"nothing to close\"", async () => {
   const { fx, d, s } = await started({ git: { unpushedCount: async () => 0 } })
   await mkdir(s.worktree!, { recursive: true })
-  // Fermée par un abandon validé : le moteur a supprimé les bases, worktree et espace sont encore là.
+  // Closed by an approved abandon: the engine removed the databases, worktree and workspace are still there.
   await patch({ step: 'closed', proofDbUp: true })
   expect(await closeMission('gh12', d)).toBe(true)
   expect(fx.callsOf('run').map((c) => (c[1] as string[]).slice(0, 2))).toContainEqual(['down', 'gh12-main'])
@@ -455,7 +455,7 @@ test("resume: orchestrator alive but never started on the mission, the opening p
   expect(fx.callsOf('agents.start')).toEqual([])
   expect(fx.callsOf('herdr.agentPrompt')).toEqual([['ogh12', 'Start mission gh12. Read your system prompt.', { wait: false }]])
   expect(await drainInbox('gh12')).toEqual([{ type: 'orchestrator-started' }])
-  // Déjà lancé : rien n'est renvoyé.
+  // Already started: nothing is sent again.
   await patch({ orchestrator: { ...(await loadState('gh12')).orchestrator, started: true } })
   await resumeMission('gh12', d)
   expect(fx.callsOf('herdr.agentPrompt')).toHaveLength(1)
@@ -467,9 +467,9 @@ test('status lists missions and details one mission', async () => {
   const a = { ...newState({ id: 'A-1', source: { kind: 'text', ref: 'x' }, project: 'demo', repoPath: repo }), step: 'tasks' as const }
   a.tasks = [
     { n: 1, title: 'Un', testCommand: 't1', phase: 'done', round: 0 },
-    { n: 2, title: 'Deux', testCommand: 't2', phase: 'review', round: 1 },
+    { n: 2, title: 'Two', testCommand: 't2', phase: 'review', round: 1 },
   ]
-  a.gates = [{ id: 'g1', kind: 'amendment', status: 'pending', summary: 'ajout', createdAt: 'x' }]
+  a.gates = [{ id: 'g1', kind: 'amendment', status: 'pending', summary: 'add', createdAt: 'x' }]
   const b = { ...newState({ id: 'B-2', source: { kind: 'text', ref: 'y' }, project: 'demo', repoPath: repo }), step: 'pr-open' as const, prUrl: 'https://github.com/o/r/pull/3' }
   await saveState(a)
   await saveState(b)
@@ -480,8 +480,8 @@ test('status lists missions and details one mission', async () => {
   expect(la).toContain('g1')
   expect(lines.find((l) => l.startsWith('B-2'))).toContain('https://github.com/o/r/pull/3')
   const detail = (await missionStatus('A-1')).join('\n')
-  expect(detail).toContain('Task 2: Deux')
-  expect(detail).toContain('g1 (amendment): ajout')
+  expect(detail).toContain('Task 2: Two')
+  expect(detail).toContain('g1 (amendment): add')
 
   const r = await execa('node', ['bin/herness.js', 'status'], { reject: false, stdin: 'ignore', env: { HERNESS_HOME: home } })
   expect(r.exitCode).toBe(0)
@@ -513,7 +513,7 @@ test('close removes the database started by the engine just before it stops', as
     git: { unpushedCount: async () => 0 },
     herdr: {
       paneSendKeys: async () => {
-        // Le moteur lance la base entre la première lecture de l'état et son arrêt.
+        // The engine starts the database between the first state read and its stop.
         const cur = await loadState('gh12')
         if (!cur.testDbUp) await saveState({ ...cur, testDbUp: true })
       },
@@ -525,7 +525,7 @@ test('close removes the database started by the engine just before it stops', as
 })
 
 test('close does not proceed when the engine does not stop', async () => {
-  // Les ctrl+c n'ont aucun effet : le panneau reste occupé.
+  // The ctrl+c have no effect: the pane stays busy.
   const { fx, d, s } = await started({ git: { unpushedCount: async () => 0 }, herdr: { paneSendKeys: async () => {} } })
   fx.herdr.pane(s.herdr.panes['engine']!).busy = true
   await patch({ testDbUp: true })
@@ -558,7 +558,7 @@ test('close counts commits against the project main branch and confirms a dirty 
   expect(r.fx.callsOf('git.worktreeRemove')).toEqual([])
 })
 
-// ---------- resume --restart (mise à jour de herness) ----------
+// ---------- resume --restart (herness update) ----------
 
 test('resume --restart stops the engine then restarts the engine, dashboard and viewers even when busy, without sending anything to the agents', async () => {
   const { fx, d, s } = await started()
@@ -566,7 +566,7 @@ test('resume --restart stops the engine then restarts the engine, dashboard and 
   for (const k of ['engine', 'tasks', 'spec', 'plan']) fx.herdr.pane(s.herdr.panes[k]!).busy = true
   await resumeMission('gh12', d, { restart: true })
   const keys = fx.herdr.calls.filter((c) => c.startsWith('paneSendKeys'))
-  // Double ctrl+c pour chacun des quatre panneaux.
+  // Two ctrl+c for each of the four panes.
   expect(keys).toEqual(Array(8).fill('paneSendKeys ctrl+c'))
   expect(fx.herdr.runs).toEqual(
     expect.arrayContaining([
@@ -577,7 +577,7 @@ test('resume --restart stops the engine then restarts the engine, dashboard and 
     ]),
   )
   expect(fx.herdr.runs).toHaveLength(4)
-  // L'orchestrateur vivant n'est pas touché, aucun agent ne reçoit rien.
+  // The living orchestrator is not touched, no agent receives anything.
   expect(fx.callsOf('agents.start')).toEqual([])
   expect(fx.callsOf('agents.ask')).toEqual([])
   expect(fx.callsOf('herdr.agentPrompt')).toEqual([])
@@ -590,7 +590,7 @@ test("resume --restart fails without restarting anything when the engine does no
   expect(fx.herdr.runs).toEqual([])
 })
 
-// ---------- fermer : branche locale ----------
+// ---------- close: local branch ----------
 
 const branchCalls = (fx: FakeEffects) => ({
   fetch: fx.callsOf('git.fetchBranch'),
@@ -601,7 +601,7 @@ test('close deletes the local branch already fully on origin', async () => {
   const { fx, out, d } = await started({ git: { unpushedCount: async () => 0, currentBranch: async () => 'main', localOnlyCommits: async () => 0 } })
   await closeMission('gh12', d)
   expect(branchCalls(fx)).toEqual({ fetch: [[repo, 'herness/gh12']], del: [[repo, 'herness/gh12']] })
-  // Après la suppression du worktree.
+  // After the worktree is removed.
   const order = fx.calls.map((c) => c.fn)
   expect(order.indexOf('git.worktreeRemove')).toBeLessThan(order.indexOf('git.deleteBranch'))
   expect(out).toContain('local branch herness/gh12 deleted (still on origin)')
@@ -691,7 +691,7 @@ test('report on an unknown mission fails', async () => {
 
 test('report outside a terminal without --yes refuses without sending anything', async () => {
   await missionGh12()
-  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  await logHernessError({ mission: 'gh12', origin: 'engine' }, new Error('boom'))
   const { fx, d } = deps({ run: ghRun }, { isTTY: false })
   await expect(reportMissionErrors('gh12', d)).rejects.toThrow(/interactive terminal/)
   expect(ghCreates(fx)).toEqual([])
@@ -699,7 +699,7 @@ test('report outside a terminal without --yes refuses without sending anything',
 
 test('report shows the preview, asks, then sends', async () => {
   await missionGh12()
-  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  await logHernessError({ mission: 'gh12', origin: 'engine' }, new Error('boom'))
   const statePath = join(missionDir('gh12'), 'state.json')
   const stateBefore = await readFile(statePath, 'utf8')
   const asked: string[] = []
@@ -718,7 +718,7 @@ test('report shows the preview, asks, then sends', async () => {
 
 test('a refused report sends nothing', async () => {
   await missionGh12()
-  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  await logHernessError({ mission: 'gh12', origin: 'engine' }, new Error('boom'))
   const { fx, out, d } = deps({ run: ghRun }, { isTTY: true, confirm: async () => false })
   expect(await reportMissionErrors('gh12', d)).toBe(false)
   expect(out.join('\n')).toContain("nothing was sent")
@@ -726,7 +726,7 @@ test('a refused report sends nothing', async () => {
 })
 
 test('close in a terminal offers to send before stopping the engine', async () => {
-  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  await logHernessError({ mission: 'gh12', origin: 'engine' }, new Error('boom'))
   const { fx, d } = await started(
     { git: { unpushedCount: async () => 0 }, run: ghRun },
     { isTTY: true, confirm: async () => true },
@@ -745,7 +745,7 @@ test('close in a terminal offers to send before stopping the engine', async () =
 })
 
 test('close: a refused send does not prevent closing', async () => {
-  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  await logHernessError({ mission: 'gh12', origin: 'engine' }, new Error('boom'))
   const { fx, d } = await started(
     { git: { unpushedCount: async () => 0 }, run: ghRun },
     { isTTY: true, confirm: async (q) => !q.startsWith('Send') },
@@ -756,7 +756,7 @@ test('close: a refused send does not prevent closing', async () => {
 })
 
 test('close: a gh failure does not prevent closing', async () => {
-  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  await logHernessError({ mission: 'gh12', origin: 'engine' }, new Error('boom'))
   const { out, d } = await started(
     {
       git: { unpushedCount: async () => 0 },
@@ -786,7 +786,7 @@ test('close with nothing to file says nothing more', async () => {
 })
 
 test('close without the option reminds the command without contacting GitHub', async () => {
-  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  await logHernessError({ mission: 'gh12', origin: 'engine' }, new Error('boom'))
   const { fx, out, d } = await started({ git: { unpushedCount: async () => 0 }, run: ghRun })
   expect(await closeMission('gh12', d)).toBe(true)
   expect(out.join('\n')).toContain('1 herness error(s) not filed: herness report gh12')
@@ -794,7 +794,7 @@ test('close without the option reminds the command without contacting GitHub', a
 })
 
 test('a cancelled close offers nothing', async () => {
-  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  await logHernessError({ mission: 'gh12', origin: 'engine' }, new Error('boom'))
   const asked: string[] = []
   const { fx, d } = await started(
     { git: { unpushedCount: async () => 2 }, run: ghRun },
@@ -807,7 +807,7 @@ test('a cancelled close offers nothing', async () => {
 })
 
 test('close on an already closed and cleaned mission only reminds the command', async () => {
-  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  await logHernessError({ mission: 'gh12', origin: 'engine' }, new Error('boom'))
   const { fx, out, d, s } = await started(
     { git: { unpushedCount: async () => 0 }, run: ghRun },
     { isTTY: true, confirm: async () => true },
@@ -824,7 +824,7 @@ test('close on an already closed and cleaned mission only reminds the command', 
 
 test('report --yes sends without a question but with a preview', async () => {
   await missionGh12()
-  await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
+  await logHernessError({ mission: 'gh12', origin: 'engine' }, new Error('boom'))
   const asked: string[] = []
   const { fx, out, d } = deps(
     { run: ghRun },

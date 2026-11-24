@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createMissionSpace, markDone, paneIsIdle, release, releaseTab, signals, slot, timing } from '../../src/herdr/layout.js';
 import { FakeHerdr } from './fake.js';
 
-// Valeur réelle, lue avant que les tests ne la mettent à zéro.
+// Real value, read before the tests set it to zero.
 const RETIRE_DELAY_MS = timing.retireDelayMs;
 
 beforeEach(() => {
@@ -32,10 +32,10 @@ describe('createMissionSpace', () => {
     expect(byId(s.panes.tasks).tabId).toBe(s.tabs.master);
     expect(byId(s.panes.lazygit).tabId).toBe(s.tabs.master);
     expect(byId(s.panes.engine).tabId).toBe(s.tabs.process);
-    // orchestrator | tasks côte à côte ; lazygit sous tasks
+    // orchestrator | tasks side by side; lazygit under tasks
     expect(byId(s.panes.tasks).rect.x).toBeGreaterThan(byId(s.panes.orchestrator).rect.x);
     expect(byId(s.panes.lazygit).rect.y).toBeGreaterThan(byId(s.panes.tasks).rect.y);
-    // Onglet docs : spec | plan, créé juste après master (l'ordre de création fait l'ordre des onglets).
+    // Docs tab: spec | plan, created right after master (creation order is tab order).
     expect(s.tabs.docs).toBeTruthy();
     expect(byId(s.panes.spec).label).toBe('spec');
     expect(byId(s.panes.plan).label).toBe('plan');
@@ -96,7 +96,7 @@ describe('slot', () => {
     const p2 = await slot(h, tab, '/wt', 'T2');
     expect(h.calls.at(-2)).toMatch(/^paneSplit right/);
     expect(h.pane(p2).rect.x).toBeGreaterThan(0);
-    // les deux panneaux font 100x60 : 100 <= 120 -> en dessous
+    // both panes are 100x60: 100 <= 120 -> below
     await slot(h, tab, '/wt', 'T3');
     expect(h.calls.filter((c) => c.startsWith('paneSplit'))).toEqual(['paneSplit right - /wt', 'paneSplit down - /wt']);
   });
@@ -108,13 +108,13 @@ describe('slot', () => {
     for (const l of ['T3 ✓', 'T2 ✓', 'T4', 'T5', 'T6']) ids.push(h.addPane(tab, { x: 0, y: 0, width: 10, height: 10 }, l));
     for (const id of ids) h.pane(id).busy = true;
     const got = await slot(h, tab, '/wt', 'T7');
-    expect(got).toBe(ids[0]); // T1 ✗ est le plus ancien (numéro le plus petit)
+    expect(got).toBe(ids[0]); // T1 ✗ is the oldest (smallest number)
     expect(h.pane(got).label).toBe('T7');
     expect(h.calls.filter((c) => c === 'paneSendKeys ctrl+c')).toHaveLength(2);
     expect(h.panes).toHaveLength(6);
   });
 
-  // Mesuré : Claude Code ne quitte pas sur deux ctrl+c espacés de 1500 ms, mais quitte à 300 ms (cursor-agent aussi à 250 ms).
+  // Measured: Claude Code does not quit on two ctrl+c 1500 ms apart, but quits at 300 ms (cursor-agent does too at 250 ms).
   it('the two ctrl+c are 250 ms apart', () => {
     expect(RETIRE_DELAY_MS).toBe(250);
   });
@@ -139,7 +139,7 @@ describe('slot', () => {
     expect(sent).toEqual([[2, 'SIGTERM']]);
   });
 
-  it('SIGKILL si SIGTERM ne suffit pas', async () => {
+  it('SIGKILL when SIGTERM is not enough', async () => {
     const { h, tab, pane } = fullGrid();
     const sent: [number, string][] = [];
     signals.kill = (pid, sig) => {

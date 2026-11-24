@@ -3,19 +3,19 @@ import { checkAmendment, parsePlan } from '../../src/mission/plan.ts'
 
 const plan = (n: number) =>
   Array.from({ length: n }, (_, i) =>
-    `### Tâche ${i + 1} : Titre ${i + 1}\n\nCorps ${i + 1}\n\n**Test :** \`pnpm test t${i + 1}\`\n`).join('\n')
+    `### Tâche ${i + 1} : Title ${i + 1}\n\nBody ${i + 1}\n\n**Test :** \`pnpm test t${i + 1}\`\n`).join('\n')
 
 test('reads two tasks with title, test command and body', () => {
   const r = parsePlan(`# Plan\n\nintro\n\n${plan(2)}`)
   expect(r.ok).toBe(true)
   if (!r.ok) return
   expect(r.tasks).toHaveLength(2)
-  expect(r.tasks[0]).toMatchObject({ n: 1, title: 'Titre 1', testCommand: 'pnpm test t1' })
-  expect(r.tasks[0]!.body).toContain('Corps 1')
-  expect(r.tasks[0]!.body).not.toContain('Corps 2')
+  expect(r.tasks[0]).toMatchObject({ n: 1, title: 'Title 1', testCommand: 'pnpm test t1' })
+  expect(r.tasks[0]!.body).toContain('Body 1')
+  expect(r.tasks[0]!.body).not.toContain('Body 2')
 })
 
-test('accepte le titre anglais ### Task 1:', () => {
+test('accepts the English heading ### Task 1:', () => {
   const r = parsePlan('### Task 1: Hello\n\n**Test :** `pnpm test`\n')
   expect(r.ok && r.tasks[0]).toMatchObject({ n: 1, title: 'Hello', testCommand: 'pnpm test' })
 })
@@ -28,7 +28,7 @@ test('accepts a plan in English format', () => {
 })
 
 test('refuses a task without a **Test:** line', () => {
-  const r = parsePlan('### Tâche 1 : A\n\n**Test :** `x`\n\n### Tâche 2 : B\n\nrien\n')
+  const r = parsePlan('### Tâche 1 : A\n\n**Test :** `x`\n\n### Tâche 2 : B\n\nnothing\n')
   expect(r).toEqual({ ok: false, errors: expect.arrayContaining(['Task 2: missing **Test:** line']) })
 })
 
@@ -40,7 +40,7 @@ test('refuses a non-consecutive numbering', () => {
 })
 
 test('refuses a plan with no task', () => {
-  const r = parsePlan('# Plan vide\n')
+  const r = parsePlan('# Empty plan\n')
   expect(r).toEqual({ ok: false, errors: ['Plan has no task: no "### Task <n>: <title>" heading'] })
 })
 
@@ -53,7 +53,7 @@ test('checkAmendment accepts adding task 4 when 1-3 are done and unchanged', () 
 
 test('checkAmendment refuses a change to the body of done task 2', () => {
   const prev = parsePlan(plan(3))
-  const next = parsePlan(plan(3).replace('Corps 2', 'Corps modifié'))
+  const next = parsePlan(plan(3).replace('Body 2', 'Body changed'))
   if (!prev.ok) throw new Error('prev')
   const r = checkAmendment(prev.tasks.slice(0, 2).map((t) => ({ n: t.n, body: t.body })), next)
   expect(r.ok).toBe(false)
@@ -82,7 +82,7 @@ test('checkAmendment refuses the disappearance of the current task and accepts a
     ok: false,
     reason: 'in-progress task 2 has disappeared: keep it under number 2 (changing its text if needed) and add tasks instead',
   })
-  expect(checkAmendment(done, parsePlan(plan(3).replace('Corps 2', 'Corps 2 amendé')), current)).toEqual({ ok: true })
+  expect(checkAmendment(done, parsePlan(plan(3).replace('Body 2', 'Body 2 amended')), current)).toEqual({ ok: true })
 })
 
 test('checkAmendment refuses renumbering the current task', () => {
@@ -90,7 +90,7 @@ test('checkAmendment refuses renumbering the current task', () => {
   if (!prev.ok) throw new Error('prev')
   // A task inserted before: the old task 2 (in progress), text unchanged, becomes 3.
   const old2 = plan(2).split('### Tâche 2')[1]!
-  const shifted = parsePlan(`${plan(1)}\n### Tâche 2 : Insérée\n\nNouvelle\n\n**Test :** \`pnpm test n\`\n\n### Tâche 3${old2}`)
+  const shifted = parsePlan(`${plan(1)}\n### Tâche 2 : Inserted\n\nNew\n\n**Test :** \`pnpm test n\`\n\n### Tâche 3${old2}`)
   const r = checkAmendment([{ n: 1, body: prev.tasks[0]!.body }], shifted, { n: 2, body: prev.tasks[1]!.body })
   expect(r.ok).toBe(false)
   if (!r.ok) {

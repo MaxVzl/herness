@@ -44,7 +44,7 @@ const mission = (id: string, step: MissionState['step']): MissionState => ({ ...
 
 const listed = (running: MissionState[], legacy: MissionState[] = []) => async () => ({ running, legacy })
 
-test('installe la dernière version ou celle demandée', async () => {
+test('installs the latest version or the one requested', async () => {
   const d = deps()
   await update({}, d, listed([]))
   await update({ version: '1.2.3' }, d, listed([]))
@@ -52,53 +52,53 @@ test('installe la dernière version ou celle demandée', async () => {
   expect(d.lines).toEqual([])
 })
 
-test('propose de redémarrer les missions en cours, avec le nouveau code', async () => {
+test('offers to restart running missions on the new code', async () => {
   const d = deps(true)
   await update({}, d, listed([mission('a1', 'tasks'), mission('b2', 'spec')]))
   expect(d.lines[0]).toBe('Missions still running on the old code: a1, b2')
   expect(d.calls).toEqual(['install', 'confirm Restart them on the new version?', 'restart a1', 'restart b2'])
 })
 
-test('refusé : rien de redémarré, la commande est rappelée', async () => {
+test('refused: nothing restarted, the command is repeated', async () => {
   const d = deps(false)
   await update({}, d, listed([mission('a1', 'tasks')]))
   expect(d.calls).not.toContain('restart a1')
   expect(d.lines.at(-1)).toBe('Later: herness resume <id> --restart')
 })
 
-test('hors terminal : ne demande rien, liste les commandes', async () => {
+test('outside a terminal: asks nothing, lists the commands', async () => {
   const d = { ...deps(true), isTTY: false }
   await update({}, d, listed([mission('a1', 'tasks')]))
   expect(d.calls).toEqual(['install'])
   expect(d.lines).toContain('  herness resume a1 --restart')
 })
 
-test('un redémarrage en échec n’empêche pas les autres, puis erreur récapitulative', async () => {
+test('one failed restart does not stop the others, then a summary error', async () => {
   const d = deps(true)
   d.restart = async (id) => {
     d.calls.push(`restart ${id}`)
-    if (id === 'a1') throw new Error('herdr absent')
+    if (id === 'a1') throw new Error('herdr missing')
   }
   await expect(update({}, d, listed([mission('a1', 'tasks'), mission('b2', 'tasks')])))
     .rejects.toThrow('restart these by hand: herness resume a1 --restart')
   expect(d.calls).toContain('restart b2')
-  expect(d.lines).toContain('a1: restart failed: herdr absent')
+  expect(d.lines).toContain('a1: restart failed: herdr missing')
 })
 
-test('installation en échec : aucune mission touchée', async () => {
+test('failed install: no mission is touched', async () => {
   const d = deps(true)
   d.install = async () => {
-    throw new Error('téléchargement impossible')
+    throw new Error('download failed')
   }
   let listed = false
   await expect(update({}, d, async () => {
     listed = true
     return { running: [], legacy: [] }
-  })).rejects.toThrow('téléchargement impossible')
+  })).rejects.toThrow('download failed')
   expect(listed).toBe(false)
 })
 
-test('missions en cours : ni PR ouverte, ni fermée, ni bloquée', async () => {
+test('running missions: not a PR open, not closed, not blocked', async () => {
   for (const [id, step] of [['a1', 'tasks'], ['b2', 'pr-open'], ['c3', 'closed'], ['d4', 'blocked'], ['e5', 'preflight']] as const) {
     await saveState(mission(id, step))
   }
@@ -142,7 +142,7 @@ test('update lists legacy missions apart and restarts only the others', async ()
   expect(d.calls).not.toContain('restart A')
 })
 
-test('runningMissions sépare les missions héritées non terminées', async () => {
+test('runningMissions separates unfinished legacy missions', async () => {
   await saveState(mission('cur', 'tasks'))
   await saveState(mission('done', 'closed'))
   await saveState(mission('wait', 'blocked'))
@@ -159,13 +159,13 @@ test('runningMissions sépare les missions héritées non terminées', async () 
   expect(found.legacy.map((s) => s.id)).toEqual(['old-block', 'old-run'])
 })
 
-test('lanceur installé : HERNESS_INSTALL_DIR, sinon XDG_DATA_HOME, sinon ~/.local/share', () => {
+test('installed launcher: HERNESS_INSTALL_DIR, else XDG_DATA_HOME, else ~/.local/share', () => {
   expect(installedBin({ HERNESS_INSTALL_DIR: '/opt/h', HOME: '/home/x' })).toBe('/opt/h/current/bin/herness')
   expect(installedBin({ XDG_DATA_HOME: '/d', HOME: '/home/x' })).toBe('/d/herness/current/bin/herness')
   expect(installedBin({ HOME: '/home/x' })).toBe('/home/x/.local/share/herness/current/bin/herness')
 })
 
-test('restartInstalled lance le binaire installé avec resume <id> --restart', async () => {
+test('restartInstalled launches the installed binary with resume <id> --restart', async () => {
   const calls: unknown[] = []
   const exec = async (cmd: string, args: string[], opts: { stdio: string }) => {
     calls.push([cmd, args, opts])
@@ -174,18 +174,18 @@ test('restartInstalled lance le binaire installé avec resume <id> --restart', a
   expect(calls).toEqual([['/opt/h/current/bin/herness', ['resume', 'm1', '--restart'], { stdio: 'inherit' }]])
 })
 
-test('la CLI accepte --version sur mise-a-jour sans le confondre avec --version de herness', async () => {
+test('the CLI accepts --version on update without confusing it with herness --version', async () => {
   const r = await execa('node', ['bin/herness.js', 'update', '--help'], { reject: false, stdin: 'ignore' })
   expect(r.stdout).toContain('--version <x.y.z>')
 })
 
-test('installDir suit HERNESS_INSTALL_DIR, puis XDG_DATA_HOME, puis HOME', () => {
+test('installDir follows HERNESS_INSTALL_DIR, then XDG_DATA_HOME, then HOME', () => {
   expect(installDir({ HERNESS_INSTALL_DIR: '/opt/h', HOME: '/home/x' })).toBe('/opt/h')
   expect(installDir({ XDG_DATA_HOME: '/d', HOME: '/home/x' })).toBe('/d/herness')
   expect(installDir({ HOME: '/home/x' })).toBe('/home/x/.local/share/herness')
 })
 
-test('runsInstalled : vrai pour une racine sous versions/, aussi atteinte par le lien current', async () => {
+test('runsInstalled: true for a root under versions/, also reached through the current link', async () => {
   const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
   try {
     const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }
@@ -198,7 +198,7 @@ test('runsInstalled : vrai pour une racine sous versions/, aussi atteinte par le
   }
 })
 
-test('runsInstalled : faux pour un dossier de sources ou sans dossier versions', async () => {
+test('runsInstalled: false for a source folder or without a versions folder', async () => {
   const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
   try {
     const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }
@@ -209,7 +209,7 @@ test('runsInstalled : faux pour un dossier de sources ou sans dossier versions',
   }
 })
 
-test('hernessCommand : lanceur installé si la version tourne depuis versions/ et que current/bin/herness existe', async () => {
+test('hernessCommand: installed launcher when the version runs from versions/ and current/bin/herness exists', async () => {
   const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
   try {
     const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }
@@ -224,7 +224,7 @@ test('hernessCommand : lanceur installé si la version tourne depuis versions/ e
   }
 })
 
-test('hernessCommand : node + bin/herness.js hors installation ou si le lanceur installé manque', async () => {
+test('hernessCommand: node + bin/herness.js outside an install or when the installed launcher is missing', async () => {
   const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
   try {
     const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }
@@ -237,12 +237,12 @@ test('hernessCommand : node + bin/herness.js hors installation ou si le lanceur 
   }
 })
 
-test('shellLine cite les chemins et laisse node nu', () => {
+test('shellLine quotes paths and leaves node bare', () => {
   expect(shellLine({ cmd: 'node', args: ["/a b/it's/herness.js"] }, 'engine x')).toBe(`node '/a b/it'\\''s/herness.js' engine x`)
   expect(shellLine({ cmd: '/d/current/bin/herness', args: [] }, 'cockpit')).toBe(`'/d/current/bin/herness' cockpit`)
 })
 
-test('installedVersion lit current/package.json, null sinon', async () => {
+test('installedVersion reads current/package.json, null otherwise', async () => {
   const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
   try {
     const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }
@@ -261,7 +261,7 @@ test('installedVersion lit current/package.json, null sinon', async () => {
   }
 })
 
-test('staleNotice : message seulement si la version installée diffère et que le processus tourne depuis une installation', async () => {
+test('staleNotice: a message only when the installed version differs and the process runs from an install', async () => {
   const data = await mkdtemp(join(tmpdir(), 'herness-install-'))
   try {
     const env = { HERNESS_INSTALL_DIR: data, HOME: '/home/x' }

@@ -14,7 +14,7 @@ function fake(stdout: string) {
 }
 
 describe('readIssue', () => {
-  it('lit titre, corps et commentaires de la sortie gh', async () => {
+  it('reads the title, body and comments from the gh output', async () => {
     const f = fake(JSON.stringify({ title: 'T', body: 'B', comments: [{ body: 'c1' }, { body: 'c2' }] }));
     const r = await readIssue('https://github.com/o/r/issues/1', f.runner);
     expect(r).toEqual({ title: 'T', body: 'B', comments: ['c1', 'c2'] });
@@ -23,13 +23,13 @@ describe('readIssue', () => {
 });
 
 describe('createPr', () => {
-  it('rend l’URL de la PR', async () => {
+  it('returns the PR URL', async () => {
     const f = fake('https://github.com/o/r/pull/9\n');
-    const url = await createPr('/wt', { base: 'main', title: 'Titre', bodyFile: '/b.md' }, f.runner);
+    const url = await createPr('/wt', { base: 'main', title: 'Title', bodyFile: '/b.md' }, f.runner);
     expect(url).toBe('https://github.com/o/r/pull/9');
     expect(f.calls[0]).toMatchObject({
       cmd: 'gh',
-      args: ['pr', 'create', '--base', 'main', '--title', 'Titre', '--body-file', '/b.md'],
+      args: ['pr', 'create', '--base', 'main', '--title', 'Title', '--body-file', '/b.md'],
       cwd: '/wt',
     });
   });

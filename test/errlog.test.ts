@@ -18,7 +18,7 @@ afterEach(async () => {
 
 const version = VERSION.replaceAll('.', '\\.')
 
-test('errorLogPath vaut <HERNESS_HOME>/errors.log', () => {
+test('errorLogPath is <HERNESS_HOME>/errors.log', () => {
   expect(errorLogPath()).toBe(join(home, 'errors.log'))
 })
 

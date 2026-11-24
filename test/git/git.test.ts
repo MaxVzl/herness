@@ -19,7 +19,7 @@ async function commit(file: string, content: string, msg: string, author?: strin
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'herness-git-'));
   await run('git', ['init', '-b', 'main', dir]);
-  await git('config', 'user.name', 'Moi');
+  await git('config', 'user.name', 'Me');
   await git('config', 'user.email', 'moi@example.com');
   await commit('a.txt', 'a\n', 'init');
 });
@@ -45,7 +45,7 @@ describe('controlCommits', () => {
     const base = await headSha(dir);
     await commit('b.txt', 'b\n', 'b');
     await git('config', '--unset', 'user.email');
-    // Sans la configuration globale de la machine (qui peut définir user.email).
+    // Without the machine's global config (which may set user.email).
     const saved = { g: process.env.GIT_CONFIG_GLOBAL, n: process.env.GIT_CONFIG_NOSYSTEM };
     process.env.GIT_CONFIG_GLOBAL = '/dev/null';
     process.env.GIT_CONFIG_NOSYSTEM = '1';
@@ -60,10 +60,10 @@ describe('controlCommits', () => {
 
   it('KO when a commit has an author other than the configured identity', async () => {
     const base = await headSha(dir);
-    await commit('b.txt', 'b\n', 'b', 'Autre <autre@example.com>');
+    await commit('b.txt', 'b\n', 'b', 'Other <other@example.com>');
     const r = await controlCommits(dir, base, [], 'main');
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/autre@example.com/);
+    if (!r.ok) expect(r.reason).toMatch(/other@example.com/);
     if (!r.ok) expect(r.code).toBe('author');
   });
 
@@ -92,7 +92,7 @@ describe('controlCommits', () => {
     await commit('src/c.txt', 'c\n', 'c');
     expect(await controlCommits(dir, base, ['generated/**'], 'main')).toEqual({ ok: true, commits: 2 });
   });
-  /** Branche feature avec un commit, rebasée sur un main qui a reçu deux commits d’un collègue (dont un fichier interdit). */
+  /** Feature branch with one commit, rebased onto a main that received two commits from a colleague (including a forbidden file). */
   async function rebaseOntoColleagueMain(): Promise<string> {
     await commit('b.txt', 'b\n', 'b');
     const fixBase = await headSha(dir);
@@ -106,7 +106,7 @@ describe('controlCommits', () => {
 
   it('OK after a rebase onto a main that contains another author\'s commits and a forbidden file', async () => {
     const fixBase = await rebaseOntoColleagueMain();
-    await commit('c.txt', 'c\n', 'correctif');
+    await commit('c.txt', 'c\n', 'fix');
     expect(await controlCommits(dir, fixBase, ['generated/**'], 'main')).toEqual({ ok: true, commits: 2 });
   });
 
@@ -117,10 +117,10 @@ describe('controlCommits', () => {
 
   it('KO when another author commits on the branch after the rebase', async () => {
     const fixBase = await rebaseOntoColleagueMain();
-    await commit('c.txt', 'c\n', 'c', 'Autre <autre@example.com>');
+    await commit('c.txt', 'c\n', 'c', 'Other <other@example.com>');
     const r = await controlCommits(dir, fixBase, ['generated/**'], 'main');
     expect(r).toMatchObject({ ok: false, code: 'author' });
-    if (!r.ok) expect(r.reason).toMatch(/autre@example\.com/);
+    if (!r.ok) expect(r.reason).toMatch(/other@example\.com/);
     if (!r.ok) expect(r.reason).not.toMatch(/coll@example\.com/);
   });
 
@@ -151,8 +151,8 @@ describe('branchFiles', () => {
     await commit('m.txt', 'm\n', 'm', 'Colleague <coll@example.com>');
     await git('checkout', 'feature');
     await git('rebase', 'main');
-    await commit('c.txt', 'c\n', 'correctif');
-    await commit('c.txt', 'c2\n', 'correctif 2');
+    await commit('c.txt', 'c\n', 'fix');
+    await commit('c.txt', 'c2\n', 'fix 2');
     expect((await branchFiles(dir, fixBase, 'main')).sort()).toEqual(['b.txt', 'c.txt']);
   });
 });
@@ -160,13 +160,13 @@ describe('branchFiles', () => {
 describe('diffPackage', () => {
   it('writes Commits, Summary and Diff and returns the commit count', async () => {
     const base = await headSha(dir);
-    await commit('b.txt', 'b\n', 'ajoute b');
-    await commit('c.txt', 'c\n', 'ajoute c');
+    await commit('b.txt', 'b\n', 'add b');
+    await commit('c.txt', 'c\n', 'add c');
     const out = join(dir, '..', `${Date.now()}-out`, 'diff.md');
     const r = await diffPackage(dir, base, out);
     expect(r).toEqual({ base, head: await headSha(dir), commits: 2 });
     const txt = await readFile(out, 'utf8');
-    expect(txt).toMatch(/^# Commits\n.*ajoute c\n.*ajoute b\n\n# Summary\n/s);
+    expect(txt).toMatch(/^# Commits\n.*add c\n.*add b\n\n# Summary\n/s);
     expect(txt).toContain('# Diff\ndiff --git a/b.txt b/b.txt');
     await rm(join(out, '..'), { recursive: true, force: true });
   });
@@ -185,7 +185,7 @@ describe('renameBranch', () => {
 
 describe('identity, commitFiles, push, fetchMain', () => {
   it('identity returns name and email, or null', async () => {
-    expect(await identity(dir)).toEqual({ name: 'Moi', email: 'moi@example.com' });
+    expect(await identity(dir)).toEqual({ name: 'Me', email: 'moi@example.com' });
   });
 
   it('commitFiles commits the given files and returns the SHA', async () => {
@@ -228,19 +228,19 @@ describe('currentBranch, isClean', () => {
 describe('mergeBase, changedFiles, worktreeAddDetached, worktreeRemove', () => {
   it('mergeBase returns the divergence point with a ref', async () => {
     const base = await headSha(dir);
-    await git('branch', 'autre');
+    await git('branch', 'other');
     await commit('b.txt', 'b\n', 'b');
-    await git('checkout', '-q', 'autre');
+    await git('checkout', '-q', 'other');
     await commit('c.txt', 'c\n', 'c');
     await git('checkout', '-q', 'main');
-    expect(await mergeBase(dir, 'autre')).toBe(base);
+    expect(await mergeBase(dir, 'other')).toBe(base);
   });
 
   it('changedFiles lists files touched since the base, rename = deletion + addition', async () => {
     const base = await headSha(dir);
     await commit('src/b.txt', 'b\n', 'b');
     await git('mv', 'a.txt', 'z.txt');
-    await git('commit', '-q', '-m', 'renomme');
+    await git('commit', '-q', '-m', 'rename');
     expect((await changedFiles(dir, base)).sort()).toEqual(['a.txt', 'src/b.txt', 'z.txt']);
     const mid = (await git('rev-parse', 'HEAD~1')).stdout.trim();
     expect(await changedFiles(dir, base, mid)).toEqual(['src/b.txt']);
@@ -249,22 +249,22 @@ describe('mergeBase, changedFiles, worktreeAddDetached, worktreeRemove', () => {
   it('worktreeAddDetached creates a detached worktree, worktreeRemove deletes it even when dirty', async () => {
     const first = await headSha(dir);
     await commit('b.txt', 'b\n', 'b');
-    const wt = `${dir}-preuve`;
+    const wt = `${dir}-proof`;
     await worktreeAddDetached(dir, wt, first);
     expect((await run('git', ['-C', wt, 'rev-parse', 'HEAD'])).stdout.trim()).toBe(first);
     expect((await run('git', ['-C', wt, 'rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()).toBe('HEAD');
     await writeFile(join(wt, 'sale.txt'), 'x');
     await worktreeRemove(dir, wt);
     await expect(access(wt)).rejects.toThrow();
-    expect((await git('worktree', 'list')).stdout).not.toContain('preuve');
+    expect((await git('worktree', 'list')).stdout).not.toContain('proof');
   });
 
   it('worktreeRemove tolerates a worktree already deleted by hand', async () => {
-    const wt = `${dir}-preuve2`;
+    const wt = `${dir}-proof2`;
     await worktreeAddDetached(dir, wt, 'HEAD');
     await rm(wt, { recursive: true, force: true });
     await worktreeRemove(dir, wt);
-    expect((await git('worktree', 'list')).stdout).not.toContain('preuve2');
+    expect((await git('worktree', 'list')).stdout).not.toContain('proof2');
   });
 });
 
@@ -287,7 +287,7 @@ describe('rebaseOnto, unpushedCount, isAncestor', () => {
     const clone = `${dir}-clone`;
     await run('git', ['clone', '-q', bare, clone]);
     await run('git', ['-C', clone, 'config', 'user.email', 'moi@example.com']);
-    await run('git', ['-C', clone, 'config', 'user.name', 'Moi']);
+    await run('git', ['-C', clone, 'config', 'user.name', 'Me']);
     await writeFile(join(clone, file), content);
     await run('git', ['-C', clone, 'add', file]);
     await run('git', ['-C', clone, 'commit', '-m', `main ${file}`]);
@@ -318,7 +318,7 @@ describe('rebaseOnto, unpushedCount, isAncestor', () => {
   });
 
   it('rebaseOnto aborts the rebase on a conflict', async () => {
-    await commit('a.txt', 'branche\n', 'a branche');
+    await commit('a.txt', 'branch\n', 'on branch');
     const before = await headSha(dir);
     await advanceMain('a.txt', 'main\n');
     expect(await rebaseOnto(dir, 'origin/main')).toEqual({ ok: false });
@@ -362,13 +362,13 @@ describe('fetchBranch, localOnlyCommits, deleteBranch', () => {
     await rm(`${dir}-clone`, { recursive: true, force: true });
   });
 
-  /** Clone de l'origine, partant de `origin/main`, où `fn` commite avant de pousser sur `herness/x`. */
+  /** Clone of origin, starting from `origin/main`, where `fn` commits before pushing to `herness/x`. */
   async function remoteCommits(files: [string, string, string?][]) {
     const clone = `${dir}-clone`;
     await run('git', ['clone', '-q', bare, clone]);
     const c = (...a: string[]) => run('git', ['-C', clone, ...a]);
-    await c('config', 'user.email', 'autre@example.com');
-    await c('config', 'user.name', 'Autre');
+    await c('config', 'user.email', 'other@example.com');
+    await c('config', 'user.name', 'Other');
     await c('checkout', '-q', '-b', 'herness/x', 'origin/main');
     for (const [f, content, msg] of files) {
       await writeFile(join(clone, f), content);
@@ -386,7 +386,7 @@ describe('fetchBranch, localOnlyCommits, deleteBranch', () => {
     expect(await localOnlyCommits(dir, 'herness/x')).toBe(0);
     await deleteBranch(dir, 'herness/x');
     expect((await git('branch', '--list', 'herness/x')).stdout.trim()).toBe('');
-    // La branche distante est intacte.
+    // The remote branch is intact.
     expect((await run('git', ['-C', bare, 'rev-parse', '--verify', 'herness/x'])).exitCode).toBe(0);
   });
 
@@ -403,7 +403,7 @@ describe('fetchBranch, localOnlyCommits, deleteBranch', () => {
   it('ahead only by commits with an equivalent patch (rebased): 0', async () => {
     await commit('b.txt', 'b\n', 'b');
     await git('checkout', 'main');
-    // L'origine a le même patch avec un autre SHA, plus des commits en plus.
+    // Origin has the same patch with another SHA, plus extra commits.
     await remoteCommits([['b.txt', 'b\n', 'b rebased'], ['e.txt', 'e\n']]);
     await fetchBranch(dir, 'herness/x');
     expect(Number((await git('rev-list', '--count', 'origin/herness/x..herness/x')).stdout.trim())).toBe(1);

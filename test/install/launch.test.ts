@@ -27,13 +27,13 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-test('missionMcpConfig écrit le lanceur installé', async () => {
+test('missionMcpConfig writes the installed launcher', async () => {
   const p = await missionMcpConfig('T-1')
   const j = JSON.parse(await readFile(p, 'utf8'))
   expect(j.mcpServers.herness).toEqual({ command: '/inst/current/bin/herness', args: ['mcp', 'T-1'] })
 })
 
-test('restartDetached lance le lanceur installé', async () => {
+test('restartDetached launches the installed launcher', async () => {
   const seen: unknown[] = []
   const spawn: Spawner = (cmd, args) => {
     seen.push([cmd, args])
@@ -48,14 +48,14 @@ test('restartDetached lance le lanceur installé', async () => {
 const LAUNCHER = "'/inst/current/bin/herness'"
 
 async function lifecycle() {
-  const repo = join(home, 'projet-demo')
+  const repo = join(home, 'demo-project')
   await mkdir(repo, { recursive: true })
   const fx = fakeEffects({ git: { isClean: async () => true } })
   const d: LifecycleDeps = { e: fx, loadConfig: async () => ({ ...demo, repoPath: repo }), out: () => {} }
   return { fx, d, repo, h: fx.herdr }
 }
 
-test('startMission lance moteur, tableau et visionneuses par le lanceur installé', async () => {
+test('startMission launches the engine, dashboard and viewers through the installed launcher', async () => {
   const { d, repo, h } = await lifecycle()
   const id = await startMission('https://github.com/o/r/issues/12', repo, d)
   expect(h.runs.map((r) => r.cmd)).toEqual(expect.arrayContaining([
@@ -66,7 +66,7 @@ test('startMission lance moteur, tableau et visionneuses par le lanceur install�
   ]))
 })
 
-test('resumeMission relance moteur, tableau et visionneuses arrêtés par le lanceur installé', async () => {
+test('resumeMission restarts a stopped engine, dashboard and viewers through the installed launcher', async () => {
   const { d, repo, h } = await lifecycle()
   const id = await startMission('https://github.com/o/r/issues/12', repo, d)
   await drainInbox(id)
@@ -83,7 +83,7 @@ test('resumeMission relance moteur, tableau et visionneuses arrêtés par le lan
   ]))
 })
 
-test('openCockpit lance le cockpit par le lanceur installé', async () => {
+test('openCockpit launches the cockpit through the installed launcher', async () => {
   const h = new FakeHerdr()
   h.seedWorkspace('demo')
   const cfg = { ...demo, repoPath: '/repo/demo' }

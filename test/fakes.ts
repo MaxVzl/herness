@@ -6,7 +6,7 @@ import type { RunResult } from '../src/exec.ts'
 import { signals, timing } from '../src/herdr/layout.ts'
 import { FakeHerdr } from './herdr/fake.ts'
 
-// Les tests du moteur n'attendent pas et n'envoient jamais de vrai signal.
+// Engine tests do not wait and never send a real signal.
 timing.retireDelayMs = 0
 timing.pollMs = 0
 signals.kill = () => {

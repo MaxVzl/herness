@@ -81,9 +81,9 @@ test("an unreadable === line does not create an entry", () => {
 })
 
 test('entryHash differs for two identical entries at different times', async () => {
-  await logHernessError({ origin: 'moteur' }, 'même')
+  await logHernessError({ origin: 'engine' }, 'same')
   await new Promise((resolve) => setTimeout(resolve, 5))
-  await logHernessError({ origin: 'moteur' }, 'même')
+  await logHernessError({ origin: 'engine' }, 'same')
   const entries = parseErrorLog(await readLog())
   expect(entries).toHaveLength(2)
   const first = item(entries, 0)
@@ -94,8 +94,8 @@ test('entryHash differs for two identical entries at different times', async () 
 })
 
 test('the signature ignores step, version and stack, not the first line', async () => {
-  await logHernessError({ origin: 'moteur', step: 'tasks' }, new Error('même'))
-  await logHernessError({ origin: 'moteur', step: 'preflight' }, new Error('même'))
+  await logHernessError({ origin: 'engine', step: 'tasks' }, new Error('same'))
+  await logHernessError({ origin: 'engine', step: 'preflight' }, new Error('same'))
   await logHernessError({ origin: 'moteur', step: 'tasks' }, new Error('autre'))
   const entries = parseErrorLog(await readLog())
   const same = item(entries, 0)
@@ -107,56 +107,56 @@ test('the signature ignores step, version and stack, not the first line', async 
 })
 
 test('maskHome replaces the home directory', () => {
-  expect(maskHome('/home/x/a et /home/x/b', '/home/x')).toBe('~/a et ~/b')
+  expect(maskHome('/home/x/a and /home/x/b', '/home/x')).toBe('~/a and ~/b')
 })
 
 test("groupEntries groups repeats in order", async () => {
-  await logHernessError({ origin: 'moteur', step: 'un' }, new Error('A'))
-  await logHernessError({ origin: 'moteur', step: 'deux' }, new Error('B'))
-  await logHernessError({ origin: 'moteur', step: 'trois' }, new Error('A'))
+  await logHernessError({ origin: 'engine', step: 'one' }, new Error('A'))
+  await logHernessError({ origin: 'engine', step: 'two' }, new Error('B'))
+  await logHernessError({ origin: 'engine', step: 'three' }, new Error('A'))
   const groups = groupEntries(parseErrorLog(await readLog()))
   expect(groups).toHaveLength(2)
-  expect(item(groups, 0).entries.map((e) => e.step)).toEqual(['un', 'trois'])
-  expect(item(groups, 1).entries.map((e) => e.step)).toEqual(['deux'])
+  expect(item(groups, 0).entries.map((e) => e.step)).toEqual(['one', 'three'])
+  expect(item(groups, 1).entries.map((e) => e.step)).toEqual(['two'])
 })
 
 test('title truncated to 120 characters', async () => {
-  await logHernessError({ origin: 'moteur' }, 'm'.repeat(300))
+  await logHernessError({ origin: 'engine' }, 'm'.repeat(300))
   const title = issueTitle(item(groupEntries(parseErrorLog(await readLog())), 0))
   expect(title).toHaveLength(120)
   expect(title.endsWith('…')).toBe(true)
-  expect(title.startsWith('[herness error] moteur: ')).toBe(true)
+  expect(title.startsWith('[herness error] engine: ')).toBe(true)
 })
 
 test("issue body", async () => {
   const perso = '/home/alice'
-  await logHernessError({ mission: 'm1', origin: 'moteur', step: 'tasks' }, `boom ${perso}/fichier`)
-  await logHernessError({ mission: 'm1', origin: 'moteur', step: 'preflight' }, `boom ${perso}/fichier`)
+  await logHernessError({ mission: 'm1', origin: 'engine', step: 'tasks' }, `boom ${perso}/file`)
+  await logHernessError({ mission: 'm1', origin: 'engine', step: 'preflight' }, `boom ${perso}/file`)
   const group = item(groupEntries(parseErrorLog(await readLog()), perso), 0)
   const body = issueBody('m1', group, perso)
   expect(body).toContain('Filed automatically by `herness report` (mission m1).')
-  expect(body).toContain('- Origin: moteur (step tasks, preflight)')
+  expect(body).toContain('- Origin: engine (step tasks, preflight)')
   expect(body).toContain('- Seen 2 times in the mission: ')
   expect(body).toContain('- Signature: herness-sig-')
-  expect(body).toContain('```\nboom ~/fichier\n```')
+  expect(body).toContain('```\nboom ~/file\n```')
   expect(body).not.toContain(perso)
 })
 
 test('fence longer than the backticks in the body', async () => {
-  await logHernessError({ mission: 'm1', origin: 'moteur' }, 'avant\n```\naprès')
+  await logHernessError({ mission: 'm1', origin: 'engine' }, 'before\n```\nafter')
   const body = issueBody('m1', item(groupEntries(parseErrorLog(await readLog())), 0))
-  expect(body).toContain('````\navant\n```\naprès\n````')
+  expect(body).toContain('````\nbefore\n```\nafter\n````')
 })
 
 test('body truncated past 60 000 characters', async () => {
-  await logHernessError({ mission: 'm1', origin: 'moteur' }, 'y'.repeat(70_000))
+  await logHernessError({ mission: 'm1', origin: 'engine' }, 'y'.repeat(70_000))
   const body = issueBody('m1', item(groupEntries(parseErrorLog(await readLog())), 0))
   expect(body).toContain('(truncated)')
   expect(body.length).toBeLessThan(61_000)
 })
 
 test('comment body', async () => {
-  await logHernessError({ mission: 'm2', origin: 'moteur' }, 'détail')
+  await logHernessError({ mission: 'm2', origin: 'engine' }, 'detail')
   const body = commentBody('m2', item(groupEntries(parseErrorLog(await readLog())), 0))
   expect(body.startsWith('Seen again in mission m2.')).toBe(true)
   expect(body).not.toContain('Signature')
