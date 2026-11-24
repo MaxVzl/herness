@@ -40,8 +40,8 @@ test('refuse without a note posts nothing', async () => {
 })
 
 test('refuse posts refused and an exception becomes ok:false', async () => {
-  const d = mk({ decide: (async () => { throw new Error('boum') }) as never })
-  expect(await refuse('m1', 'g1', 'non', d)).toEqual({ ok: false, lines: ['boum'] })
+  const d = mk({ decide: (async () => { throw new Error('boom') }) as never })
+  expect(await refuse('m1', 'g1', 'no', d)).toEqual({ ok: false, lines: ['boom'] })
 })
 
 test('close forwards closeMission confirmation question to confirm', async () => {
@@ -110,8 +110,8 @@ test('restartDetached spawns detached herness resume --restart via node, output 
     expect(opts.stdio[2]).toBe(opts.stdio[1])
     expect(seen[1]).toBe('unref')
     expect(await readFile(log, 'utf8')).toBe('restart output\n')
-    const bad: Spawner = () => ({ unref: () => {}, once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'error') fn(new Error('node introuvable')) } })
-    expect(await restartDetached('m1', bad)).toEqual({ ok: false, lines: ['node introuvable'] })
+    const bad: Spawner = () => ({ unref: () => {}, once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'error') fn(new Error('node not found')) } })
+    expect(await restartDetached('m1', bad)).toEqual({ ok: false, lines: ['node not found'] })
   } finally {
     delete process.env.HERNESS_HOME
     await rm(home, { recursive: true, force: true })
@@ -134,7 +134,7 @@ test('remove deletes without asking again: confirmation already happened in the 
 test('startNew forwards the note to startMission', async () => {
   const seen: unknown[] = []
   const d = mk({ start: (async (input: string, _cwd: string, _deps: unknown, o: { note?: string }) => { seen.push([input, o.note]); return 'm1' }) as never })
-  await startNew('lien', d, 'detail')
-  await startNew('lien', d)
-  expect(seen).toEqual([['lien', 'detail'], ['lien', undefined]])
+  await startNew('link', d, 'detail')
+  await startNew('link', d)
+  expect(seen).toEqual([['link', 'detail'], ['link', undefined]])
 })

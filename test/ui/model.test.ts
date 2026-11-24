@@ -63,7 +63,7 @@ test('isHidden: merged pr-open is hidden, open pr-open is visible', () => {
   expect(isHidden(mk({ step: 'pr-open', prUrl: url }), undefined, now)).toBe(false)
 })
 test('isHidden: closed without a PR for 8 days is hidden, for 2 days is visible', () => {
-  const closed = (at: string): MissionState => mk({ step: 'closed', createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission closed (herness close)' }] })
+  const closed = (at: string): MissionState => mk({ step: 'closed', createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission closed' }] })
   expect(isHidden(closed('2026-11-02T12:00:00Z'), undefined, now)).toBe(true)
   expect(isHidden(closed('2026-11-08T12:00:00Z'), undefined, now)).toBe(false)
 })
@@ -83,7 +83,7 @@ test('isHidden: closed with a merged PR is hidden, otherwise visible', () => {
 const closedPr: PrInfo = { state: 'CLOSED', checkedAt: now.toISOString() }
 test('isHidden: closed with a CLOSED PR follows the 7-day rule from close time', () => {
   const closed = (at: string): MissionState =>
-    mk({ step: 'closed', prUrl: url, createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission closed (herness close)' }] })
+    mk({ step: 'closed', prUrl: url, createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission fermée (herness fermer)' }] })
   expect(isHidden(closed('2026-11-02T12:00:00Z'), closedPr, now)).toBe(true)
   expect(isHidden(closed('2026-11-08T12:00:00Z'), closedPr, now)).toBe(false)
 })
@@ -92,7 +92,7 @@ test('isHidden: pr-open with a CLOSED PR stays visible (needs attention)', () =>
 })
 test('needsPrRefresh: not a merged PR, nor a CLOSED PR of a mission closed for more than 7 days', () => {
   const closed = (at: string): MissionState =>
-    mk({ step: 'closed', prUrl: url, createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission closed (herness close)' }] })
+    mk({ step: 'closed', prUrl: url, createdAt: '2026-10-01T00:00:00Z', log: [{ at, msg: 'mission closed' }] })
   expect(needsPrRefresh(mk({ step: 'tasks' }), undefined, now)).toBe(false)
   expect(needsPrRefresh(mk({ step: 'pr-open', prUrl: url }), undefined, now)).toBe(true)
   expect(needsPrRefresh(mk({ step: 'pr-open', prUrl: url }), open, now)).toBe(true)

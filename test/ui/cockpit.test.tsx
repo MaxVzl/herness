@@ -135,7 +135,7 @@ test('no key triggers two actions with the detail open in the cockpit', async ()
   expect(calls.filter((c) => c[0] === 'validate')).toEqual([['validate', '26110201-50', 'g1', undefined]])
   expect(lastFrame()).not.toContain('done-one')
   stdin.write('c')
-  await waitFor(lastFrame, 'Close 26110201-50 ?')
+  await waitFor(lastFrame, 'Close 26110201-50?')
   stdin.write('\r')
   await until(() => calls.filter((c) => c[0] === 'close').length === 1)
   expect(calls.map((c) => c[0])).toEqual(['validate', 'close'])
@@ -145,7 +145,7 @@ test('PR CLOSED: closed for more than 7 days is hidden and never refreshed; pr-o
   const old = mission('26110201-31', 'abandoned', '2026-10-01T10:00:00.000Z')
   old.step = 'closed'
   old.prUrl = 'https://example.test/o/r/pull/31'
-  old.log = [{ at: '2026-10-20T10:00:00.000Z', msg: 'mission closed (herness close)' }]
+  old.log = [{ at: '2026-10-20T10:00:00.000Z', msg: 'mission fermée (herness fermer)' }]
   const open = mission('26110201-32', 'needs-action', '2026-10-01T10:00:00.000Z')
   open.step = 'pr-open'
   open.prUrl = 'https://example.test/o/r/pull/32'
@@ -180,9 +180,9 @@ test('down then a then Enter approves the second mission gate', async () => {
   stdin.write('\u001b[B')
   await waitFor(lastFrame, '26110201-6 · feat/26110201-6-second')
   stdin.write('a')
-  await waitFor(lastFrame, 'Approve g1 (plan) of 01-6 ?')
+  await waitFor(lastFrame, 'Approve g1 (plan) of 01-6?')
   expect(calls).toEqual([])
-  expect(lastFrame()).toContain('Approve g1 (plan) of 01-6 ?')
+  expect(lastFrame()).toContain('Approve g1 (plan) of 01-6?')
   stdin.write('\r')
   await until(() => calls.length === 1)
   await waitFor(lastFrame, 'g1 approved')
@@ -258,7 +258,7 @@ test('+ during a close is refused; the internal confirmation is never active wit
   )
   await waitFor(lastFrame, 'closing')
   stdin.write('c')
-  await waitFor(lastFrame, 'Close 26110201-33 ?')
+  await waitFor(lastFrame, 'Close 26110201-33?')
   stdin.write('\r')
   await until(() => calls.length === 1)
   stdin.write('+')
@@ -293,7 +293,7 @@ test('+ then link then note: startNew receives the note; Esc on the note cancels
   stdin.write('https://www.wrike.com/open.htm?id=1')
   await waitFor(lastFrame, 'id=1▏')
   stdin.write('\r')
-  await waitFor(lastFrame, NOTE_LABEL)
+  await waitFor(lastFrame, `${NOTE_LABEL}: https://www.wrike.com/open.htm?id=1`)
   expect(lastFrame()).not.toContain('Wrike link')
   stdin.write('\u001b')
   await waitFor(lastFrame, 'start cancelled')
@@ -511,8 +511,8 @@ test('a list reordered during confirmation keeps the targeted mission and gate',
   )
   await waitFor(lastFrame, '26110201-27 · feat/26110201-27-xx')
   stdin.write('a')
-  await waitFor(lastFrame, 'Approve g1 (spec) of 01-27 ?')
-  expect(lastFrame()).toContain('Approve g1 (spec) of 01-27 ?')
+  await waitFor(lastFrame, 'Approve g1 (spec) of 01-27?')
+  expect(lastFrame()).toContain('Approve g1 (spec) of 01-27?')
   const y = mission('26110201-28', 'yy', '2026-11-03T10:00:00.000Z')
   openGate(y, 'plan', 'B')
   list = [y, x]
@@ -543,8 +543,8 @@ test('the a/r choice of a note targets the mission from when it opened, even if 
   list = [y]
   await waitGone(lastFrame, '01-34')
   stdin.write('a')
-  await waitFor(lastFrame, 'Approve g1 (spec) of 01-34 ?')
-  expect(lastFrame()).toContain('Approve g1 (spec) of 01-34 ?')
+  await waitFor(lastFrame, 'Approve g1 (spec) of 01-34?')
+  expect(lastFrame()).toContain('Approve g1 (spec) of 01-34?')
   stdin.write('\r')
   await until(() => calls.length === 1)
   expect(calls).toEqual([['validate', '26110201-34', 'g1', 'voir']])
@@ -563,7 +563,7 @@ test('q quits only outside an input', async () => {
   stdin.write('why')
   await waitFor(lastFrame, 'why▏')
   stdin.write('\x13')
-  await waitFor(lastFrame, 'Reject g1 (spec) of 01-14 ?')
+  await waitFor(lastFrame, 'Reject g1 (spec) of 01-14?')
   stdin.write('\r')
   await until(() => calls.length === 1)
   expect(calls).toEqual([['refuse', '26110201-14', 'g1', 'why']])

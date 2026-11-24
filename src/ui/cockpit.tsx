@@ -315,7 +315,7 @@ export function Cockpit({
             <LineInput label={NEW_MISSION_LABEL} onSubmit={askNote} onCancel={() => setAdding(false)} />
           ) : adding ? (
             <Box flexDirection="column">
-              <Text color="yellow">{`${NOTE_LABEL} : ${adding.input}`}</Text>
+              <Text color="yellow">{`${NOTE_LABEL}: ${adding.input}`}</Text>
               <NoteInput
                 key={`note:${adding.input}`}
                 onSubmit={(note) => startNew(adding.input, note)}

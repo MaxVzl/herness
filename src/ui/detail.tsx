@@ -81,7 +81,7 @@ export function MissionDetail({ state: s, selectedGate, sentGates = [] }: {
       {pending.map((g) => (
         <Box key={g.id} flexDirection="column" marginTop={1}>
           <Text color="yellow" bold inverse={g.id === selected && pending.length > 1}>
-            {`${g.id === selected ? '▸' : ' '} ⚑ ${g.id} · ${g.kind} : ${g.summary}`}
+            {`${g.id === selected ? '▸' : ' '} ⚑ ${g.id} · ${g.kind}: ${g.summary}`}
             {sentGates.includes(g.id) ? <Text color="cyan" bold={false}>{' · decision sent'}</Text> : null}
           </Text>
           {g.path ? <Text color="yellow">{`    ${g.path}`}</Text> : null}
@@ -100,7 +100,7 @@ export function MissionDetail({ state: s, selectedGate, sentGates = [] }: {
           ))}
         </Box>
       ) : null}
-      {s.prUrl ? <Text color="green">{`PR : ${s.prUrl}`}</Text> : null}
+      {s.prUrl ? <Text color="green">{`PR: ${s.prUrl}`}</Text> : null}
       {s.log.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
           {s.log.slice(-5).map((l, i) => (
@@ -312,7 +312,7 @@ export function useMissionKeys({
 
   const askDecision = (decision: 'approved' | 'refused', s: MissionState, g: Gate, note: string | undefined): void => {
     const verb = decision === 'approved' ? 'Approve' : 'Reject'
-    confirmThen(`${verb} ${g.id} (${g.kind}) of ${shortId(s.id)} ?`, () => void send(decision, s.id, g, note))
+    confirmThen(`${verb} ${g.id} (${g.kind}) of ${shortId(s.id)}?`, () => void send(decision, s.id, g, note))
   }
 
   const runOnce = async (name: string, fn: () => Promise<ActionResult>, success?: string): Promise<void> => {
@@ -332,7 +332,7 @@ export function useMissionKeys({
   }
 
   const askClose = (s: MissionState): void => {
-    confirmThen(`Close ${s.id} ?`, () => {
+    confirmThen(`Close ${s.id}?`, () => {
       const confirm = (q: string): Promise<boolean> =>
         new Promise((resolve) => {
           confirmThen(q, () => resolve(true), () => resolve(false))
@@ -444,7 +444,7 @@ export function useMissionKeys({
     { key: 'c', label: 'close', enabled: true },
     { key: 'o', label: 'open', enabled: true },
     ...(ownPanel ? [] : [{ key: 'D', label: 'delete', enabled: state?.step === 'closed' }]),
-    ...(onBack ? [{ key: 'b', label: 'back', enabled: true }] : []),
+    ...(onBack ? [{ key: 'b', label: 'cockpit', enabled: true }] : []),
   ]
   const help = helpItems.map((it) => (it.enabled ? `${it.key} ${it.label}` : `(${it.key} ${it.label})`)).join(' · ')
 
