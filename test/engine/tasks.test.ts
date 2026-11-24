@@ -827,7 +827,7 @@ test("20261030-5 : arrêt sans commit, amendement de la tâche validé, brief r�
   expect(s.step).toBe('global-review')
   const implAsks = fx.callsOf('agents.ask').filter((c) => c[0] === 'ct-1-t1').map((c) => c[1])
   expect(implAsks).toEqual([join(taskDir(), 'brief.md'), join(taskDir(), 'brief.md')])
-  expect(s.log.some((l) => l.msg.startsWith('mission bloquée'))).toBe(false)
+  expect(s.log.some((l) => l.msg.startsWith('mission blocked'))).toBe(false)
 
   // La porte agent-stopped, décidée plus tard (message déjà posté), est ignorée.
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: stop.id, decision: 'refused', note: 'trop tard' })

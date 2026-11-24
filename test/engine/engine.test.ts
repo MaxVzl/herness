@@ -69,6 +69,17 @@ test('env all OK moves on to prepare', async () => {
   expect((await loadState('T-1')).step).toBe('prepare')
 })
 
+test('prepare without a worktree blocks and does not run the setup', async () => {
+  await mission({ step: 'prepare', worktree: undefined })
+  const { fx, eng } = engine()
+  await eng.tick()
+  const s = await loadState('T-1')
+  expect(s.step).toBe('blocked')
+  expect(s.blockedFrom).toBe('prepare')
+  expect(s.blockedReason).toBe('cannot prepare: worktree or process tab unknown')
+  expect(fx.callsOf('runInPane')).toEqual([])
+})
+
 test('prepare runs project setup in the process tab, then classify; a failure blocks', async () => {
   await mission({ step: 'prepare' })
   const { fx, eng } = engine()
@@ -192,7 +203,7 @@ test('a rejected plan gate stays on plan and waits for a new plan gate', async (
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'refused', note: 'split too large' })
   expect(await eng.tick()).toBe('wait')
   expect((await loadState('T-1')).step).toBe('plan')
-  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain("Reason: split too large")
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain('Reason: split too large')
   expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain("request_approval('plan')")
   expect(fx.callsOf('git.commitFiles')).toEqual([])
 })

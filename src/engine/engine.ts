@@ -19,7 +19,7 @@ export type StepResult = 'continue' | 'wait' | 'stop'
 export type StepFn = (s: MissionState, e: Effects, cfg: ProjectConfig) => Promise<StepResult>
 
 const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err))
-/** Detached worktree for the proof on main. */
+/** Temporary detached worktree for the proof on main. */
 export const proofWorktree = (id: string): string => join(missionDir(id), 'preuve-main')
 const fileExists = (p: string): Promise<boolean> => access(p).then(() => true, () => false)
 
@@ -142,7 +142,7 @@ const stepEnv: StepFn = async (s, e) => {
 
 const stepPrepare: StepFn = async (s, e, cfg) => {
   const tab = s.herdr.tabs['process']
-  if (!s.worktree || !tab) return block(s, e, 'prepare failed: worktree or process tab unknown')
+  if (!s.worktree || !tab) return block(s, e, 'cannot prepare: worktree or process tab unknown')
   const r = await e.runInPane(e.herdr, tab, s.worktree, 'prepare', fill(cfg.prepare, { worktree: s.worktree, id: s.id }), join(missionDir(s.id), 'logs'))
   if (r.exitCode === 0) return goto(s, e, 'classify')
   return block(s, e, `worktree prepare failed (code ${r.exitCode}), log: ${r.logPath}\n${r.tail}`)
