@@ -259,7 +259,7 @@ test('supprimer efface le dossier d\'une mission fermée après confirmation', a
   expect(r.out).toContain('Mission gh12 supprimée.')
 })
 
-test('supprimer hors terminal demande --oui', async () => {
+test('supprimer hors terminal demande --yes', async () => {
   const r = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: false })
   await closeMission('gh12', r.d)
   await expect(deleteMission('gh12', r.d)).rejects.toThrow(/confirmation dans un terminal interactif \(ou --yes\)/)
@@ -460,7 +460,7 @@ test('CLI fermer sur une mission inconnue échoue avec un message clair', async 
   expect(r.stderr).toMatch(/mission C-3 introuvable/)
 })
 
-test('CLI supprimer --oui efface une mission fermée ; sans --oui hors terminal, refuse', async () => {
+test('CLI delete --yes efface une mission fermée ; sans --yes hors terminal, refuse', async () => {
   await saveState({ ...newState({ id: 'D-4', source: { kind: 'text', ref: 'x' }, project: 'demo', repoPath: repo }), step: 'closed' })
   const env = { HERNESS_HOME: home }
   const no = await execa('node', ['bin/herness.js', 'delete', 'D-4'], { reject: false, stdin: 'ignore', env })
@@ -523,9 +523,9 @@ test('fermer compte les commits par rapport à la branche principale du projet e
   expect(r.fx.callsOf('git.worktreeRemove')).toEqual([])
 })
 
-// ---------- reprendre --redemarrer (mise à jour de herness) ----------
+// ---------- resume --restart (mise à jour de herness) ----------
 
-test('reprendre --redemarrer arrête le moteur puis relance moteur, tableau et visionneuses même occupés, sans rien envoyer aux agents', async () => {
+test('resume --restart arrête le moteur puis relance moteur, tableau et visionneuses même occupés, sans rien envoyer aux agents', async () => {
   const { fx, d, s } = await started()
   fx.herdr.started.add('ogh12')
   for (const k of ['engine', 'tasks', 'spec', 'plan']) fx.herdr.pane(s.herdr.panes[k]!).busy = true
@@ -548,7 +548,7 @@ test('reprendre --redemarrer arrête le moteur puis relance moteur, tableau et v
   expect(fx.callsOf('herdr.agentPrompt')).toEqual([])
 })
 
-test("reprendre --redemarrer échoue sans rien relancer si le moteur ne s'arrête pas", async () => {
+test("resume --restart échoue sans rien relancer si le moteur ne s'arrête pas", async () => {
   const { fx, d, s } = await started({ herdr: { paneSendKeys: async () => {} } })
   fx.herdr.pane(s.herdr.panes['engine']!).busy = true
   await expect(resumeMission('gh12', d, { restart: true })).rejects.toThrow(/moteur toujours actif/)

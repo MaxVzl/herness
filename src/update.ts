@@ -1,3 +1,4 @@
+import { execa } from 'execa'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -19,6 +20,17 @@ export function installDir(env: NodeJS.ProcessEnv = process.env): string {
 /** Lanceur de la version active, posé par install.sh : c'est lui qui exécute le nouveau code. */
 export function installedBin(env: NodeJS.ProcessEnv = process.env): string {
   return join(installDir(env), 'current', 'bin', 'herness')
+}
+
+type InstalledExec = (file: string, args: string[], opts: { stdio: 'inherit' }) => Promise<unknown>
+
+/** `herness resume <id> --restart` avec le binaire fraîchement installé. */
+export async function restartInstalled(
+  id: string,
+  exec: InstalledExec = (file, args, opts) => execa(file, args, opts),
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  await exec(installedBin(env), ['resume', id, '--restart'], { stdio: 'inherit' })
 }
 
 /** Vrai si la racine réelle du processus est strictement sous le dossier versions/ de l'installation. */
@@ -90,7 +102,7 @@ export async function runningMissions(): Promise<MissionState[]> {
   for (const id of ids) {
     try {
       const s = await loadState(id)
-      // Bloquée : rien ne tourne, et `reprendre` y ouvrirait une porte de reprise.
+      // Bloquée : rien ne tourne, et `resume` y ouvrirait une porte de reprise.
       if (s.step !== 'pr-open' && s.step !== 'closed' && s.step !== 'blocked') out.push(s)
     } catch {
       // état illisible ou dossier étranger : ignoré

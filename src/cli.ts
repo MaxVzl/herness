@@ -250,16 +250,14 @@ program
   .option('--version <x.y.z>', 'version to install (including a downgrade)')
   .action(async (opts: { version?: string }) => {
     try {
-      const { update, installedBin, INSTALL_SCRIPT_URL } = await import('./update.ts')
+      const { update, restartInstalled, INSTALL_SCRIPT_URL } = await import('./update.ts')
       const { execa } = await import('execa')
       await update(opts, {
         install: async (args) => {
           const script = (await execa('curl', ['-fsSL', INSTALL_SCRIPT_URL])).stdout
           await execa('sh', ['-s', '--', ...args], { input: script, stdout: 'inherit', stderr: 'inherit' })
         },
-        restart: async (id) => {
-          await execa(installedBin(), ['resume', id, '--restart'], { stdio: 'inherit' })
-        },
+        restart: (id) => restartInstalled(id),
         isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
         confirm: askYesNo,
         out: (line) => console.log(line),

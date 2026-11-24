@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { execa } from 'execa'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { newState, saveState, type MissionState } from '../../src/mission/state.ts'
-import { hernessCommand, installDir, installedBin, installedVersion, runningMissions, runsInstalled, shellLine, staleNotice, update, type UpdateDeps } from '../../src/update.ts'
+import { hernessCommand, installDir, installedBin, installedVersion, restartInstalled, runningMissions, runsInstalled, shellLine, staleNotice, update, type UpdateDeps } from '../../src/update.ts'
 
 let home: string
 const saved = { ...process.env }
@@ -106,6 +106,15 @@ test('lanceur installé : HERNESS_INSTALL_DIR, sinon XDG_DATA_HOME, sinon ~/.loc
   expect(installedBin({ HERNESS_INSTALL_DIR: '/opt/h', HOME: '/home/x' })).toBe('/opt/h/current/bin/herness')
   expect(installedBin({ XDG_DATA_HOME: '/d', HOME: '/home/x' })).toBe('/d/herness/current/bin/herness')
   expect(installedBin({ HOME: '/home/x' })).toBe('/home/x/.local/share/herness/current/bin/herness')
+})
+
+test('restartInstalled lance le binaire installé avec resume <id> --restart', async () => {
+  const calls: unknown[] = []
+  const exec = async (cmd: string, args: string[], opts: { stdio: string }) => {
+    calls.push([cmd, args, opts])
+  }
+  await restartInstalled('m1', exec, { HERNESS_INSTALL_DIR: '/opt/h', HOME: '/home/x' })
+  expect(calls).toEqual([['/opt/h/current/bin/herness', ['resume', 'm1', '--restart'], { stdio: 'inherit' }]])
 })
 
 test('la CLI accepte --version sur mise-a-jour sans le confondre avec --version de herness', async () => {

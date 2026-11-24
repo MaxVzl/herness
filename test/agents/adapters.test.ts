@@ -5,7 +5,7 @@ const base = { model: 'm', worktree: '/wt', missionDir: '/home/u/missions/42' };
 const orch = { ...base, permissionMode: 'auto' as const };
 
 describe('agentArgs', () => {
-  it("l'orchestrateur reçoit son serveur MCP, son prompt système et l'interdiction de herness valider", () => {
+  it("l'orchestrateur reçoit son serveur MCP, son prompt système et l'interdiction de herness approve", () => {
     const r = agentArgs('orchestrator', { ...orch, mcpConfigPath: '/m/mcp.json', systemPromptPath: '/m/p.md', sessionId: 'sid-1' });
     expect(r.kind).toBe('claude');
     expect(r.args).toEqual([

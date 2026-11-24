@@ -24,7 +24,7 @@ export interface LifecycleDeps {
   loadConfig?: (cwd: string) => Promise<ProjectConfig>
   /** Sortie pour l'utilisateur ; défaut : `console.log`. */
   out?: (line: string) => void
-  /** Terminal interactif (confirmation de `fermer`). */
+  /** Terminal interactif (confirmation de `close`). */
   isTTY?: boolean
   confirm?: (question: string) => Promise<boolean>
 }
@@ -320,7 +320,7 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
   const { e } = deps
   const out = deps.out ?? console.log
   const first = await load(id)
-  // Une mission fermée par un abandon validé garde son worktree et son espace : `fermer` nettoie ce qui reste.
+  // Une mission fermée par un abandon validé garde son worktree et son espace : `close` nettoie ce qui reste.
   const closed = first.step === 'closed'
   const wtLeft = !!first.worktree && (await exists(first.worktree))
   if (closed) {
@@ -381,7 +381,7 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
   s.step = 'closed'
   s.log.push({ at: e.now().toISOString(), msg: 'mission fermée (herness close)' })
   await saveState(s)
-  // En dernier : `fermer` peut être lancé depuis un panneau de cet espace.
+  // En dernier : `close` peut être lancé depuis un panneau de cet espace.
   if (s.herdr.workspace && (!closed || (await e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace))) {
     await e.herdr.workspaceClose(s.herdr.workspace)
   }
@@ -391,7 +391,7 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
 
 /**
  * `herness delete` : efface le dossier d'une mission complètement fermée (état, spec, plan, journaux).
- * Refuse tant qu'il reste quelque chose à fermer : `fermer` est le seul à arrêter moteur, bases et espace.
+ * Refuse tant qu'il reste quelque chose à fermer : `close` est le seul à arrêter moteur, bases et espace.
  */
 export async function deleteMission(id: string, deps: LifecycleDeps, opts: { force?: boolean } = {}): Promise<boolean> {
   const out = deps.out ?? console.log
