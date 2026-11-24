@@ -255,7 +255,7 @@ test('resume-blocked validée : retour à l\'étape bloquée, tours de la tâche
   expect(s.blockedFrom).toBeUndefined()
   expect(s.tasks.map((t) => t.round)).toEqual([2, 0])
   expect(s.step).toBe('tasks')
-  expect(s.log.some((l) => /reprise/.test(l.msg))).toBe(true)
+  expect(s.log.some((l) => /resume approved/.test(l.msg))).toBe(true)
   // L'ancien fichier de correction n'est jamais renvoyé au nouveau tour 1 : il est archivé.
   const dir = join(missionDir('T-1'), 'tasks', '2')
   expect(await readdir(dir)).toEqual([`correctifs-1.avant-${gate}.md`])

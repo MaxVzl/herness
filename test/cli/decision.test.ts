@@ -34,6 +34,6 @@ test('approve hors terminal interactif échoue et ne poste rien', async () => {
   await saveState(s)
   const r = await run('approve', 'T-1')
   expect(r.exitCode).not.toBe(0)
-  expect(r.stderr).toContain('validation réservée à un terminal interactif')
+  expect(r.stderr).toContain('approval requires an interactive terminal')
   expect(await drainInbox('T-1')).toEqual([])
 })

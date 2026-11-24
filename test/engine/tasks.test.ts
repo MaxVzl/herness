@@ -835,7 +835,7 @@ test("20261030-5 : arrêt sans commit, amendement de la tâche validé, brief r�
   s = await loadState('T-1')
   expect(s.step).not.toBe('blocked')
   expect(s.gates.find((g) => g.id === stop.id)!.status).toBe('obsolete')
-  expect(s.log.some((l) => l.msg === `décision ignorée : porte ${stop.id} caduque : plus rien ne l'attend, décision ignorée`)).toBe(true)
+  expect(s.log.some((l) => l.msg === `decision ignored: gate ${stop.id} obsolete: nothing is waiting for it, decision ignored`)).toBe(true)
 })
 
 test("un amendement validé pendant que la mission est bloquée sur la boucle des tâches la débloque et l'applique", async () => {
@@ -882,7 +882,7 @@ test("un arbitrage décidé alors qu'aucune correction n'attend est sans effet, 
   expect(s.step).toBe('blocked')
   expect(s.consumedArbitrages).toEqual(['g1'])
   const prompts = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1]))
-  expect(prompts.at(-1)).toContain("arbitrage g1 sans effet : aucune correction n'attendait de décision")
+  expect(prompts.at(-1)).toContain('arbitration g1 with no effect: no correction was waiting for a decision')
 })
 
 test("un arbitrage décidé pendant qu'une correction l'attend n'est pas signalé sans effet", async () => {
@@ -974,7 +974,7 @@ test("I3 : mission bloquée par la tâche 1, amendement qui la change : la porte
   await mkdir(taskDir(), { recursive: true })
   await writeFile(join(taskDir(), 'brief.md'), BRIEF1)
   const s = await proposeAndApprove(eng, PLAN1_FIXED)
-  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toBe('amende (mission bloquée : valider cet amendement relancera la tâche 1)')
+  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toBe('amende (mission blocked: approving this amendment will restart task 1)')
   expect(s.step).toBe('tasks')
   expect(s.tasks[0]!.round).toBe(0)
 })
@@ -984,14 +984,14 @@ test("I3 : amendement qui ne change pas la tâche bloquée : appliqué, la missi
   await mkdir(taskDir(), { recursive: true })
   await writeFile(join(taskDir(), 'brief.md'), BRIEF1)
   const s = await proposeAndApprove(eng, PLAN2)
-  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toBe("amende (mission bloquée : valider n'enlève pas le blocage)")
+  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toBe('amende (mission blocked: approving does not clear the block)')
   expect(s.appliedAmendments).toHaveLength(1)
   expect(s.tasks.map((t) => t.n)).toEqual([1, 2])
   expect(s.step).toBe('blocked')
   expect(s.blockedReason).toBe('tâche 1 : contrôle du commit en échec')
   expect(s.tasks[0]).toMatchObject({ phase: 'control', round: 2 })
   const prompts = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1]))
-  expect(prompts.some((p) => p.includes('mission toujours bloquée : herness resume T-1 pour la relancer'))).toBe(true)
+  expect(prompts.some((p) => p.includes('mission still blocked: herness resume T-1 to restart it'))).toBe(true)
 })
 
 test("I3 : blocage venu d'ailleurs que la tâche (agent sans réponse), amendement de la tâche : appliqué, la mission reste bloquée", async () => {
@@ -999,7 +999,7 @@ test("I3 : blocage venu d'ailleurs que la tâche (agent sans réponse), amendeme
   await mkdir(taskDir(), { recursive: true })
   await writeFile(join(taskDir(), 'brief.md'), BRIEF1)
   const s = await proposeAndApprove(eng, PLAN1_FIXED)
-  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toContain("valider n'enlève pas le blocage")
+  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toContain('approving does not clear the block')
   expect(s.step).toBe('blocked')
   expect(s.appliedAmendments).toHaveLength(1)
 })

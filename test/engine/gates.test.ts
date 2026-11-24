@@ -19,9 +19,9 @@ afterEach(async () => {
 
 const fresh = () => newState({ id: 'T-1', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/r' })
 
-test('applyDecision approuve une porte en attente', () => {
+test('applyDecision approves a pending gate', () => {
   const s = fresh()
-  const g = openGate(s, 'spec', 'Spec à valider', 'docs/spec.md')
+  const g = openGate(s, 'spec', 'Spec to approve', 'docs/spec.md')
   expect(g.id).toBe('g1')
   const r = applyDecision(s, { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'ok' })
   expect(r.ok).toBe(true)
@@ -29,18 +29,21 @@ test('applyDecision approuve une porte en attente', () => {
   expect(s.gates[0]!.decidedAt).toBeTruthy()
 })
 
-test('applyDecision refuse une décision sur une porte déjà décidée', () => {
+test('applyDecision rejects a decision on a gate already decided', () => {
   const s = fresh()
   openGate(s, 'spec', 'x')
   const d = { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' } as const
   applyDecision(s, d)
   const r = applyDecision(s, { ...d, decision: 'refused' })
   expect(r.ok).toBe(false)
+  if (!r.ok) expect(r.reason).toBe('gate g1 already decided (approved)')
   expect(s.gates[0]!.status).toBe('approved')
-  expect(applyDecision(s, { ...d, gateId: 'g9' }).ok).toBe(false)
+  const missing = applyDecision(s, { ...d, gateId: 'g9' })
+  expect(missing.ok).toBe(false)
+  if (!missing.ok) expect(missing.reason).toBe('gate g9 not found')
 })
 
-test('pendingGate rend la plus ancienne, filtrable par type', () => {
+test('pendingGate returns the oldest, filterable by kind', () => {
   const s = fresh()
   openGate(s, 'spec', 'a')
   openGate(s, 'plan', 'b')
@@ -50,60 +53,60 @@ test('pendingGate rend la plus ancienne, filtrable par type', () => {
 
 async function withGates() {
   const s = fresh()
-  openGate(s, 'spec', 'Première')
-  openGate(s, 'plan', 'Seconde')
+  openGate(s, 'spec', 'First')
+  openGate(s, 'plan', 'Second')
   await saveState(s)
 }
 
-test('decide sans TTY lève et ne poste rien', async () => {
+test('decide without a TTY throws and posts nothing', async () => {
   await withGates()
   await expect(decide('T-1', 'approved', { isTTY: false, confirm: async () => true }))
-    .rejects.toThrow('validation réservée à un terminal interactif')
+    .rejects.toThrow('approval requires an interactive terminal')
   expect(await drainInbox('T-1')).toEqual([])
 })
 
-test('decide sans gateId vise la plus ancienne porte en attente', async () => {
+test('decide without gateId targets the oldest pending gate', async () => {
   await withGates()
-  await decide('T-1', 'approved', { isTTY: true, confirm: async () => true, note: 'bien' })
+  await decide('T-1', 'approved', { isTTY: true, confirm: async () => true, note: 'good' })
   expect(await drainInbox('T-1')).toEqual([
-    { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'bien' },
+    { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'good' },
   ])
 })
 
-test('decide sans confirmation ne poste rien', async () => {
+test('decide without confirmation posts nothing', async () => {
   await withGates()
-  await decide('T-1', 'refused', { isTTY: true, confirm: async () => false, note: 'non' })
+  await decide('T-1', 'refused', { isTTY: true, confirm: async () => false, note: 'no' })
   expect(await drainInbox('T-1')).toEqual([])
 })
 
-test('decide sans porte en attente lève', async () => {
+test('decide with no pending gate throws', async () => {
   await saveState(fresh())
   await expect(decide('T-1', 'approved', { isTTY: true, confirm: async () => true }))
-    .rejects.toThrow('aucune porte en attente')
+    .rejects.toThrow('no gate pending')
 })
 
-test('une porte caduque n’est plus en attente : pendingGate l’ignore, une décision est refusée avec un motif clair', async () => {
+test('an obsolete gate is no longer pending: pendingGate ignores it, a decision is rejected with a clear reason', async () => {
   const s = fresh()
-  openGate(s, 'agent-stopped', 'arrêt')
+  openGate(s, 'agent-stopped', 'stop')
   openGate(s, 'spec', 'spec')
   s.gates[0]!.status = 'obsolete'
   expect(pendingGate(s)?.id).toBe('g2')
   const r = applyDecision(s, { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
-  expect(r).toEqual({ ok: false, reason: "porte g1 caduque : plus rien ne l'attend, décision ignorée" })
+  expect(r).toEqual({ ok: false, reason: 'gate g1 obsolete: nothing is waiting for it, decision ignored' })
   await saveState(s)
-  await expect(decide('T-1', 'approved', { gateId: 'g1', isTTY: true, confirm: async () => true })).rejects.toThrow("porte g1 caduque : plus rien ne l'attend")
+  await expect(decide('T-1', 'approved', { gateId: 'g1', isTTY: true, confirm: async () => true })).rejects.toThrow('gate g1 obsolete: nothing is waiting for it')
 })
 
-test('decide écrit le résumé de la porte via out', async () => {
+test('decide writes the gate summary through out', async () => {
   await withGates()
   const lines: string[] = []
   await decide('T-1', 'approved', { isTTY: true, confirm: async () => false, out: (l) => lines.push(l) })
-  expect(lines[0]).toMatch(/^Porte g1 \(/)
+  expect(lines[0]).toBe('Gate g1 (spec): First')
 })
 
 test('decide refuses a legacy running mission', async () => {
   const s = fresh()
-  openGate(s, 'spec', 'Spec à valider')
+  openGate(s, 'spec', 'Spec to approve')
   s.step = 'tasks'
   await saveState(s)
   const file = join(missionDir('T-1'), 'state.json')
@@ -114,10 +117,10 @@ test('decide refuses a legacy running mission', async () => {
   expect(await drainInbox('T-1')).toEqual([])
 })
 
-test('decide sans out garde l\'affichage console', async () => {
+test('decide without out keeps the console display', async () => {
   await withGates()
   const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
   await decide('T-1', 'approved', { isTTY: true, confirm: async () => false })
-  expect(spy).toHaveBeenCalledWith(expect.stringMatching(/^Porte g1 \(/))
+  expect(spy).toHaveBeenCalledWith('Gate g1 (spec): First')
   spy.mockRestore()
 })

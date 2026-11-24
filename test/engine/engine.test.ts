@@ -44,7 +44,7 @@ function engine(over: FakeOverrides = {}) {
 const notCursor = async (cmd: string, args: string[]) =>
   cmd === 'cursor-agent' ? { stdout: 'Not logged in', stderr: '', exitCode: 1 } : { stdout: `${cmd} ${args.join(' ')}`, stderr: '', exitCode: 0 }
 
-test('env avec un KO passe la mission en bloquée avec la commande à lancer', async () => {
+test('env with a KO blocks the mission and includes the command to run', async () => {
   await mission()
   const { fx, eng } = engine({ run: notCursor })
   expect(await eng.tick()).toBe('continue')
@@ -52,40 +52,43 @@ test('env avec un KO passe la mission en bloquée avec la commande à lancer', a
   expect(s.step).toBe('blocked')
   expect(s.blockedReason).toContain('cursor')
   expect(s.blockedReason).toContain('! cursor-agent login')
+  expect(s.blockedReason).toContain('environment incomplete')
   const prompts = fx.callsOf('herdr.agentPrompt')
   expect(prompts).toHaveLength(1)
   expect(prompts[0]![0]).toBe('o-T-1')
   expect(String(prompts[0]![1])).toMatch(/^\[herness\] .*cursor-agent login/s)
+  expect(String(prompts[0]![1])).toMatch(/^\[herness\] Mission blocked:/)
   expect(prompts[0]![2]).toEqual({ wait: false })
   expect(await eng.tick()).toBe('wait')
 })
 
-test('env tout OK passe à prepare', async () => {
+test('env all OK moves on to prepare', async () => {
   await mission()
   const { eng } = engine()
   await eng.tick()
   expect((await loadState('T-1')).step).toBe('prepare')
 })
 
-test("prepare lance la préparation du projet dans l'onglet process, puis classify ; un échec bloque", async () => {
+test('prepare runs project setup in the process tab, then classify; a failure blocks', async () => {
   await mission({ step: 'prepare' })
   const { fx, eng } = engine()
   await eng.tick()
   const [h, tab, cwd, label, cmd, logDir] = fx.callsOf('runInPane')[0]!
   expect(h).toBe(fx.herdr)
-  expect([tab, cwd, label, logDir]).toEqual(['w1:t4', wt, 'préparation', join(missionDir('T-1'), 'logs')])
+  expect([tab, cwd, label, logDir]).toEqual(['w1:t4', wt, 'prepare', join(missionDir('T-1'), 'logs')])
   expect(cmd).toEqual([demo.prepare[0], wt])
   expect((await loadState('T-1')).step).toBe('classify')
 
   await mission({ step: 'prepare' })
-  const ko = engine({ runInPane: async () => ({ exitCode: 2, logPath: '/l.log', tail: 'erreur', durationMs: 1 }) })
+  const ko = engine({ runInPane: async () => ({ exitCode: 2, logPath: '/l.log', tail: 'error', durationMs: 1 }) })
   await ko.eng.tick()
   const s = await loadState('T-1')
   expect(s.step).toBe('blocked')
   expect(s.blockedReason).toContain('/l.log')
+  expect(s.blockedReason).toContain('worktree prepare failed')
 })
 
-test('classify renomme la branche en feature/<id>-<slug> pour le type feat sur le projet démo', async () => {
+test('classify renames the branch to feature/<id>-<slug> for type feat on the demo project', async () => {
   await mission({ step: 'classify' })
   const { fx, eng } = engine()
   expect(await eng.tick()).toBe('wait')
@@ -96,18 +99,19 @@ test('classify renomme la branche en feature/<id>-<slug> pour le type feat sur l
   expect(fx.callsOf('git.renameBranch')).toEqual([[wt, 'herness/T-1', 'feature/T-1-export-csv']])
   const s = await loadState('T-1')
   expect(s).toMatchObject({ step: 'brainstorm', type: 'feat', slug: 'export-csv', branch: 'feature/T-1-export-csv' })
-  // L'orchestrateur apprend le nouveau nom : son prompt ne le connaît pas.
+  // The orchestrator learns the new name: its prompt does not know it.
   expect(fx.callsOf('herdr.agentPrompt').map((c) => c[1])).toContainEqual(expect.stringContaining('feature/T-1-export-csv'))
+  expect(fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).some((p) => p.startsWith('[herness] Mission branch renamed to feature/T-1-export-csv'))).toBe(true)
 })
 
-test('classified avec un type inconnu est journalisé et ignoré', async () => {
+test('classified with an unknown type is logged and ignored', async () => {
   await mission({ step: 'classify' })
   const { eng } = engine()
   await postInbox('T-1', { type: 'classified', workType: 'bidule', slug: 'export-csv' })
   expect(await eng.tick()).toBe('wait')
   const s = await loadState('T-1')
   expect(s.type).toBeUndefined()
-  expect(s.log.map((l) => l.msg).join('\n')).toContain('bidule')
+  expect(s.log.map((l) => l.msg).join('\n')).toContain('unknown type "bidule"')
 })
 
 async function writeSpec(s0: MissionState): Promise<void> {
@@ -116,17 +120,18 @@ async function writeSpec(s0: MissionState): Promise<void> {
   await writeFile(file, '# Spec\n')
 }
 
-test('une porte spec approuvée commite la spec et passe à plan', async () => {
+test('an approved spec gate commits the spec and moves on to plan', async () => {
   await writeSpec(await mission({ step: 'brainstorm', type: 'feat', slug: 'export-csv' }))
   const { fx, eng } = engine()
   expect(await eng.tick()).toBe('wait')
-  await postInbox('T-1', { type: 'request-gate', kind: 'spec', summary: 'Spec prête', path: 'docs/x.md' })
+  await postInbox('T-1', { type: 'request-gate', kind: 'spec', summary: 'Spec ready', path: 'docs/x.md' })
   await eng.tick()
   let s = await loadState('T-1')
   expect(s.step).toBe('spec')
   expect(s.gates).toMatchObject([{ id: 'g1', kind: 'spec', status: 'pending' }])
   expect(fx.callsOf('herdr.notify')[0]![2]).toBe('request')
-  expect(String(fx.callsOf('herdr.agentPrompt')[0]![1])).toMatch(/^\[herness\] .*g1/)
+  expect(String(fx.callsOf('herdr.notify')[0]![1])).toMatch(/^Gate spec to approve: /)
+  expect(String(fx.callsOf('herdr.agentPrompt')[0]![1])).toMatch(/^\[herness\] Gate g1 \(spec\) opened, waiting for the user's decision \(herness approve\|reject T-1 --gate g1\)\./)
   expect(await eng.tick()).toBe('wait')
 
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
@@ -136,21 +141,21 @@ test('une porte spec approuvée commite la spec et passe à plan', async () => {
   expect(s.step).toBe('plan')
 })
 
-test("une porte spec refusée renvoie la note à l'orchestrateur et revient à brainstorm", async () => {
+test('a rejected spec gate sends the note back to the orchestrator and returns to brainstorm', async () => {
   await mission({ step: 'brainstorm', type: 'feat', slug: 'export-csv' })
   const { fx, eng } = engine()
-  await postInbox('T-1', { type: 'request-gate', kind: 'spec', summary: 'Spec prête' })
+  await postInbox('T-1', { type: 'request-gate', kind: 'spec', summary: 'Spec ready' })
   await eng.tick()
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'refused', note: 'trop vague sur les droits' })
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'refused', note: 'too vague about permissions' })
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.step).toBe('brainstorm')
   expect(fx.callsOf('git.commitFiles')).toEqual([])
   const last = fx.callsOf('herdr.agentPrompt').at(-1)!
   expect(last[0]).toBe('o-T-1')
-  expect(String(last[1])).toMatch(/^\[herness\] .*trop vague sur les droits/s)
+  expect(String(last[1])).toMatch(/^\[herness\] The user rejected gate g1 \(spec\)\. Reason: too vague about permissions\. Fix it, then request approval again with request_approval\('spec'\)\./)
   expect(last[2]).toEqual({ wait: false })
-  // la porte refusée ne fait pas repartir en spec ; une nouvelle demande, si
+  // A rejected gate does not move back to spec; a new request does.
   expect(await eng.tick()).toBe('wait')
   expect((await loadState('T-1')).step).toBe('brainstorm')
   await postInbox('T-1', { type: 'request-gate', kind: 'spec', summary: 'Spec v2' })
@@ -160,14 +165,14 @@ test("une porte spec refusée renvoie la note à l'orchestrateur et revient à b
 
 const PLAN = '# Plan\n\n### Tâche 1 : Modèle\n\n**Test :** `pnpm test a`\n\nfaire a\n\n### Tâche 2 : Export\n\n**Test :** `pnpm test b`\n\nfaire b\n'
 
-test('une porte plan approuvée remplit state.tasks depuis le plan', async () => {
+test('an approved plan gate fills state.tasks from the plan', async () => {
   const s0 = await mission({ step: 'plan', type: 'feat', slug: 'export-csv' })
   const file = join(wt, planPath(s0))
   await mkdir(join(file, '..'), { recursive: true })
   await writeFile(file, PLAN)
   const { fx, eng } = engine()
   expect(await eng.tick()).toBe('wait')
-  await postInbox('T-1', { type: 'request-gate', kind: 'plan', summary: 'Plan prêt', path: planPath(s0) })
+  await postInbox('T-1', { type: 'request-gate', kind: 'plan', summary: 'Plan ready', path: planPath(s0) })
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   await eng.tick()
   const s = await loadState('T-1')
@@ -180,21 +185,22 @@ test('une porte plan approuvée remplit state.tasks depuis le plan', async () =>
   expect(fx.callsOf('git.commitFiles')).toEqual([[wt, [planPath(s)], 'docs(T-1): plan export-csv']])
 })
 
-test('une porte plan refusée reste en plan et attend une nouvelle porte plan', async () => {
+test('a rejected plan gate stays on plan and waits for a new plan gate', async () => {
   await mission({ step: 'plan', type: 'feat', slug: 'export-csv' })
   const { fx, eng } = engine()
-  await postInbox('T-1', { type: 'request-gate', kind: 'plan', summary: 'Plan prêt' })
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'refused', note: 'découpe trop grosse' })
+  await postInbox('T-1', { type: 'request-gate', kind: 'plan', summary: 'Plan ready' })
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'refused', note: 'split too large' })
   expect(await eng.tick()).toBe('wait')
   expect((await loadState('T-1')).step).toBe('plan')
-  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain('découpe trop grosse')
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain("Reason: split too large")
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain("request_approval('plan')")
   expect(fx.callsOf('git.commitFiles')).toEqual([])
 })
 
-test('une décision venue d\'un message sans source user est rejetée', async () => {
+test('a decision from a message without source user is rejected', async () => {
   await mission({ step: 'brainstorm', type: 'feat', slug: 'export-csv' })
   const { eng } = engine()
-  await postInbox('T-1', { type: 'request-gate', kind: 'spec', summary: 'Spec prête' })
+  await postInbox('T-1', { type: 'request-gate', kind: 'spec', summary: 'Spec ready' })
   await eng.tick()
   const inbox = join(missionDir('T-1'), 'inbox')
   await writeFile(join(inbox, '999999999999999-000001-1-forge.json'), JSON.stringify({ type: 'decision', gateId: 'g1', decision: 'approved' }))
@@ -205,7 +211,7 @@ test('une décision venue d\'un message sans source user est rejetée', async ()
   expect(await readdir(join(inbox, 'rejected'))).toEqual(['999999999999999-000001-1-forge.json'])
 })
 
-test("abandon ouvre une porte abandon sans rien fermer ; l'utilisateur la valide, les bases sont supprimées et la mission fermée", async () => {
+test('abandon opens an abandon gate without closing anything; the user approves it, databases are removed and the mission is closed', async () => {
   await mission({ step: 'brainstorm', testDbUp: true })
   const { fx, eng } = engine()
   await postInbox('T-1', { type: 'abandon', reason: 'spike' })
@@ -216,11 +222,13 @@ test("abandon ouvre une porte abandon sans rien fermer ; l'utilisateur la valide
   expect(s.gates).toMatchObject([{ id: 'g1', kind: 'abandon', status: 'pending', summary: 'spike' }])
   expect(fx.callsOf('run')).toEqual([])
   expect(fx.callsOf('herdr.notify')).toHaveLength(1)
-  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toMatch(/^\[herness\] .*g1 \(abandon\)/)
-  // Une seconde demande ne rouvre pas de porte.
-  await postInbox('T-1', { type: 'abandon', reason: 'spike encore' })
+  expect(String(fx.callsOf('herdr.notify')[0]![1])).toBe('Abandon to approve: spike')
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toMatch(/^\[herness\] Gate g1 \(abandon\) opened, waiting for the user's decision \(herness approve\|reject T-1 --gate g1\)\./)
+  // A second request does not open another gate.
+  await postInbox('T-1', { type: 'abandon', reason: 'spike again' })
   await eng.tick()
   expect((await loadState('T-1')).gates).toHaveLength(1)
+  expect((await loadState('T-1')).log.map((l) => l.msg).join('\n')).toContain('abandon request: gate g1 is already pending')
 
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   expect(await eng.tick()).toBe('stop')
@@ -228,32 +236,34 @@ test("abandon ouvre une porte abandon sans rien fermer ; l'utilisateur la valide
   expect(s.step).toBe('closed')
   expect(s.testDbUp).toBe(false)
   expect(fx.callsOf('run')).toEqual([[demo.testDb!.down[0], ['down', 'T-1', wt], { cwd: wt, reject: false }]])
+  expect(s.log.map((l) => l.msg).join('\n')).toContain('abandon approved (g1): mission closed')
 })
 
-test('abandon refusé : la mission continue', async () => {
+test('rejected abandon: the mission continues', async () => {
   await mission({ step: 'brainstorm' })
-  const { eng } = engine()
+  const { fx, eng } = engine()
   await postInbox('T-1', { type: 'abandon', reason: 'spike' })
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'refused', note: 'on continue' })
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'refused', note: 'keep going' })
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.step).toBe('brainstorm')
   expect(s.gates[0]!.status).toBe('refused')
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toBe('[herness] The user rejected the abandon (gate g1), with the note: keep going. The mission continues.')
 })
 
-test("abandon validé avec une base impossible à supprimer : mission bloquée, pas fermée", async () => {
+test('approved abandon when a database cannot be removed: mission blocked, not closed', async () => {
   await mission({ step: 'brainstorm', testDbUp: true })
-  const { eng } = engine({ run: async () => ({ stdout: '', stderr: 'docker absent', exitCode: 1 }) })
+  const { eng } = engine({ run: async () => ({ stdout: '', stderr: 'docker missing', exitCode: 1 }) })
   await postInbox('T-1', { type: 'abandon', reason: 'spike' })
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.step).toBe('blocked')
-  expect(s.blockedReason).toContain('base de test T-1 non supprimée')
+  expect(s.blockedReason).toContain('test database T-1 not removed')
   expect(s.testDbUp).toBe(true)
 })
 
-test("pause empêche toute progression jusqu'à resume", async () => {
+test('pause blocks all progress until resume', async () => {
   await mission()
   const { fx, eng } = engine()
   await postInbox('T-1', { type: 'pause' })
@@ -266,16 +276,17 @@ test("pause empêche toute progression jusqu'à resume", async () => {
   await eng.tick()
   s = await loadState('T-1')
   expect(s).toMatchObject({ step: 'prepare', paused: false })
+  expect(s.log.map((l) => l.msg)).toContain('resume')
 })
 
-test('run : une exception bloque la mission sans arrêter le moteur, qui continue jusqu\'à stop', async () => {
+test('run: an exception blocks the mission without stopping the engine, which continues until stop', async () => {
   await mission({ step: 'classify', type: 'feat', slug: 'export-csv', testDbUp: true })
   let sleeps = 0
   const { fx, eng } = engine({
-    git: { renameBranch: async () => { throw new Error('branche verrouillée') } },
+    git: { renameBranch: async () => { throw new Error('branch locked') } },
     sleep: async () => {
       if (++sleeps === 2) {
-        await postInbox('T-1', { type: 'abandon', reason: 'fin du test' })
+        await postInbox('T-1', { type: 'abandon', reason: 'end of test' })
         await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
       }
     },
@@ -283,72 +294,73 @@ test('run : une exception bloque la mission sans arrêter le moteur, qui continu
   await eng.run()
   const s = await loadState('T-1')
   expect(s.step).toBe('closed')
-  expect(s.blockedReason).toContain('branche verrouillée')
-  expect(s.blockedReason?.split('\n')[0]?.startsWith('erreur du moteur : ')).toBe(true)
-  expect(s.blockedReason?.endsWith(`\ndétail : ${join(home, 'errors.log')}`)).toBe(true)
+  expect(s.blockedReason).toContain('branch locked')
+  expect(s.blockedReason?.split('\n')[0]?.startsWith('engine error: ')).toBe(true)
+  expect(s.blockedReason?.endsWith(`\ndetail: ${join(home, 'errors.log')}`)).toBe(true)
   const journal = await readFile(join(home, 'errors.log'), 'utf8')
   expect(journal).toContain('· mission T-1 · herness ')
-  expect(journal).toContain('· moteur (step classify)')
-  expect(journal).toContain('branche verrouillée')
+  expect(journal).toContain('· engine (step classify)')
+  expect(journal).toContain('branch locked')
   expect(journal).toMatch(/^    at /m)
-  expect(s.log.map((l) => l.msg).join('\n')).toContain('branche verrouillée')
-  // base de test arrêtée dès l'exception
+  expect(s.log.map((l) => l.msg).join('\n')).toContain('branch locked')
+  // Test database stopped as soon as the exception happens.
   expect(fx.callsOf('run')[0]).toEqual([demo.testDb!.down[0], ['down', 'T-1', wt], { cwd: wt, reject: false }])
 })
 
-test('état illisible : les erreurs de démarrage et du blocage sont journalisées sans étape', async () => {
-  const { eng } = engine({ sleep: async () => { throw new Error('fin du test') } })
-  await expect(eng.run()).rejects.toThrow('fin du test')
+test('unreadable state: startup and block-recording errors are logged without a step', async () => {
+  const { eng } = engine({ sleep: async () => { throw new Error('end of test') } })
+  await expect(eng.run()).rejects.toThrow('end of test')
   const journal = await readFile(join(home, 'errors.log'), 'utf8')
-  expect(journal).toContain('moteur : démarrage (nettoyage des panneaux)')
-  expect(journal).toContain('moteur : démarrage (arrêt des agents terminés)')
-  expect(journal).toContain('moteur : enregistrement du blocage')
-  expect(journal).toMatch(/· moteur$/m)
+  expect(journal).toContain('engine: startup (pane cleanup)')
+  expect(journal).toContain('engine: startup (stopping finished agents)')
+  expect(journal).toContain('engine: recording the block')
+  expect(journal).toMatch(/· engine$/m)
   expect(journal).not.toContain('(étape')
 })
 
-test('journal inaccessible : le motif de blocage ne pointe pas le fichier', async () => {
+test('unreachable journal: the block reason does not point at the file', async () => {
   await mission({ step: 'classify', type: 'feat', slug: 'export-csv' })
   await mkdir(join(home, 'errors.log'))
   const { eng } = engine({
-    git: { renameBranch: async () => { throw new Error('branche verrouillée') } },
-    sleep: async () => { throw new Error('fin du test') },
+    git: { renameBranch: async () => { throw new Error('branch locked') } },
+    sleep: async () => { throw new Error('end of test') },
   })
-  await expect(eng.run()).rejects.toThrow('fin du test')
+  await expect(eng.run()).rejects.toThrow('end of test')
   const s = await loadState('T-1')
-  expect(s.blockedReason?.split('\n')[0]).toBe('erreur du moteur : branche verrouillée')
-  expect(s.blockedReason).not.toContain('détail :')
+  expect(s.blockedReason?.split('\n')[0]).toBe('engine error: branch locked')
+  expect(s.blockedReason).not.toContain('detail:')
 })
 
-test('état illisible persistant : une seule paire d\'entrées pour plusieurs tours', async () => {
+test('persistent unreadable state: a single pair of entries across several turns', async () => {
   let sleeps = 0
   const { eng } = engine({
     sleep: async () => {
-      if (++sleeps === 3) throw new Error('fin du test')
+      if (++sleeps === 3) throw new Error('end of test')
     },
   })
-  await expect(eng.run()).rejects.toThrow('fin du test')
+  await expect(eng.run()).rejects.toThrow('end of test')
   expect(sleeps).toBe(3)
   const journal = await readFile(join(home, 'errors.log'), 'utf8')
-  expect(journal.match(/· moteur$/gm)).toHaveLength(1)
-  expect(journal.match(/moteur : enregistrement du blocage/g)).toHaveLength(1)
+  expect(journal.match(/· engine$/gm)).toHaveLength(1)
+  expect(journal.match(/engine: recording the block/g)).toHaveLength(1)
 })
 
-test('pr-ouverte et fermée arrêtent la boucle', async () => {
+test('pr-open stops the loop', async () => {
   await mission({ step: 'pr-open' })
   expect(await engine().eng.tick()).toBe('stop')
 })
 
-test('reprise : branche déjà renommée, pas de nouveau renommage, branche enregistrée', async () => {
+test('resume: branch already renamed, no new rename, branch recorded', async () => {
   await mission({ step: 'classify', type: 'feat', slug: 'export-csv' })
   const { fx, eng } = engine({ git: { currentBranch: async () => 'feature/T-1-export-csv' } })
   await eng.tick()
   expect(fx.callsOf('git.renameBranch')).toEqual([])
   expect(await loadState('T-1')).toMatchObject({ step: 'brainstorm', branch: 'feature/T-1-export-csv' })
   expect(fx.callsOf('herdr.agentPrompt').map((c) => c[1])).toContainEqual(expect.stringContaining('feature/T-1-export-csv'))
+  expect((await loadState('T-1')).log.map((l) => l.msg).join('\n')).toContain('branch already named feature/T-1-export-csv')
 })
 
-test('reprise : spec déjà commitée, pas de commit, passage à plan', async () => {
+test('resume: spec already committed, no commit, move on to plan', async () => {
   await writeSpec(await mission({ step: 'spec', type: 'feat', slug: 'export-csv' }))
   const { fx, eng } = engine({ git: { isClean: async () => true } })
   await postInbox('T-1', { type: 'request-gate', kind: 'spec', summary: 's' })
@@ -358,10 +370,10 @@ test('reprise : spec déjà commitée, pas de commit, passage à plan', async ()
   expect(fx.callsOf('git.commitFiles')).toEqual([])
   expect(fx.callsOf('git.isClean')).toEqual([[wt, specPath(s)]])
   expect(s.step).toBe('plan')
-  expect(s.log.map((l) => l.msg).join('\n')).toContain('déjà commitée')
+  expect(s.log.map((l) => l.msg).join('\n')).toContain('already committed')
 })
 
-test('reprise : plan déjà commité, pas de commit, tâches remplies et passage à tasks', async () => {
+test('resume: plan already committed, no commit, tasks filled and move on to tasks', async () => {
   const s0 = await mission({ step: 'plan', type: 'feat', slug: 'export-csv' })
   const file = join(wt, planPath(s0))
   await mkdir(join(file, '..'), { recursive: true })
@@ -376,7 +388,7 @@ test('reprise : plan déjà commité, pas de commit, tâches remplies et passage
   expect(s.tasks).toHaveLength(2)
 })
 
-test('deux request-gate spec ne donnent qu\'une porte en attente, mise à jour', async () => {
+test('two spec request-gate messages leave a single pending gate, updated', async () => {
   await mission({ step: 'brainstorm', type: 'feat', slug: 'export-csv' })
   const { fx, eng } = engine()
   await postInbox('T-1', { type: 'request-gate', kind: 'spec', summary: 'v1', path: 'a.md' })
@@ -385,18 +397,19 @@ test('deux request-gate spec ne donnent qu\'une porte en attente, mise à jour',
   const s = await loadState('T-1')
   expect(s.gates).toHaveLength(1)
   expect(s.gates[0]).toMatchObject({ id: 'g1', status: 'pending', summary: 'v2', path: 'b.md' })
-  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toMatch(/^\[herness\] .*g1.*déjà en attente/s)
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toMatch(/^\[herness\] Gate g1 \(spec\) is already pending the user's decision/)
   expect(fx.callsOf('herdr.notify')).toHaveLength(1)
 })
 
-test('block enregistre l\'étape d\'où la mission a été bloquée', async () => {
+test('block records the step the mission was blocked from', async () => {
   await mission({ step: 'prepare' })
   const { eng } = engine({ runInPane: async () => ({ exitCode: 1, logPath: '/l', tail: '', durationMs: 1 }) })
   await eng.tick()
   expect(await loadState('T-1')).toMatchObject({ step: 'blocked', blockedFrom: 'prepare' })
+  expect((await loadState('T-1')).log.map((l) => l.msg).join('\n')).toContain('mission blocked:')
 })
 
-test("request-gate amendement : le hachage de la proposition est enregistré dans la porte (mis à jour sur doublon)", async () => {
+test('amendment request-gate: the proposal hash is stored on the gate (updated on a duplicate)', async () => {
   await mission({ step: 'blocked', slug: 'x' })
   const { eng } = engine()
   await postInbox('T-1', { type: 'request-gate', kind: 'amendment', summary: 'a', path: '/m/plan.proposed.md', hash: 'h1' })
@@ -406,11 +419,11 @@ test("request-gate amendement : le hachage de la proposition est enregistré dan
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.gates).toHaveLength(1)
-  // Mission bloquée : le résumé dit ce que changera la validation.
-  expect(s.gates[0]).toMatchObject({ summary: "b (mission bloquée : valider n'enlève pas le blocage)", hash: 'h2' })
+  // Blocked mission: the summary says what approving will change.
+  expect(s.gates[0]).toMatchObject({ summary: 'b (mission blocked: approving does not clear the block)', hash: 'h2' })
 })
 
-test("classified : l'orchestrateur reçoit les chemins exacts de la spec et du plan", async () => {
+test('classified: the orchestrator receives the exact spec and plan paths', async () => {
   await mission({ step: 'classify' })
   const { fx, eng } = engine()
   await postInbox('T-1', { type: 'classified', workType: 'feat', slug: 'export-csv' })
@@ -419,9 +432,10 @@ test("classified : l'orchestrateur reçoit les chemins exacts de la spec et du p
   const msg = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).find((p) => p.includes('export-csv'))!
   expect(msg).toContain(join(wt, specPath(s)))
   expect(msg).toContain(join(wt, planPath(s)))
+  expect(msg).toMatch(/^\[herness\] Mission classified feat \/ export-csv\. Write the spec at /)
 })
 
-test('spec validée mais absente du worktree : mission bloquée avec le chemin, jamais « déjà commitée »', async () => {
+test('approved spec missing from the worktree: mission blocked with the path, never "already committed"', async () => {
   const s0 = await mission({ step: 'spec', type: 'feat', slug: 'export-csv' })
   const { fx, eng } = engine({ git: { isClean: async () => true } })
   await postInbox('T-1', { type: 'request-gate', kind: 'spec', summary: 's' })
@@ -430,11 +444,12 @@ test('spec validée mais absente du worktree : mission bloquée avec le chemin, 
   const s = await loadState('T-1')
   expect(s.step).toBe('blocked')
   expect(s.blockedReason).toContain(join(wt, specPath(s0)))
-  expect(s.log.map((l) => l.msg).join('\n')).not.toContain('déjà commitée')
+  expect(s.blockedReason).toContain('approved spec missing from the worktree')
+  expect(s.log.map((l) => l.msg).join('\n')).not.toContain('already committed')
   expect(fx.callsOf('git.commitFiles')).toEqual([])
 })
 
-test('plan validé mais absent du worktree : mission bloquée avec le chemin', async () => {
+test('approved plan missing from the worktree: mission blocked with the path', async () => {
   const s0 = await mission({ step: 'plan', type: 'feat', slug: 'export-csv' })
   const { eng } = engine()
   await postInbox('T-1', { type: 'request-gate', kind: 'plan', summary: 'p' })
@@ -444,10 +459,11 @@ test('plan validé mais absent du worktree : mission bloquée avec le chemin', a
   expect(s.step).toBe('blocked')
   expect(s.blockedFrom).toBe('plan')
   expect(s.blockedReason).toContain(join(wt, planPath(s0)))
-  expect(s.blockedReason).not.toContain('erreur du moteur')
+  expect(s.blockedReason).toContain('approved plan missing from the worktree')
+  expect(s.blockedReason).not.toContain('engine error')
 })
 
-test('au démarrage du moteur, les commandes restées en cours dans checks et process sont interrompues et marquées ✗', async () => {
+test('at engine startup, commands still running in checks and process are interrupted and marked ✗', async () => {
   const { fx, eng } = engine()
   const { ws, tab: checks, pane: c1 } = fx.herdr.seedWorkspace('T-1', 'checks')
   const proc = await fx.herdr.tabCreate({ workspace: ws, cwd: wt, label: 'process' })
@@ -455,7 +471,7 @@ test('au démarrage du moteur, les commandes restées en cours dans checks et pr
   await fx.herdr.paneRename(c1, 'preflight · lint …')
   const c2 = fx.herdr.addPane(checks, { x: 0, y: 30, width: 200, height: 30 }, 'T1 · tests ✓')
   await fx.herdr.paneRename(proc.rootPaneId, 'engine')
-  const p2 = fx.herdr.addPane(proc.tabId, { x: 0, y: 30, width: 200, height: 30 }, 'base de test …')
+  const p2 = fx.herdr.addPane(proc.tabId, { x: 0, y: 30, width: 200, height: 30 }, 'test database …')
   const a1 = fx.herdr.addPane(agents.tabId, { x: 0, y: 30, width: 200, height: 30 }, 'T1 · grok …')
   for (const p of [c1, p2, a1]) fx.herdr.pane(p).busy = true
   await mission({ step: 'pr-open', herdr: { workspace: ws, tabs: { checks, process: proc.tabId, agents: agents.tabId }, panes: {} } })
@@ -464,20 +480,20 @@ test('au démarrage du moteur, les commandes restées en cours dans checks et pr
   const keys = fx.callsOf('herdr.paneSendKeys')
   expect(keys).toEqual([[c1, 'ctrl+c'], [c1, 'ctrl+c'], [p2, 'ctrl+c'], [p2, 'ctrl+c'], [a1, 'ctrl+c'], [a1, 'ctrl+c']])
   expect(fx.herdr.pane(c1).label).toBe('preflight · lint ✗')
-  expect(fx.herdr.pane(p2).label).toBe('base de test ✗')
+  expect(fx.herdr.pane(p2).label).toBe('test database ✗')
   expect(fx.herdr.pane(c2).label).toBe('T1 · tests ✓')
   expect(fx.herdr.pane(proc.rootPaneId).label).toBe('engine')
   expect(fx.herdr.pane(a1).label).toBe('T1 · grok …')
   expect(fx.herdr.pane(a1).busy).toBe(false)
-  // Une seule fois par démarrage du moteur.
+  // Once per engine startup.
   await eng.tick()
   expect(fx.callsOf('herdr.paneSendKeys')).toHaveLength(6)
 })
 
-test('au démarrage du moteur, une mission bloquée arrête les agents des panneaux ✓ et garde les autres', async () => {
+test('at engine startup, a blocked mission stops agents in ✓ panes and keeps the others', async () => {
   const { fx, eng } = engine({
     sleep: async () => {
-      throw new Error('fin du test')
+      throw new Error('end of test')
     },
   })
   const { ws, tab } = fx.herdr.seedWorkspace('T-1', 'agents')
@@ -487,17 +503,17 @@ test('au démarrage du moteur, une mission bloquée arrête les agents des panne
   await mission({
     step: 'blocked',
     blockedFrom: 'tasks',
-    blockedReason: 'contrôle en échec',
+    blockedReason: 'check failed',
     herdr: { workspace: ws, tabs: { agents: tab }, panes: {} },
   })
-  await expect(eng.run()).rejects.toThrow('fin du test')
+  await expect(eng.run()).rejects.toThrow('end of test')
   expect(fx.herdr.pane(done).busy).toBe(false)
   expect(fx.herdr.pane(live).busy).toBe(true)
   const s = await loadState('T-1')
-  expect(s.log.map((l) => l.msg).join('\n')).toContain('démarrage du moteur : agent(s) arrêté(s) dans T1 · grok ✓')
+  expect(s.log.map((l) => l.msg).join('\n')).toContain('engine startup : agent(s) arrêté(s) dans T1 · grok ✓')
 })
 
-test("un abandon validé arrête tous les agents de l'onglet agents", async () => {
+test('an approved abandon stops every agent in the agents tab', async () => {
   const { fx, eng } = engine()
   const { ws, tab } = fx.herdr.seedWorkspace('T-1', 'agents')
   const done = fx.herdr.addPane(tab, { x: 0, y: 30, width: 200, height: 30 }, 'T1 · grok ✓')
@@ -516,13 +532,15 @@ test("un abandon validé arrête tous les agents de l'onglet agents", async () =
   expect(s.step).toBe('closed')
   expect(fx.herdr.pane(done).busy).toBe(false)
   expect(fx.herdr.pane(live).busy).toBe(false)
-  expect(s.log.some((l) => l.msg.startsWith('abandon validé : agent(s) arrêté(s) dans'))).toBe(true)
+  expect(s.log.some((l) => l.msg.startsWith('abandon approved : agent(s) arrêté(s) dans'))).toBe(true)
 })
 
-test("orchestrator-started : le moteur enregistre que le prompt d'ouverture est parti", async () => {
+test('orchestrator-started: the engine records that the opening prompt was sent', async () => {
   await mission({ step: 'blocked' })
   const { eng } = engine()
   await postInbox('T-1', { type: 'orchestrator-started' })
   await eng.tick()
-  expect((await loadState('T-1')).orchestrator.started).toBe(true)
+  const s = await loadState('T-1')
+  expect(s.orchestrator.started).toBe(true)
+  expect(s.log.map((l) => l.msg)).toContain('opening prompt sent to the orchestrator')
 })
