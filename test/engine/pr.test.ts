@@ -236,8 +236,8 @@ async function blocked(blockedFrom: MissionState['step'], patch: Partial<Mission
 test('resume-blocked validée : retour à l\'étape bloquée, tours de la tâche en cours remis à zéro', async () => {
   const tasks = [task({ n: 1, round: 2 }), task({ n: 2, title: 'Export', phase: 'test', round: 4 })]
   const { eng, gate } = await blocked('tasks', { tasks })
-  await mkdir(join(missionDir('T-1'), 'taches', '2'), { recursive: true })
-  await writeFile(join(missionDir('T-1'), 'taches', '2', 'correctifs-1.md'), 'ancien')
+  await mkdir(join(missionDir('T-1'), 'tasks', '2'), { recursive: true })
+  await writeFile(join(missionDir('T-1'), 'tasks', '2', 'correctifs-1.md'), 'ancien')
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: gate, decision: 'approved' })
   await eng.tick()
   const s = await loadState('T-1')
@@ -247,7 +247,7 @@ test('resume-blocked validée : retour à l\'étape bloquée, tours de la tâche
   expect(s.step).toBe('tasks')
   expect(s.log.some((l) => /reprise/.test(l.msg))).toBe(true)
   // L'ancien fichier de correction n'est jamais renvoyé au nouveau tour 1 : il est archivé.
-  const dir = join(missionDir('T-1'), 'taches', '2')
+  const dir = join(missionDir('T-1'), 'tasks', '2')
   expect(await readdir(dir)).toEqual([`correctifs-1.avant-${gate}.md`])
 })
 

@@ -123,7 +123,7 @@ async function writeFix(
   failure: string,
   stopDecision?: string,
 ): Promise<void> {
-  const reportPath = join(dir, 'rapport.md')
+  const reportPath = join(dir, 'report.md')
   const head =
     `Correction demandée par ${origin}, sur toute la branche. Spec : \`${specPath(s)}\`, plan : \`${planPath(s)}\`. ` +
     `Il n'y a pas de brief de tâche : ton périmètre est ce qui est décrit ci-dessous.\n` +
@@ -145,8 +145,8 @@ async function rereviewAsk(s: MissionState, e: Effects, cfg: ProjectConfig, dir:
   await writeFile(
     file,
     await render('rereview', {
-      briefPath: join(globalDir(s), 'consigne-revue.md'),
-      reportPath: join(dir, 'rapport.md'),
+      briefPath: join(globalDir(s), 'review-brief.md'),
+      reportPath: join(dir, 'report.md'),
       constraints: constraints(s, cfg),
       baseSha: base,
       headSha: head,
@@ -199,7 +199,7 @@ export async function stepGlobalReview(s: MissionState, e: Effects, cfg: Project
     case 'control': {
       const r = await e.git.controlCommits(s.worktree, G.fixBase ?? '', cfg.forbiddenPaths, mainRef(cfg))
       if (!r.ok && r.code === 'no-commit') {
-        const stop = await stopWithoutCommit(s, e, G, GR, join(globalDir(s), 'rapport.md'))
+        const stop = await stopWithoutCommit(s, e, G, GR, join(globalDir(s), 'report.md'))
         if (stop) return stop
       }
       if (!r.ok) return block(s, e, `${GR} (tour ${G.round}) : contrôle du commit en échec\n${r.reason}`)
@@ -218,10 +218,10 @@ async function globalReview(s: MissionState, e: Effects, cfg: ProjectConfig): Pr
   const first = async (): Promise<PendingAsk> => {
     await mkdir(dir, { recursive: true })
     const base = await e.git.mergeBase(wt, mainRef(cfg))
-    const diffPath = join(dir, 'branche.diff')
+    const diffPath = join(dir, 'branch.diff')
     const head = (await e.git.diffPackage(wt, base, diffPath)).head
-    const out = join(dir, 'revue.md')
-    const file = join(dir, 'consigne-revue.md')
+    const out = join(dir, 'review.md')
+    const file = join(dir, 'review-brief.md')
     const vars = { baseSha: base, headSha: head, diffPath, specPath: specPath(s), planPath: planPath(s), constraints: constraints(s, cfg), outPath: out }
     await writeFile(file, await render('global-review', vars))
     log(s, e, `${GR} : branche ${base}..${head}`)
@@ -276,8 +276,8 @@ async function globalFix(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
   const name = globalFixerName(s.id, s.loopGeneration, G.round)
   const fixBase = G.fixBase
   const make = async (): Promise<PendingAsk> => {
-    G.reportSize = await fileSize(join(dir, 'rapport.md'))
-    return { agent: name, file, fromSha: fixBase, report: { path: join(dir, 'rapport.md'), size: G.reportSize } }
+    G.reportSize = await fileSize(join(dir, 'report.md'))
+    return { agent: name, file, fromSha: fixBase, report: { path: join(dir, 'report.md'), size: G.reportSize } }
   }
   const pa = await converse(s, e, G, fixerAgent(cfg, GR, name, `CG${G.round}`, G.fixer), make, implementerDelivered(s, e))
   if (typeof pa === 'string') return pa
@@ -422,7 +422,7 @@ async function preflight(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
     case 'control': {
       const r = await e.git.controlCommits(s.worktree, P.fixBase ?? '', cfg.forbiddenPaths, mainRef(cfg))
       if (!r.ok && r.code === 'no-commit') {
-        const stop = await stopWithoutCommit(s, e, P, PF, join(preflightDir(s), 'rapport.md'))
+        const stop = await stopWithoutCommit(s, e, P, PF, join(preflightDir(s), 'report.md'))
         if (stop) return stop
       }
       if (!r.ok) return block(s, e, `${PF} (tour ${P.round}) : contrôle du commit en échec\n${r.reason}`)
@@ -676,8 +676,8 @@ async function preflightFix(s: MissionState, e: Effects, cfg: ProjectConfig): Pr
   const name = preflightFixerName(s.id, s.loopGeneration, P.round)
   const fixBase = P.fixBase
   const make = async (): Promise<PendingAsk> => {
-    P.reportSize = await fileSize(join(dir, 'rapport.md'))
-    return { agent: name, file, fromSha: fixBase, report: { path: join(dir, 'rapport.md'), size: P.reportSize } }
+    P.reportSize = await fileSize(join(dir, 'report.md'))
+    return { agent: name, file, fromSha: fixBase, report: { path: join(dir, 'report.md'), size: P.reportSize } }
   }
   const pa = await converse(s, e, P, fixerAgent(cfg, PF, name, `CP${P.round}`, P.fixer), make, implementerDelivered(s, e))
   if (typeof pa === 'string') return pa

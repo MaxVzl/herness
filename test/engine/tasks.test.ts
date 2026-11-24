@@ -32,14 +32,15 @@ const PLAN2 = `# Plan\n\n${T1}\n${T2}`
 
 const task = (patch: Partial<TaskState> = {}): TaskState => ({ n: 1, title: 'Modèle', testCommand: 'pnpm test a', phase: 'pending', round: 0, ...patch })
 const gate = (patch: Partial<Gate>): Gate => ({ id: 'g1', kind: 'amendment', status: 'approved', summary: 's', createdAt: '2026-10-29T10:00:00.000Z', ...patch })
-const taskDir = (n = 1) => join(missionDir('T-1'), 'taches', String(n))
+const taskDir = (n = 1) => join(missionDir('T-1'), 'tasks', String(n))
 
-/** Le relecteur factice écrit son rapport à côté de sa consigne : `consigne-revue.md` → `revue.md`. */
+/** Le relecteur factice écrit son rapport à côté de sa consigne : `review-brief.md` → `review.md`. */
 function scriptedAsk(verdicts: string[], impl: () => 'done' | 'blocked' | 'timeout' = () => 'done') {
   let i = 0
   return async (name: string, file: string) => {
     if (!name.startsWith('r')) return impl()
-    const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
+    const fileName = basename(file)
+    const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
     const v = verdicts[Math.min(i++, verdicts.length - 1)]!
     await writeFile(out, `${v}\n\n## Remarques\n- src/a.ts:3 remarque ${i}\n`)
     return 'done' as const
@@ -83,6 +84,22 @@ async function until(eng: Engine, pred: (s: MissionState) => boolean, max = 40):
 const red = { exitCode: 1, logPath: '/l/t.log', tail: 'AssertionError: attendu 2', durationMs: 1 }
 const green = { exitCode: 0, logPath: '/l/t.log', tail: 'ok', durationMs: 1 }
 
+test("le brief d'une tâche est écrit sous tasks/1/brief.md et le compte rendu attendu est tasks/1/report.md", async () => {
+  const { eng } = await setup({ over: { agents: { ask: async () => 'blocked' as const } } })
+  const dir = join(missionDir('T-1'), 'tasks', '1')
+  let brief = ''
+  for (let i = 0; i < 6; i++) {
+    await eng.tick()
+    try {
+      brief = await readFile(join(dir, 'brief.md'), 'utf8')
+      break
+    } catch {
+      brief = ''
+    }
+  }
+  expect(brief).toContain(join(dir, 'report.md'))
+})
+
 test('une tâche verte et approuvée passe par implement, control, test, review puis done', async () => {
   const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
   const s = await until(eng, (x) => x.step !== 'tasks')
@@ -102,13 +119,13 @@ test('une tâche verte et approuvée passe par implement, control, test, review 
   expect(brief).toContain('[T-1]')
   expect(brief).toContain('git push')
   expect(brief).toContain('git stash')
-  expect(brief).toContain(join(taskDir(), 'rapport.md'))
+  expect(brief).toContain(join(taskDir(), 'report.md'))
 
   expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths, 'origin/main'])
   const [, tab, cwd, label, cmd] = fx.callsOf('runInPane')[0]!
   expect([tab, cwd, label]).toEqual([s.herdr.tabs['checks'], wt, 'T1 · tests'])
   expect(cmd).toEqual(['bash', '-c', 'pnpm test a'])
-  expect(fx.callsOf('git.diffPackage')[0]).toEqual([wt, 'sha-head', join(taskDir(), 'tache.diff')])
+  expect(fx.callsOf('git.diffPackage')[0]).toEqual([wt, 'sha-head', join(taskDir(), 'task.diff')])
   expect(fx.callsOf('agents.start')[1]!.slice(0, 2)).toEqual(['rt-1-t1', 'reviewer'])
 
   const labels = fx.herdr.panes.map((p) => p.label)
@@ -175,10 +192,10 @@ test('une re-revue utilise le même relecteur et le diff depuis reviewedSha', as
   expect(fix).toContain('src/a.ts:3 remarque 1')
   const diffs = fx.callsOf('git.diffPackage')
   expect(diffs[1]![1]).toBe('h1')
-  expect(diffs[1]![2]).not.toBe(join(taskDir(), 'tache.diff'))
+  expect(diffs[1]![2]).not.toBe(join(taskDir(), 'task.diff'))
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['ct-1-t1', 'rt-1-t1'])
   const reviewerAsks = fx.callsOf('agents.ask').filter((c) => c[0] === 'rt-1-t1')
-  expect(reviewerAsks.map((c) => basename(String(c[1])))).toEqual(['consigne-revue.md', 'consigne-rerevue-1.md'])
+  expect(reviewerAsks.map((c) => basename(String(c[1])))).toEqual(['review-brief.md', 'consigne-rerevue-1.md'])
   const prompt = await readFile(String(reviewerAsks[1]![1]), 'utf8')
   expect(prompt).toContain('h1')
   expect(prompt).toContain('h2')
@@ -250,11 +267,11 @@ test("un implémenteur vu au repos sans compte rendu n'est pas contrôlé avant 
       herdr: { agentGet: async (name: string) => (name.startsWith('c') ? { state: states() } : { state: 'idle' }) },
       sleep: async () => {
         // L'agent finit pendant la 3e attente : il écrit son compte rendu.
-        if (++sleeps === 3) await writeFile(join(taskDir(), 'rapport.md'), 'fichiers : a.ts\ncommit sha-head\n')
+        if (++sleeps === 3) await writeFile(join(taskDir(), 'report.md'), 'fichiers : a.ts\ncommit sha-head\n')
       },
       git: {
         controlCommits: async () => {
-          expect(await readFile(join(taskDir(), 'rapport.md'), 'utf8')).toContain('commit sha-head')
+          expect(await readFile(join(taskDir(), 'report.md'), 'utf8')).toContain('commit sha-head')
           return { ok: true, commits: 1 }
         },
       },
@@ -281,7 +298,7 @@ test("un compte rendu déjà complété à l'issue de la consigne : aucune atten
     over: {
       agents: {
         ask: async (name: string, file: string) => {
-          if (name.startsWith('c')) await writeFile(join(taskDir(), 'rapport.md'), 'fait\n')
+          if (name.startsWith('c')) await writeFile(join(taskDir(), 'report.md'), 'fait\n')
           return scriptedAsk(['VERDICT: APPROUVÉ'])(name, file)
         },
       },
@@ -303,12 +320,12 @@ test("un agent qui passe en blocked pendant l'attente du compte rendu ouvre une 
 test('une porte arbitrage en attente suspend la correction, sa note entre dans les correctifs', async () => {
   const { fx, eng } = await setup({
     patch: {
-      tasks: [task({ phase: 'fix', round: 1, fixer: 'same', baseSha: 'b0', reviewedSha: 'h1', implementer: 'ct-1-t1', lastReview: join(taskDir(), 'revue.md') })],
+      tasks: [task({ phase: 'fix', round: 1, fixer: 'same', baseSha: 'b0', reviewedSha: 'h1', implementer: 'ct-1-t1', lastReview: join(taskDir(), 'review.md') })],
       gates: [gate({ id: 'g1', kind: 'arbitration', status: 'pending', summary: 'colonne à garder ?' })],
     },
   })
   await mkdir(taskDir(), { recursive: true })
-  await writeFile(join(taskDir(), 'revue.md'), 'VERDICT: CORRECTIONS\n\n- src/b.ts:9 colonne en trop\n')
+  await writeFile(join(taskDir(), 'review.md'), 'VERDICT: CORRECTIONS\n\n- src/b.ts:9 colonne en trop\n')
   fx.herdr.started.add('ct-1-t1')
 
   expect(await eng.tick()).toBe('wait')
@@ -481,12 +498,12 @@ test("reprise : consigne en cours et agent vivant au travail, attente sans renvo
 })
 
 test('reprise : revue en cours, relecteur disparu mais verdict déjà écrit, le verdict est utilisé sans renvoi', async () => {
-  const out = join(taskDir(), 'revue.md')
+  const out = join(taskDir(), 'review.md')
   const { fx, eng } = await setup({
     patch: {
       tasks: [task({
         phase: 'review', baseSha: 'b0', implementer: 'ct-1-t1', reviewer: 'rt-1-t1',
-        pendingAsk: { agent: 'rt-1-t1', file: join(taskDir(), 'consigne-revue.md'), out, head: 'h1' },
+        pendingAsk: { agent: 'rt-1-t1', file: join(taskDir(), 'review-brief.md'), out, head: 'h1' },
       })],
     },
   })
@@ -506,13 +523,13 @@ test('reprise : revue en cours, relecteur disparu sans verdict, relecteur redém
     patch: {
       tasks: [task({
         phase: 'review', baseSha: 'b0', implementer: 'ct-1-t1', reviewer: 'rt-1-t1',
-        pendingAsk: { agent: 'rt-1-t1', file: join(taskDir(), 'consigne-revue.md'), out: join(taskDir(), 'revue.md'), head: 'h1' },
+        pendingAsk: { agent: 'rt-1-t1', file: join(taskDir(), 'review-brief.md'), out: join(taskDir(), 'review.md'), head: 'h1' },
       })],
     },
   })
   await eng.tick()
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rt-1-t1'])
-  expect(fx.callsOf('agents.ask').map((c) => basename(String(c[1])))).toEqual(['consigne-revue.md'])
+  expect(fx.callsOf('agents.ask').map((c) => basename(String(c[1])))).toEqual(['review-brief.md'])
   expect((await loadState('T-1')).tasks[0]!.phase).toBe('done')
 })
 
@@ -595,7 +612,8 @@ test('une proposition modifiée après la demande est rejetée, le worktree rest
 test('une remarque « imposé par le plan » ouvre une porte arbitrage et suspend les correctifs ; chaque CORRECTIONS est signalé', async () => {
   const ask = async (name: string, file: string) => {
     if (name.startsWith('r')) {
-      const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
+      const fileName = basename(file)
+      const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
       await writeFile(out, 'VERDICT: CORRECTIONS\n\n## Remarques\n- src/a.ts:3 nom de variable\n- src/b.ts:9 colonne supprimée alors que c\'est Imposé par le plan (tâche 1)\n')
     }
     return 'done' as const
@@ -641,7 +659,7 @@ const REPORT = 'Arrêt : le plan est impossible.\nLe composant de base impose pl
 function stoppingAsk(report = REPORT) {
   const review = scriptedAsk(['VERDICT: APPROUVÉ'])
   return async (name: string, file: string) => {
-    if (basename(file) === 'brief.md' && report) await writeFile(join(dirname(file), 'rapport.md'), report)
+    if (basename(file) === 'brief.md' && report) await writeFile(join(dirname(file), 'report.md'), report)
     return review(name, file)
   }
 }
@@ -651,7 +669,7 @@ test("arrêt sans commit avec compte rendu : porte agent-stopped, l'orchestrateu
   let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   expect(s.step).toBe('tasks')
   const g = s.gates.find((x) => x.kind === 'agent-stopped')!
-  expect(g).toMatchObject({ status: 'pending', path: join(taskDir(), 'rapport.md') })
+  expect(g).toMatchObject({ status: 'pending', path: join(taskDir(), 'report.md') })
   expect(g.summary).toMatch(/^tâche 1 : l'implémenteur s'est arrêté sans commit\n/)
   expect(g.summary).toContain('placeholder=" "')
   expect(s.tasks[0]).toMatchObject({ phase: 'control', round: 0, stopGate: g.id })
@@ -945,7 +963,7 @@ test("I3 : blocage venu d'ailleurs que la tâche (agent sans réponse), amendeme
 test("M1 : un compte rendu qui n'a pas grandi depuis l'envoi de la consigne n'ouvre pas de porte agent-stopped", async () => {
   const { eng } = await setup({ over: { agents: { ask: stoppingAsk('') }, git: { controlCommits: async () => noCommit } } })
   await mkdir(taskDir(), { recursive: true })
-  await writeFile(join(taskDir(), 'rapport.md'), 'ancien compte rendu\n')
+  await writeFile(join(taskDir(), 'report.md'), 'ancien compte rendu\n')
   const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.tasks[0]!.reportSize).toBe(Buffer.byteLength('ancien compte rendu\n'))
   expect(s.blockedReason).toContain('contrôle du commit en échec')
@@ -954,12 +972,12 @@ test("M1 : un compte rendu qui n'a pas grandi depuis l'envoi de la consigne n'ou
 
 test("M1 : la porte agent-stopped ne montre que ce que l'implémenteur a ajouté au compte rendu", async () => {
   const ask = async (name: string, file: string) => {
-    if (basename(file) === 'brief.md') await writeFile(join(dirname(file), 'rapport.md'), 'ancien\nNOUVEAU : arrêt\n')
+    if (basename(file) === 'brief.md') await writeFile(join(dirname(file), 'report.md'), 'ancien\nNOUVEAU : arrêt\n')
     return 'done' as const
   }
   const { eng } = await setup({ over: { agents: { ask }, git: { controlCommits: async () => noCommit } } })
   await mkdir(taskDir(), { recursive: true })
-  await writeFile(join(taskDir(), 'rapport.md'), 'ancien\n')
+  await writeFile(join(taskDir(), 'report.md'), 'ancien\n')
   const s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   expect(s.gates[0]!.summary).toBe("tâche 1 : l'implémenteur s'est arrêté sans commit\nNOUVEAU : arrêt")
 })

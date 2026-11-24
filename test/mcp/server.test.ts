@@ -182,7 +182,7 @@ test("une exception d'outil est journalisée avec le nom de l'outil", async () =
   const r = await call('statut')
   expect(r.isError).toBe(true)
   expect(r.content[0]!.text.startsWith('Erreur : ')).toBe(true)
-  const text = await readFile(join(home, 'erreurs.log'), 'utf8')
+  const text = await readFile(join(home, 'errors.log'), 'utf8')
   expect(text).toContain('· mission T-1 · herness ')
   expect(text).toContain('· outil MCP statut')
 })
@@ -190,9 +190,9 @@ test("une exception d'outil est journalisée avec le nom de l'outil", async () =
 test("signaler_anomalie écrit la description avec l'étape et ne poste rien", async () => {
   const r = await call('signaler_anomalie', { description: '  le moteur annonce g3 mais statut ne la montre pas  ' })
   expect(r.isError).toBeFalsy()
-  expect(r.content[0]!.text).toContain(join(home, 'erreurs.log'))
-  const text = await readFile(join(home, 'erreurs.log'), 'utf8')
-  expect(text).toContain(`· signalement de l'orchestrateur (étape ${state.step})`)
+  expect(r.content[0]!.text).toContain(join(home, 'errors.log'))
+  const text = await readFile(join(home, 'errors.log'), 'utf8')
+  expect(text).toContain(`· signalement de l'orchestrateur (step ${state.step})`)
   expect(text).toContain('le moteur annonce g3 mais statut ne la montre pas')
   expect(await drainInbox('T-1')).toEqual([])
 })
@@ -201,7 +201,7 @@ test('signaler_anomalie refuse une description vide', async () => {
   const r = await call('signaler_anomalie', { description: '   ' })
   expect(r.isError).toBe(true)
   expect(r.content[0]!.text).toContain('Description vide')
-  await expect(readFile(join(home, 'erreurs.log'), 'utf8')).rejects.toThrow()
+  await expect(readFile(join(home, 'errors.log'), 'utf8')).rejects.toThrow()
 })
 
 test('demander_validation(spec) sans slug rend une erreur en français', async () => {

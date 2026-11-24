@@ -39,12 +39,13 @@ const gdir = () => join(missionDir('T-1'), 'global')
 const pdir = () => join(missionDir('T-1'), 'preflight')
 const down = () => [demo.testDb!.down[0], ['down', 'T-1', wt], { cwd: wt, reject: false }]
 
-/** Agents factices : un relecteur écrit le rapport à côté de sa consigne (`consigne-revue.md` → `revue.md`). */
+/** Agents factices : un relecteur écrit le rapport à côté de sa consigne (`review-brief.md` → `review.md`). */
 function agentsAsk(answer: (name: string) => string | undefined) {
   return async (name: string, file: string) => {
     const v = answer(name)
     if (v !== undefined) {
-      const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
+      const fileName = basename(file)
+      const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
       await writeFile(out, `${v}\n\n## Remarques\n- src/a.ts:3 remarque de ${name}\n`)
     }
     return 'done' as const
@@ -121,16 +122,16 @@ test('revue globale approuvée passe au preflight', async () => {
   const s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
   expect(fx.callsOf('git.mergeBase')[0]).toEqual([wt, 'origin/main'])
-  expect(fx.callsOf('git.diffPackage')[0]).toEqual([wt, 'sha-base', join(gdir(), 'branche.diff')])
+  expect(fx.callsOf('git.diffPackage')[0]).toEqual([wt, 'sha-base', join(gdir(), 'branch.diff')])
   const [name, role, , launch] = fx.callsOf('agents.start')[0]!
   expect([name, role]).toEqual(['rgt-1', 'reviewer'])
   expect((launch as { args: string[] }).args).toContain('claude-opus-5-5')
-  expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['rgt-1', join(gdir(), 'consigne-revue.md')])
-  const consigne = await readFile(join(gdir(), 'consigne-revue.md'), 'utf8')
+  expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['rgt-1', join(gdir(), 'review-brief.md')])
+  const consigne = await readFile(join(gdir(), 'review-brief.md'), 'utf8')
   expect(consigne).toContain('sha-base..sha-head')
-  expect(consigne).toContain(join(gdir(), 'revue.md'))
+  expect(consigne).toContain(join(gdir(), 'review.md'))
   expect(consigne).toContain('git push')
-  expect(s.loops.globalReview).toMatchObject({ round: 0, reviewedSha: 'sha-head', lastReview: join(gdir(), 'revue.md') })
+  expect(s.loops.globalReview).toMatchObject({ round: 0, reviewedSha: 'sha-head', lastReview: join(gdir(), 'review.md') })
   expect(s.loops.globalReview.pendingAsk).toBeUndefined()
 })
 
@@ -155,13 +156,13 @@ test('revue globale en corrections démarre un implémenteur neuf puis re-revue 
   expect((fx.callsOf('agents.start')[1]![3] as { args: string[] }).args).toContain('grok-4.7-medium')
   const asks = fx.callsOf('agents.ask').map((c) => c.slice(0, 2))
   expect(asks).toEqual([
-    ['rgt-1', join(gdir(), 'consigne-revue.md')],
+    ['rgt-1', join(gdir(), 'review-brief.md')],
     ['cgt-1-1', join(gdir(), 'correctifs-1.md')],
     ['rgt-1', join(gdir(), 'consigne-rerevue-1.md')],
   ])
   const fix = await readFile(join(gdir(), 'correctifs-1.md'), 'utf8')
   expect(fix).toContain('src/a.ts:3 remarque de rgt-1')
-  expect(fix).toContain(join(gdir(), 'rapport.md'))
+  expect(fix).toContain(join(gdir(), 'report.md'))
   expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths, 'origin/main'])
   // Fichiers de la correction : commits de la branche, sans ceux de main.
   expect(fx.callsOf('git.branchFiles')[0]).toEqual([wt, 'sha-head', 'origin/main'])
@@ -374,7 +375,7 @@ test('CAUSE: MAIN non reproduite sur main est corrigée comme BRANCHE', async ()
   const { fx, eng } = await setup({
     patch: {
       step: 'preflight',
-      loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, reviewedSha: 'sha-rev', lastReview: '/x/revue.md' } },
+      loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, reviewedSha: 'sha-rev', lastReview: '/x/review.md' } },
     },
     over: {
       runInPane: panes({ 'preflight · lint': [ko('erreur de lint'), ok] }),
@@ -408,7 +409,7 @@ test('un diagnostic et un correcteur de preflight sont arrêtés à la fin de le
   const { fx, eng } = await setup({
     patch: {
       step: 'preflight',
-      loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, reviewedSha: 'sha-rev', lastReview: '/x/revue.md' } },
+      loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, reviewedSha: 'sha-rev', lastReview: '/x/review.md' } },
     },
     over: {
       runInPane: panes({ 'preflight · lint': [ko('erreur de lint'), ok] }),
@@ -496,9 +497,9 @@ test('un amendement approuvé pendant une boucle de la revue globale attend sa r
 })
 
 test('reprise : un relecteur global vivant est attendu sans renvoi de la consigne', async () => {
-  const out = join(gdir(), 'revue.md')
+  const out = join(gdir(), 'review.md')
   const { fx, eng } = await setup({
-    patch: { loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, pendingAsk: { agent: 'rgt-1', file: join(gdir(), 'consigne-revue.md'), out, head: 'sha-h0' } } } },
+    patch: { loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, pendingAsk: { agent: 'rgt-1', file: join(gdir(), 'review-brief.md'), out, head: 'sha-h0' } } } },
     over: {
       agents: {
         wait: async () => {
@@ -516,7 +517,7 @@ test('reprise : un relecteur global vivant est attendu sans renvoi de la consign
   expect(fx.callsOf('agents.ask')).toEqual([])
   expect(fx.callsOf('agents.wait')).toHaveLength(1)
   expect(s.loops.globalReview.reviewedSha).toBe('sha-h0')
-  await expect(access(join(gdir(), 'consigne-revue.md'))).rejects.toThrow()
+  await expect(access(join(gdir(), 'review-brief.md'))).rejects.toThrow()
 })
 
 // ---------- fix round 1 ----------
@@ -532,7 +533,7 @@ test('après un amendement, les dossiers des boucles sont archivés et la nouvel
   // Restes d'une revue globale et d'un preflight précédents.
   await mkdir(gdir(), { recursive: true })
   await writeFile(join(gdir(), 'correctifs-1.md'), 'ANCIEN correctif\n')
-  await writeFile(join(gdir(), 'revue.md'), 'VERDICT: APPROUVÉ\n\nANCIENNE revue\n')
+  await writeFile(join(gdir(), 'review.md'), 'VERDICT: APPROUVÉ\n\nANCIENNE revue\n')
   await mkdir(pdir(), { recursive: true })
   await writeFile(join(pdir(), 'diagnostic-1.md'), 'CAUSE: MAIN\n')
   await eng.tick()
@@ -634,7 +635,8 @@ test("une correction de branche efface les rouges acceptés : le check repasse p
 test('revue globale : une remarque « imposé par le plan » ouvre un arbitrage avant les correctifs, la note y entre', async () => {
   const ask = async (name: string, file: string) => {
     if (name.startsWith('rg')) {
-      const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
+      const fileName = basename(file)
+      const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
       const first = !out.includes('rerevue')
       await writeFile(out, first ? 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 imposé par le plan mais incohérent\n' : 'VERDICT: APPROUVÉ\n')
     }
@@ -662,15 +664,15 @@ const baseLoops = () => newState({ id: 'x', source: { kind: 'text', ref: 'x' }, 
 
 test("revue globale : correcteur arrêté sans commit avec compte rendu, porte agent-stopped ; validée, nouveau tour avec la décision", async () => {
   const { fx, eng } = await setup({
-    patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'control', fixer: 'new', fixBase: 'f1', reviewedSha: 'h1', lastReview: join(gdir(), 'revue.md') } } },
+    patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'control', fixer: 'new', fixBase: 'f1', reviewedSha: 'h1', lastReview: join(gdir(), 'review.md') } } },
     over: {
       agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'] }) },
       git: { controlCommits: (() => { let i = 0; return async () => (i++ === 0 ? noCommit : { ok: true as const, commits: 1 }) })() },
     },
   })
   await mkdir(gdir(), { recursive: true })
-  await writeFile(join(gdir(), 'revue.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 renommer\n')
-  await writeFile(join(gdir(), 'rapport.md'), 'Je ne peux pas renommer : le nom est imposé par la spec.\n')
+  await writeFile(join(gdir(), 'review.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 renommer\n')
+  await writeFile(join(gdir(), 'report.md'), 'Je ne peux pas renommer : le nom est imposé par la spec.\n')
   let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   const g = s.gates.find((x) => x.kind === 'agent-stopped')!
   expect(g.summary).toMatch(/^revue globale : l'implémenteur s'est arrêté sans commit\n/)
@@ -705,11 +707,11 @@ test('preflight : correcteur arrêté sans commit avec compte rendu ; porte vali
     over: {
       git: { controlCommits: async () => noCommit },
       // Le correcteur du tour 2 s'arrête aussi, en complétant le compte rendu.
-      agents: { ask: async (_name: string, file: string) => (await appendFile(join(dirname(file), 'rapport.md'), 'Arrêt encore.\n'), 'done' as const) },
+      agents: { ask: async (_name: string, file: string) => (await appendFile(join(dirname(file), 'report.md'), 'Arrêt encore.\n'), 'done' as const) },
     },
   })
   await mkdir(pdir(), { recursive: true })
-  await writeFile(join(pdir(), 'rapport.md'), 'Arrêt : la règle de lint contredit la spec.\n')
+  await writeFile(join(pdir(), 'report.md'), 'Arrêt : la règle de lint contredit la spec.\n')
   let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   const g1 = s.gates.find((x) => x.kind === 'agent-stopped')!
   expect(g1.summary).toMatch(/^preflight : l'implémenteur s'est arrêté sans commit\n/)
@@ -730,12 +732,12 @@ test('preflight : correcteur arrêté sans commit avec compte rendu ; porte vali
 
 test("M1 : revue globale, compte rendu inchangé depuis l'envoi des correctifs : blocage, pas de porte", async () => {
   const { eng } = await setup({
-    patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'fix', fixer: 'new', reviewedSha: 'h1', lastReview: join(gdir(), 'revue.md') } } },
+    patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'fix', fixer: 'new', reviewedSha: 'h1', lastReview: join(gdir(), 'review.md') } } },
     over: { git: { controlCommits: async () => noCommit } },
   })
   await mkdir(gdir(), { recursive: true })
-  await writeFile(join(gdir(), 'revue.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 renommer\n')
-  await writeFile(join(gdir(), 'rapport.md'), 'compte rendu du tour précédent\n')
+  await writeFile(join(gdir(), 'review.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 renommer\n')
+  await writeFile(join(gdir(), 'report.md'), 'compte rendu du tour précédent\n')
   const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.loops.globalReview.reportSize).toBe(Buffer.byteLength('compte rendu du tour précédent\n'))
   expect(s.gates).toEqual([])
@@ -748,7 +750,7 @@ test("M1 : preflight, compte rendu inchangé depuis l'envoi des correctifs : blo
     over: { git: { controlCommits: async () => noCommit } },
   })
   await mkdir(pdir(), { recursive: true })
-  await writeFile(join(pdir(), 'rapport.md'), 'ancien\n')
+  await writeFile(join(pdir(), 'report.md'), 'ancien\n')
   const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.gates).toEqual([])
   expect(s.blockedReason).toContain('contrôle du commit en échec')
@@ -761,18 +763,18 @@ test("preflight : correcteur vu au repos sans compte rendu, le commit n'est cont
     patch: { step: 'preflight', loops: { ...baseLoops(), globalReview: { round: 0, reviewedSha: 'sha-rev' }, preflight: P } },
     over: {
       sleep: async () => {
-        if (++sleeps === 2) await writeFile(join(pdir(), 'rapport.md'), 'ancien\ncorrigé, commit c1\n')
+        if (++sleeps === 2) await writeFile(join(pdir(), 'report.md'), 'ancien\ncorrigé, commit c1\n')
       },
       git: {
         controlCommits: async () => {
-          expect(await readFile(join(pdir(), 'rapport.md'), 'utf8')).toContain('commit c1')
+          expect(await readFile(join(pdir(), 'report.md'), 'utf8')).toContain('commit c1')
           return { ok: true, commits: 1 }
         },
       },
     },
   })
   await mkdir(pdir(), { recursive: true })
-  await writeFile(join(pdir(), 'rapport.md'), 'ancien\n')
+  await writeFile(join(pdir(), 'report.md'), 'ancien\n')
   const s = await until(eng, () => fx.callsOf('git.controlCommits').length > 0)
   expect(sleeps).toBe(2)
   expect(s.log.map((l) => l.msg)).toContain('preflight : cpt-1-1 vu au repos sans compte rendu, attente de la fin réelle')

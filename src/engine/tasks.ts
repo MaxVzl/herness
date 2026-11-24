@@ -38,7 +38,7 @@ const ACTIVE_STEPS_AFTER_TASKS: Step[] = ['global-review', 'preflight', 'pr']
 
 export const exists = (p: string): Promise<boolean> => access(p).then(() => true, () => false)
 
-export const taskDir = (s: MissionState, t: TaskState): string => join(missionDir(s.id), 'taches', String(t.n))
+export const taskDir = (s: MissionState, t: TaskState): string => join(missionDir(s.id), 'tasks', String(t.n))
 const implName = (s: MissionState, t: TaskState): string => names.implName(s.id, t.n)
 const strongName = (s: MissionState, t: TaskState): string => names.strongName(s.id, t.n)
 const reviewerName = (s: MissionState, t: TaskState): string => names.reviewerName(s.id, t.n)
@@ -372,7 +372,7 @@ async function writeBrief(s: MissionState, cfg: ProjectConfig, t: TaskState, bod
     testCommand: t.testCommand,
     commitFormat: fill([cfg.commitFormat], { id: s.id })[0] as string,
     forbidden: forbidden(cfg),
-    reportPath: join(dir, 'rapport.md'),
+    reportPath: join(dir, 'report.md'),
   })
   if (reprise) brief = brief.replace(/^# Brief de tâche\n\n/, `# Brief de tâche\n\n${REPRISE}${repriseMark(reprise)}\n\n`)
   const file = join(dir, 'brief.md')
@@ -588,15 +588,15 @@ async function stepImplement(s: MissionState, e: Effects, cfg: ProjectConfig, t:
     await startAgent(s, e, siteOf(t), name, 'implementer', cfg.models.implementer)
     t.implementer = name
   }
-  t.reportSize = await fileSize(join(dir, 'rapport.md'))
-  const report = { path: join(dir, 'rapport.md'), size: t.reportSize }
+  t.reportSize = await fileSize(join(dir, 'report.md'))
+  const report = { path: join(dir, 'report.md'), size: t.reportSize }
   const r = await askAgent(s, e, t, `tâche ${t.n}`, 'implementer', { agent: name, file: join(dir, 'brief.md'), fromSha: t.baseSha as string, report })
   if (r !== 'done') return r
   return finishImplement(s, e, t)
 }
 
 async function finishImplement(s: MissionState, e: Effects, t: TaskState): Promise<StepResult> {
-  const report = join(taskDir(s, t), 'rapport.md')
+  const report = join(taskDir(s, t), 'report.md')
   if (!(await exists(report))) log(s, e, `tâche ${t.n} : compte rendu absent (${report})`)
   return apply(s, e, t, 'implemented')
 }
@@ -605,7 +605,7 @@ async function stepControl(s: MissionState, e: Effects, cfg: ProjectConfig, t: T
   const r = await e.git.controlCommits(s.worktree as string, t.baseSha as string, cfg.forbiddenPaths, mainRef(cfg))
   if (r.ok) return apply(s, e, t, 'control-ok')
   if (r.code === 'no-commit') {
-    const stop = await stopWithoutCommit(s, e, t, `tâche ${t.n}`, join(taskDir(s, t), 'rapport.md'))
+    const stop = await stopWithoutCommit(s, e, t, `tâche ${t.n}`, join(taskDir(s, t), 'report.md'))
     if (stop) return stop
   }
   return apply(s, e, t, 'control-ko', r.reason)
@@ -629,7 +629,7 @@ async function stepReview(s: MissionState, e: Effects, cfg: ProjectConfig, t: Ta
   const name = reviewerName(s, t)
   const common = {
     briefPath: join(dir, 'brief.md'),
-    reportPath: join(dir, 'rapport.md'),
+    reportPath: join(dir, 'report.md'),
     constraints: `Celles de la spec (\`${specPath(s)}\`), et ces interdits :\n${forbidden(cfg)}`,
   }
   let prompt: string
@@ -637,10 +637,10 @@ async function stepReview(s: MissionState, e: Effects, cfg: ProjectConfig, t: Ta
   let head: string
   await mkdir(dir, { recursive: true })
   if (!t.reviewedSha) {
-    const diffPath = join(dir, 'tache.diff')
+    const diffPath = join(dir, 'task.diff')
     head = (await e.git.diffPackage(wt, t.baseSha as string, diffPath)).head
-    outPath = join(dir, 'revue.md')
-    prompt = join(dir, 'consigne-revue.md')
+    outPath = join(dir, 'review.md')
+    prompt = join(dir, 'review-brief.md')
     await writeFile(prompt, await render('review', { ...common, baseSha: t.baseSha as string, headSha: head, diffPath, outPath }))
   } else {
     const diffPath = join(dir, `correction-${t.round}.diff`)
@@ -690,10 +690,10 @@ async function stepFix(s: MissionState, e: Effects, cfg: ProjectConfig, t: TaskS
     const stop = t.stopDecision
     const failure = stop ? '' : (t.lastFailure ?? '')
     const findings = stop ? STOP_FINDINGS : failure ? '' : await findingsOf(t.lastReview)
-    const body = await render('correction', { findings, failure, forbidden: forbidden(cfg), reportPath: join(dir, 'rapport.md') })
+    const body = await render('correction', { findings, failure, forbidden: forbidden(cfg), reportPath: join(dir, 'report.md') })
     const head =
       `Brief de la tâche d'origine : \`${join(dir, 'brief.md')}\` (lis-le d'abord si tu ne le connais pas).\n` +
-      `Ajoute ton compte rendu à la fin de \`${join(dir, 'rapport.md')}\`, sans effacer les comptes rendus précédents.\n\n`
+      `Ajoute ton compte rendu à la fin de \`${join(dir, 'report.md')}\`, sans effacer les comptes rendus précédents.\n\n`
     const decision = stop ? stopSection(stop, await amendedTaskText(s, t)) : ''
     await mkdir(dir, { recursive: true })
     await writeFile(file, head + body + decision + consumeArbitrations(s))
@@ -709,8 +709,8 @@ async function stepFix(s: MissionState, e: Effects, cfg: ProjectConfig, t: TaskS
   }
   t.implementer = name
   const fromSha = await e.git.headSha(s.worktree as string)
-  t.reportSize = await fileSize(join(dir, 'rapport.md'))
-  const report = { path: join(dir, 'rapport.md'), size: t.reportSize }
+  t.reportSize = await fileSize(join(dir, 'report.md'))
+  const report = { path: join(dir, 'report.md'), size: t.reportSize }
   const r = await askAgent(s, e, t, `tâche ${t.n}`, 'implementer', { agent: name, file, fromSha, report })
   if (r !== 'done') return r
   return apply(s, e, t, 'fixed')

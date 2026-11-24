@@ -18,8 +18,15 @@ afterEach(async () => {
 
 const version = VERSION.replaceAll('.', '\\.')
 
-test('errorLogPath vaut <HERNESS_HOME>/erreurs.log', () => {
-  expect(errorLogPath()).toBe(join(home, 'erreurs.log'))
+test('errorLogPath vaut <HERNESS_HOME>/errors.log', () => {
+  expect(errorLogPath()).toBe(join(home, 'errors.log'))
+})
+
+test('logHernessError writes to errors.log with a (step X) header', async () => {
+  await logHernessError({ mission: 'T-1', origin: 'moteur', step: 'tasks' }, new Error('boum'))
+  const text = await readFile(join(home, 'errors.log'), 'utf8')
+  expect(text).toMatch(/· moteur \(step tasks\)$/m)
+  expect(text).toContain('Error: boum')
 })
 
 test('une Error donne un en-tête complet et sa pile', async () => {
@@ -27,7 +34,7 @@ test('une Error donne un en-tête complet et sa pile', async () => {
   const text = await readFile(errorLogPath(), 'utf8')
   expect(text).toMatch(
     new RegExp(
-      `^=== \\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z · mission T-1 · herness ${version} · moteur \\(étape tasks\\)$`,
+      `^=== \\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z · mission T-1 · herness ${version} · moteur \\(step tasks\\)$`,
       'm',
     ),
   )

@@ -58,7 +58,7 @@ async function orchestratorPrompt(s: MissionState, d: Demande, hasNote: boolean,
   return render('orchestrator', {
     id: s.id,
     demande: d.kind === 'text' ? 'une demande écrite (texte libre)' : d.ref,
-    demandeFile: join(missionDir(s.id), 'demande.md'),
+    demandeFile: join(missionDir(s.id), 'request.md'),
     note: hasNote
       ? ` Lis aussi la note de l'utilisateur, \`${join(missionDir(s.id), 'note.md')}\` : elle complète la demande et l'emporte en cas de contradiction.`
       : '',
@@ -141,7 +141,7 @@ export async function startMission(input: string, cwd: string, deps: LifecycleDe
   await saveState(s)
 
   const dir = missionDir(id)
-  await writeFile(join(dir, 'demande.md'), demande)
+  await writeFile(join(dir, 'request.md'), demande)
   const note = opts.note?.trim() ?? ''
   if (note) await writeFile(join(dir, 'note.md'), `${note}\n`)
   await writeFile(join(dir, 'orchestrator.md'), await orchestratorPrompt(s, d, note !== '', cfg))

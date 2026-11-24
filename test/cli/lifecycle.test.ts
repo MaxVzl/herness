@@ -63,7 +63,7 @@ test('dev crée l\'espace, enregistre l\'état puis lance moteur, tableau et orc
   expect(s.herdr.tabs).toMatchObject({ master: expect.any(String), docs: expect.any(String), agents: expect.any(String), checks: expect.any(String), process: expect.any(String) })
   expect(s.herdr.panes).toMatchObject({ spec: expect.any(String), plan: expect.any(String), orchestrator: expect.any(String), tasks: expect.any(String), engine: expect.any(String) })
 
-  const demande = await readFile(join(missionDir('gh12'), 'demande.md'), 'utf8')
+  const demande = await readFile(join(missionDir('gh12'), 'request.md'), 'utf8')
   expect(demande).toMatch(/^# Export CSV\n\nIl faut exporter\.\n\n## Commentaires\n/)
   expect(demande).toContain('c1')
   expect(demande).toContain('c2')
@@ -73,7 +73,7 @@ test('dev crée l\'espace, enregistre l\'état puis lance moteur, tableau et orc
   expect(prompt).toContain('docs/superpowers/specs/')
   expect(prompt).toContain('docs/superpowers/plans/')
   expect(prompt).toContain('<AAAA-MM-JJ>-<id>-<slug>.md')
-  expect(prompt).toContain(join(missionDir('gh12'), 'demande.md'))
+  expect(prompt).toContain(join(missionDir('gh12'), 'request.md'))
   // Après la PR : branche de la mission lue dans le worktree (elle est renommée au classement), main du projet et
   // preflight de la config, en clair.
   expect(prompt).toContain('git push --force-with-lease origin HEAD')
@@ -103,11 +103,17 @@ test('dev crée l\'espace, enregistre l\'état puis lance moteur, tableau et orc
   expect(fx.herdr.calls.at(-1)).toBe(`tabFocus ${s.herdr.tabs['master']}`)
 })
 
+test('startMission écrit request.md', async () => {
+  const { d } = deps({ now: () => new Date(2026, 9, 30, 9) })
+  const id = await startMission('  ajoute un export CSV  ', repo, d)
+  expect(await readFile(join(missionDir(id), 'request.md'), 'utf8')).toBe('ajoute un export CSV\n')
+})
+
 test('dev avec un texte libre : id du jour et demande écrite telle quelle', async () => {
   const { d } = deps({ now: () => new Date(2026, 9, 30, 9) })
   const id = await startMission('  ajoute un export CSV  ', repo, d)
   expect(id).toBe('20261030-1')
-  expect(await readFile(join(missionDir(id), 'demande.md'), 'utf8')).toBe('ajoute un export CSV\n')
+  expect(await readFile(join(missionDir(id), 'request.md'), 'utf8')).toBe('ajoute un export CSV\n')
   expect((await loadState(id)).source).toEqual({ kind: 'text', ref: 'ajoute un export CSV' })
 })
 

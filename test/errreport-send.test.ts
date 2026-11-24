@@ -56,6 +56,20 @@ async function deuxErreurs(): Promise<{ runner: Runner; calls: Call[] }> {
   return fakeRunner([{ number: 42, title: 'T', url: 'u42', body: `… ${errorSignature(connue)} …` }])
 }
 
+test('pendingEntries reads entries from legacy erreurs.log and errors.log', async () => {
+  await writeFile(
+    join(home, 'erreurs.log'),
+    '=== 2026-01-01T00:00:00.000Z · mission m1 · herness 1.0.0 · moteur (étape tasks)\nancien\n\n',
+  )
+  await writeFile(
+    join(home, 'errors.log'),
+    '=== 2026-01-02T00:00:00.000Z · mission m1 · herness 1.0.0 · moteur (step preflight)\nnouveau\n\n',
+  )
+  const pending = await pendingEntries('m1')
+  expect(pending.map((entry) => entry.body)).toEqual(['ancien', 'nouveau'])
+  expect(pending.map((entry) => entry.step)).toEqual(['tasks', 'preflight'])
+})
+
 test("sans journal, rien à préparer et gh n'est pas appelé", async () => {
   const { runner, calls } = fakeRunner()
   expect(await planReport('m1', runner)).toEqual([])

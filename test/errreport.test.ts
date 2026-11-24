@@ -36,6 +36,22 @@ function item<T>(items: readonly T[], index: number): T {
   return value
 }
 
+test('parseErrorLog reads both (étape X) and (step X) headers', () => {
+  const text = [
+    '=== 2026-01-01T00:00:00.000Z · mission m1 · herness 1.0.0 · moteur (étape tasks)',
+    'ancien',
+    '',
+    '=== 2026-01-02T00:00:00.000Z · mission m1 · herness 1.0.0 · moteur (step preflight)',
+    'nouveau',
+    '',
+  ].join('\n')
+  const entries = parseErrorLog(text)
+  expect(entries.map((e) => ({ origin: e.origin, step: e.step, body: e.body }))).toEqual([
+    { origin: 'moteur', step: 'tasks', body: 'ancien' },
+    { origin: 'moteur', step: 'preflight', body: 'nouveau' },
+  ])
+})
+
 test('découpe deux entrées et lit leur en-tête', async () => {
   await logHernessError({ mission: 'm1', origin: 'moteur', step: 'tasks' }, new Error('boum'))
   await logHernessError({ origin: 'lancement du moteur' }, 'texte')

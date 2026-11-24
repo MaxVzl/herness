@@ -17,6 +17,11 @@ function wasLogged(err: unknown): boolean {
 }
 
 export function errorLogPath(): string {
+  return join(hernessHome(), 'errors.log')
+}
+
+/** Ancien journal, encore lu pour qu'une mission héritée retrouve ses erreurs. */
+export function legacyErrorLogPath(): string {
   return join(hernessHome(), 'erreurs.log')
 }
 
@@ -33,7 +38,7 @@ function formatBody(err: unknown, seen: Set<object> = new Set()): string {
 }
 
 function formatEntry(ctx: ErrorContext, err: unknown): string {
-  const origin = ctx.step ? `${ctx.origin} (étape ${ctx.step})` : ctx.origin
+  const origin = ctx.step ? `${ctx.origin} (step ${ctx.step})` : ctx.origin
   const segments = [`=== ${new Date().toISOString()}`]
   if (ctx.mission) segments.push(`mission ${ctx.mission}`)
   segments.push(`herness ${VERSION}`, origin)

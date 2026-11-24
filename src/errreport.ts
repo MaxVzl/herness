@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { errorLogPath } from './errlog.ts'
+import { errorLogPath, legacyErrorLogPath } from './errlog.ts'
 import type { Runner } from './forge/github.ts'
 import { missionDir } from './paths.ts'
 
@@ -21,7 +21,7 @@ export type LogEntry = {
 export type ReportGroup = { signature: string; entries: LogEntry[] }
 
 const HEADER = /^=== (\S+) · (?:mission (\S+) · )?herness (\S+) · (.+)$/
-const STEP = /^(.*) \(étape ([^)]+)\)$/
+const STEP = /^(.*) \((?:étape|step) ([^)]+)\)$/
 
 function stripTrailingBlank(lines: string[]): string[] {
   let end = lines.length
@@ -231,14 +231,24 @@ export async function readSent(id: string): Promise<SentRecord[]> {
   return (data as { sent: SentRecord[] }).sent
 }
 
-export async function pendingEntries(id: string): Promise<LogEntry[]> {
-  let text: string
+async function readLogIfExists(path: string): Promise<string | undefined> {
   try {
-    text = await readFile(errorLogPath(), 'utf8')
+    return await readFile(path, 'utf8')
   } catch (err) {
-    if (isEnoent(err)) return []
+    if (isEnoent(err)) return undefined
     throw err
   }
+}
+
+/** Ancien journal puis nouveau, sans dédoublonner : les signatures française et anglaise restent distinctes. */
+export async function pendingEntries(id: string): Promise<LogEntry[]> {
+  const parts: string[] = []
+  const legacy = await readLogIfExists(legacyErrorLogPath())
+  if (legacy !== undefined) parts.push(legacy)
+  const current = await readLogIfExists(errorLogPath())
+  if (current !== undefined) parts.push(current)
+  if (parts.length === 0) return []
+  const text = parts.map((part) => (part.endsWith('\n') ? part : `${part}\n`)).join('\n')
   const sent = new Set((await readSent(id)).map((record) => record.entry))
   return parseErrorLog(text).filter((entry) => entry.mission === id && !sent.has(entryHash(entry)))
 }
