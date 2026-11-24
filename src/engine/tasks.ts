@@ -70,11 +70,11 @@ export async function findingsOf(path: string | undefined): Promise<string> {
   return raw.split('\n').slice(1).join('\n').trim() || '(aucune)'
 }
 
-const CONTRADICTS_PLAN = /imposé par le plan/i
+export const CONTRADICTS_PLAN = /^(?:[-*]|\d+\.)?\s*(?:\*\*)?\[plan\]/i
 
 /**
  * Verdict CORRECTIONS (tâche, revue globale, re-revue du preflight) : l'orchestrateur est prévenu en une ligne ; des
- * remarques qui contredisent le plan (« imposé par le plan ») ouvrent une porte `arbitrage`, et les correctifs
+ * remarques qui contredisent le plan (marqueur `[plan]` en tête de remarque) ouvrent une porte `arbitrage`, et les correctifs
  * attendent la décision de l'utilisateur (`arbitrationPending`), dont la note entre dans le fichier de correctifs.
  */
 export async function onCorrections(s: MissionState, e: Effects, what: string, reviewPath: string, round: number): Promise<void> {

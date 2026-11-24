@@ -58,7 +58,7 @@ Classe chaque remarque selon sa gravité réelle ; tout n'est pas Critique.
 - **Important** : la tâche ne peut pas être approuvée tant que ce n'est pas corrigé (comportement fragile ou incorrect, exigence manquée, dégât de maintenabilité pour lequel tu bloquerais une fusion : duplication verbatim d'un bloc de logique, erreurs avalées, tests qui n'affirment rien).
 - **Mineur** : confort ; « la couverture pourrait être plus large » et les suggestions de finition sont Mineur.
 
-Si le plan ou le brief impose explicitement ce que cette grille juge défectueux, c'est quand même une remarque, Important, étiquetée « imposé par le plan ». Commence par reconnaître ce qui est bien fait.
+Si le plan ou le brief impose explicitement ce que cette grille juge défectueux, c'est quand même une remarque, Important, qui commence par le marqueur `[plan]` (juste après la puce ou le numéro). N'écris ce marqueur que pour ces remarques. Commence par reconnaître ce qui est bien fait.
 
 Chaque remarque cite `fichier:ligne`, dit ce qui ne va pas, pourquoi cela compte et comment corriger si ce n'est pas évident.
 

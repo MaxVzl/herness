@@ -635,19 +635,19 @@ test("une correction de branche efface les rouges acceptés : le check repasse p
   expect(s.loops.preflight.diag).toBe(2)
 })
 
-test('revue globale : une remarque « imposé par le plan » ouvre un arbitrage avant les correctifs, la note y entre', async () => {
+test('revue globale : une remarque marquée [plan] ouvre un arbitrage avant les correctifs, la note y entre', async () => {
   const ask = async (name: string, file: string) => {
     if (name.startsWith('rg')) {
       const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
       const first = !out.includes('rerevue')
-      await writeFile(out, first ? 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 imposé par le plan mais incohérent\n' : 'VERDICT: APPROUVÉ\n')
+      await writeFile(out, first ? 'VERDICT: CORRECTIONS\n\n- [plan] src/a.ts:3 incohérent\n' : 'VERDICT: APPROUVÉ\n')
     }
     return 'done' as const
   }
   const { fx, eng } = await setup({ over: { agents: { ask } } })
   let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'arbitrage'))
   const g = s.gates.find((x) => x.kind === 'arbitrage')!
-  expect(g.summary).toContain('src/a.ts:3 imposé par le plan')
+  expect(g.summary).toContain('[plan] src/a.ts:3 incohérent')
   expect(await eng.tick()).toBe('wait')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1'])
   await expect(readFile(join(gdir(), 'correctifs-1.md'))).rejects.toThrow()
