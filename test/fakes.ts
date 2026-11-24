@@ -140,6 +140,7 @@ export function fakeEffects(overrides: FakeOverrides = {}): FakeEffects {
     },
     ask: async () => 'done',
     wait: async () => 'done',
+    nudge: async () => 'absent',
   }
 
   return {

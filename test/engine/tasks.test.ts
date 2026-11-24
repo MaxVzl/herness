@@ -4,7 +4,7 @@ import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import demo from '../fixtures/demo/config.ts'
 import { Engine } from '../../src/engine/engine.ts'
-import { stopAgent } from '../../src/engine/tasks.ts'
+import { ASK_TIMEOUT_MS, stopAgent } from '../../src/engine/tasks.ts'
 import { postInbox } from '../../src/mission/inbox.ts'
 import { loadState, newState, saveState, type Gate, type MissionState, type TaskState } from '../../src/mission/state.ts'
 import { missionDir, planPath, specPath } from '../../src/paths.ts'
@@ -238,6 +238,46 @@ test("un agent sans réponse bloque la mission", async () => {
   const { eng } = await setup({ over: { agents: { ask: async () => 'timeout' as const } } })
   const s = await until(eng, (x) => x.step === 'bloquée')
   expect(s.blockedReason).toContain('agent ct-1-t1 sans réponse')
+})
+
+test('Entrée de secours : une consigne stalled encore visible est envoyée et la tâche continue', async () => {
+  let implAsks = 0
+  const review = scriptedAsk(['VERDICT: APPROUVÉ'])
+  const { fx, eng } = await setup({
+    over: {
+      agents: {
+        ask: async (name: string, file: string) => {
+          if (name.startsWith('c') && implAsks++ === 0) return 'stalled' as const
+          return review(name, file)
+        },
+        nudge: async () => 'done' as const,
+      },
+    },
+  })
+  const s = await until(eng, (x) => x.tasks[0]!.phase === 'control' || x.step === 'bloquée')
+  expect(s.step).not.toBe('bloquée')
+  const agent = 'ct-1-t1'
+  expect(fx.callsOf('agents.nudge')).toEqual([[agent, s.herdr.panes[agent], join(taskDir(), 'brief.md'), ASK_TIMEOUT_MS.implementer]])
+  expect(s.log.map((l) => l.msg).join('\n')).toContain(`consigne de ${agent} restée dans la saisie, Entrée envoyée`)
+})
+
+test('Entrée de secours : stalled sans consigne visible bloque la mission comme avant', async () => {
+  const { fx, eng } = await setup({
+    over: { agents: { ask: async () => 'stalled' as const, nudge: async () => 'absent' as const } },
+  })
+  const s = await until(eng, (x) => x.step === 'bloquée')
+  expect(s.log.map((l) => l.msg).join('\n')).toContain('sans réponse')
+  expect(s.log.map((l) => l.msg).join('\n')).not.toContain('Entrée envoyée')
+  expect(fx.callsOf('agents.nudge')).toHaveLength(1)
+})
+
+test('Entrée de secours : stalled puis timeout après l\'Entrée bloque la mission', async () => {
+  const { fx, eng } = await setup({
+    over: { agents: { ask: async () => 'stalled' as const, nudge: async () => 'timeout' as const } },
+  })
+  const s = await until(eng, (x) => x.step === 'bloquée')
+  expect(s.step).toBe('bloquée')
+  expect(fx.callsOf('agents.nudge')).toHaveLength(1)
 })
 
 // herdr voit un cursor-agent au repos pendant une longue commande (vitest…) : seul le compte rendu prouve la fin.

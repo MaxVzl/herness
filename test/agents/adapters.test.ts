@@ -62,14 +62,15 @@ describe('agentArgs', () => {
   });
 });
 
-function fake(outcome: string, state = 'working') {
+function fake(outcome: string, state = 'working', tail = 'sortie', waitOutcome = outcome) {
   const calls: string[] = [];
   const api: AgentApi = {
     agentStart: async (n, k, p, a, t) => void calls.push(`start ${n} ${k} ${p} ${a.join(' ')} ${t}`),
     agentPrompt: async (n, text, o) => (calls.push(`prompt ${n} ${text} ${o.wait} ${o.timeoutMs}`), outcome as never),
-    agentWait: async (n, o) => (calls.push(`wait ${n} ${o.until.join(',')} ${o.timeoutMs}`), outcome as never),
+    agentWait: async (n, o) => (calls.push(`wait ${n} ${o.until.join(',')} ${o.timeoutMs}`), waitOutcome as never),
     agentGet: async (n) => (calls.push(`get ${n}`), { state }),
-    agentRead: async (n, l) => (calls.push(`read ${n} ${l}`), 'sortie'),
+    agentRead: async (n, l) => (calls.push(`read ${n} ${l}`), tail),
+    paneSendKeys: async (p, ...k) => void calls.push(`keys ${p} ${k.join(' ')}`),
   };
   return { api, calls };
 }
@@ -89,14 +90,37 @@ describe('AgentRunner', () => {
     }
   });
 
-  it('ask rend timeout après un stalled sans renvoyer le prompt', async () => {
+  it('ask rend stalled sans renvoyer le prompt', async () => {
     const { api, calls } = fake('stalled');
     const logs: string[] = [];
-    expect(await new AgentRunner(api, (m) => logs.push(m)).ask('a', '/p/brief.md', 5000)).toBe('timeout');
+    expect(await new AgentRunner(api, (m) => logs.push(m)).ask('a', '/p/brief.md', 5000)).toBe('stalled');
     expect(calls.filter((c) => c.startsWith('prompt'))).toHaveLength(1);
     expect(calls).toContain('get a');
     expect(calls.some((c) => c.startsWith('read a'))).toBe(true);
     expect(logs.join('\n')).toContain('sortie');
+  });
+
+  it('nudge envoie une Entrée quand la consigne est encore dans la saisie, puis attend l\'agent', async () => {
+    const { api, calls } = fake('idle', 'working', '> Lis et exécute intégralement le fichier /p/x/brief.md', 'idle');
+    expect(await new AgentRunner(api, () => {}).nudge('a', 'w:p1', '/p/x/brief.md', 5000)).toBe('done');
+    const keysAt = calls.indexOf('keys w:p1 Enter');
+    const waitAt = calls.indexOf('wait a idle,done,blocked 5000');
+    expect(keysAt).toBeGreaterThanOrEqual(0);
+    expect(waitAt).toBeGreaterThan(keysAt);
+    expect(calls.some((c) => c.startsWith('prompt'))).toBe(false);
+  });
+
+  it('nudge n\'envoie rien quand la consigne n\'est pas visible', async () => {
+    const { api, calls } = fake('idle', 'working', 'autre chose');
+    expect(await new AgentRunner(api, () => {}).nudge('a', 'w:p1', '/p/x/brief.md', 5000)).toBe('absent');
+    expect(calls.some((c) => c.startsWith('keys'))).toBe(false);
+    expect(calls.some((c) => c.startsWith('wait'))).toBe(false);
+  });
+
+  it('nudge rend timeout si l\'agent reste stalled après l\'Entrée', async () => {
+    const { api, calls } = fake('stalled', 'working', '> Lis et exécute intégralement le fichier /p/brief.md', 'stalled');
+    expect(await new AgentRunner(api, () => {}).nudge('a', 'w:p1', '/p/brief.md', 5000)).toBe('timeout');
+    expect(calls.filter((c) => c.startsWith('keys'))).toHaveLength(1);
   });
 
   it('ask traite un état inconnu comme un timeout', async () => {

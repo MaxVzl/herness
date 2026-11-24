@@ -227,7 +227,15 @@ export type AskHolder = { pendingAsk?: PendingAsk | undefined; blockedGate?: str
 export async function askAgent(s: MissionState, e: Effects, h: AskHolder, what: string, role: Role, pending: PendingAsk): Promise<'done' | StepResult> {
   h.pendingAsk = pending
   await saveState(s)
-  const r = await e.agents.ask(pending.agent, pending.file, ASK_TIMEOUT_MS[role])
+  let r: 'done' | 'blocked' | 'timeout' | 'stalled' = await e.agents.ask(pending.agent, pending.file, ASK_TIMEOUT_MS[role])
+  if (r === 'stalled') {
+    const pane = s.herdr.panes[pending.agent]
+    const nudged = pane ? await e.agents.nudge(pending.agent, pane, pending.file, ASK_TIMEOUT_MS[role]) : 'absent'
+    if (nudged !== 'absent') {
+      log(s, e, `${what} : consigne de ${pending.agent} restée dans la saisie, Entrée envoyée`)
+      r = nudged
+    } else r = 'timeout'
+  }
   return settle(s, e, h, what, pending.agent, await proven(s, e, what, pending, r))
 }
 
