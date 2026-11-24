@@ -14,6 +14,7 @@ const config: ProjectConfig = {
   mainBranch: 'main',
   branchPrefixes: { feat: 'feature', fix: 'fix', chore: 'chore', refactor: 'chore', docs: 'chore', test: 'chore' },
   commitFormat: '{type}({scope}): {description} [{id}]',
+  language: 'en',
   forbiddenPaths: ['apps/api/openapi.json', 'packages/api-client/src/generated/**'],
   forbiddenCommands: ['git stash', '--no-verify', 'docker compose'],
   prepare: [prepareWorktree, '{worktree}'],

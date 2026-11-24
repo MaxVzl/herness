@@ -12,6 +12,7 @@ export const ProjectConfigSchema = z.object({
   mainBranch: z.string(),
   branchPrefixes: z.record(z.string(), z.string()),
   commitFormat: z.string(),
+  language: z.string().default('en'),
   forbiddenPaths: z.array(z.string()),
   forbiddenCommands: z.array(z.string()),
   prepare: z.array(z.string()),
@@ -34,19 +35,19 @@ export const ProjectConfigSchema = z.object({
 })
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>
 
-/** Référence de main, toujours prise sur origin. */
+/** Main ref, always taken from origin. */
 export const mainRef = (cfg: ProjectConfig): string => `origin/${cfg.mainBranch}`
 
-// Racine du paquet herness : herness est lancé depuis le dépôt cible, pas depuis ici.
+// herness package root: herness is launched from the target repository, not from here.
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-/** Dossier de config ignoré : il documente le format, il ne vise aucun vrai dépôt. */
-const EXAMPLE = 'exemple'
+/** Ignored config directory: it documents the format and does not point at a real repository. */
+const EXAMPLE = 'example'
 
 /**
- * Dossiers où chercher les configs de projet, dans l'ordre :
- * `$HERNESS_PROJECTS_DIR`, sinon `$XDG_CONFIG_HOME/herness/projects`, sinon
- * `~/.config/herness/projects` ; puis le dossier `projects/` du paquet.
+ * Directories where project configs are looked up, in order:
+ * `$HERNESS_PROJECTS_DIR`, otherwise `$XDG_CONFIG_HOME/herness/projects`, otherwise
+ * `~/.config/herness/projects`; then the package's `projects/` directory.
  */
 export function projectDirs(): string[] {
   const env = process.env
@@ -55,7 +56,7 @@ export function projectDirs(): string[] {
   return [user, join(packageRoot, 'projects')]
 }
 
-/** Aucune config ne couvre le dossier (les autres erreurs : config invalide, import cassé…). */
+/** No config covers the directory (other errors: invalid config, broken import…). */
 export class NoProjectError extends Error {}
 
 export interface FoundConfig {
@@ -64,8 +65,8 @@ export interface FoundConfig {
 }
 
 /**
- * Config du projet dont `repoPath` contient `cwd`, avec son fichier. Un fichier déjà
- * importé ne se recharge pas : pour revalider après modification, passer par un autre processus.
+ * Config of the project whose `repoPath` contains `cwd`, together with its file. An already
+ * imported file is not reloaded: to revalidate after a change, use another process.
  */
 export async function findProjectConfig(cwd: string): Promise<FoundConfig> {
   const real = await realpath(cwd)
@@ -84,12 +85,12 @@ export async function findProjectConfig(cwd: string): Promise<FoundConfig> {
         throw e
       }
       const parsed = ProjectConfigSchema.safeParse(mod.default)
-      if (!parsed.success) throw new Error(`config de projet invalide (${file}) : ${parsed.error.message}`)
+      if (!parsed.success) throw new Error(`invalid project config (${file}): ${parsed.error.message}`)
       const config = parsed.data
       if (real === config.repoPath || real.startsWith(config.repoPath + sep)) return { config, file }
     }
   }
-  throw new NoProjectError(`aucun projet herness pour ${cwd} (dossiers cherchés : ${dirs.join(', ')})`)
+  throw new NoProjectError(`no herness project for ${cwd} (searched directories: ${dirs.join(', ')})`)
 }
 
 export async function loadProjectConfig(cwd: string): Promise<ProjectConfig> {

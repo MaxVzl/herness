@@ -89,9 +89,11 @@ test('crée une config valide et un script de préparation exécutable, sans lan
   expect((await stat(prepare)).mode & 0o111).toBeTruthy()
   expect(await readFile(prepare, 'utf8')).toContain('pnpm install --frozen-lockfile')
   await execa('bash', ['-n', prepare])
-  expect(d.asked).toEqual(['Affiner la config avec Claude ?'])
+  expect(d.asked).toEqual(['Refine the config with Claude?'])
   expect(d.launches).toEqual([])
-  expect(d.lines[0]).toContain('config créée')
+  expect(d.lines[0]).toContain('config created')
+  const src = await readFile(found.file, 'utf8')
+  expect(src).toMatch(/commitFormat: .+\n {2}language: "en",/)
 })
 
 test('dépôt sans package.json : preflight vide, préparation sans installation', async () => {
@@ -114,7 +116,7 @@ test('accepté : lance Claude à la racine du dépôt avec le dossier de config 
   expect(args).toHaveLength(6)
   expect(args[5]).toContain(found.file)
   expect(args[5]).toContain('herness project')
-  expect(d.lines.at(-1)).toBe(`config valide : ${found.file}`)
+  expect(d.lines.at(-1)).toBe(`valid config: ${found.file}`)
 })
 
 test('config cassée par Claude : erreur', async () => {
@@ -124,7 +126,7 @@ test('config cassée par Claude : erreur', async () => {
     const { file } = await findProjectConfig(repo)
     await writeFile(file, (await readFile(file, 'utf8')).replace(/ {2}models: [\s\S]*\},\n\}/, '}'))
   }
-  await expect(initProject(repo, d)).rejects.toThrow(/config à corriger après Claude.*models/s)
+  await expect(initProject(repo, d)).rejects.toThrow(/config to fix after Claude.*models/s)
 })
 
 test('projet déjà configuré : rien de réécrit, propose quand même Claude', async () => {
@@ -135,7 +137,7 @@ test('projet déjà configuré : rien de réécrit, propose quand même Claude',
   const again = await initProject(repo, d)
   expect(again.file).toBe(first.file)
   expect(await readFile(first.file, 'utf8')).toBe(before)
-  expect(d.lines[0]).toBe(`projet « ${first.config.name} » déjà configuré : ${first.file}`)
+  expect(d.lines[0]).toBe(`project "${first.config.name}" already configured: ${first.file}`)
   expect(d.asked).toHaveLength(1)
 })
 
@@ -145,20 +147,20 @@ test('hors terminal interactif : ne pose pas la question', async () => {
   await initProject(repo, d)
   expect(d.asked).toEqual([])
   expect(d.launches).toEqual([])
-  expect(d.lines.at(-1)).toMatch(/terminal interactif/)
+  expect(d.lines.at(-1)).toMatch(/interactive terminal/)
 })
 
 test("dossier du même nom pour un autre dépôt : refuse d'écraser", async () => {
   await nodeRepo()
   const name = (await detectProject(repo)).name
   await mkdir(join(dir, name))
-  await expect(initProject(repo, deps())).rejects.toThrow(/existe déjà/)
+  await expect(initProject(repo, deps())).rejects.toThrow(/already exists/)
 })
 
 test('hors dépôt git : erreur', async () => {
   const plain = await mkdtemp(join(tmpdir(), 'herness-plain-'))
   try {
-    await expect(initProject(plain, deps())).rejects.toThrow(/pas un dépôt git/)
+    await expect(initProject(plain, deps())).rejects.toThrow(/not a git repository/)
   } finally {
     await rm(plain, { recursive: true, force: true })
   }

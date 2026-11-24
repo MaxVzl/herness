@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
-import exemple from '../../projects/exemple/config.ts'
+import exemple from '../../projects/example/config.ts'
 import demo from '../fixtures/demo/config.ts'
 import { fill, loadProjectConfig, projectDirs, ProjectConfigSchema } from '../../src/config/project.ts'
 
@@ -50,16 +50,31 @@ test('valide la config avec le schéma', async () => {
   await expect(loadProjectConfig(repo)).rejects.toThrow(/models/)
 })
 
-test("ignore une config nommée 'exemple', même si son repoPath correspond", async () => {
+test("ignores a config named 'example' even when its repoPath matches", async () => {
+  const { prepare: _p, ...rest } = demo
+  await writeConfig('example', { ...rest, name: 'example', repoPath: repo })
+  await expect(loadProjectConfig(repo)).rejects.toThrow('no herness project')
+})
+
+test("loads a config named 'exemple'", async () => {
   const { prepare: _p, ...rest } = demo
   await writeConfig('exemple', { ...rest, name: 'exemple', repoPath: repo })
-  await expect(loadProjectConfig(repo)).rejects.toThrow('aucun projet herness')
+  expect((await loadProjectConfig(repo)).name).toBe('exemple')
+})
+
+test('language defaults to en', () => {
+  const { language: _l, ...without } = demo as typeof demo & { language?: string }
+  expect(ProjectConfigSchema.parse(without).language).toBe('en')
+})
+
+test("language keeps a given value ('fr')", () => {
+  expect(ProjectConfigSchema.parse({ ...demo, language: 'fr' }).language).toBe('fr')
 })
 
 test('aucun projet : le message liste les dossiers cherchés', async () => {
   const err = await loadProjectConfig(repo).catch((e: Error) => e)
   expect(err).toBeInstanceOf(Error)
-  expect((err as Error).message).toContain('aucun projet herness')
+  expect((err as Error).message).toContain('no herness project')
   expect((err as Error).message).toContain(dir)
 })
 
@@ -76,9 +91,9 @@ test('projectDirs : HERNESS_PROJECTS_DIR, sinon XDG_CONFIG_HOME, sinon ~/.config
 })
 
 test("la config d'exemple est valide et ne vise pas un vrai dépôt", () => {
+  expect(exemple).toMatchObject({ name: 'example', repoPath: '/path/to/your-project', language: 'en' })
   const c = ProjectConfigSchema.parse(exemple)
-  expect(c.name).toBe('exemple')
-  expect(c.repoPath).toBe('/chemin/vers/ton-projet')
+  expect(c.language).toBe('en')
 })
 
 test('fill remplace les variables', () => {
