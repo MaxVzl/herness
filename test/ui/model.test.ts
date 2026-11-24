@@ -30,7 +30,7 @@ test('bucketOf : porte en attente -> decision, même bloquée', () => {
   expect(bucketOf(mk({ step: 'blocked', gates: [gate('g1')] }))).toBe('decision')
 })
 test('bucketOf : bloquée', () => expect(bucketOf(mk({ step: 'blocked' }))).toBe('bloquee'))
-test('bucketOf : pr-open et fermée -> terminee', () => {
+test('bucketOf : pr-ouverte et fermée -> terminee', () => {
   expect(bucketOf(mk({ step: 'pr-open' }))).toBe('terminee')
   expect(bucketOf(mk({ step: 'closed' }))).toBe('terminee')
 })
@@ -57,7 +57,7 @@ const merged: PrInfo = { state: 'MERGED', checkedAt: now.toISOString() }
 const open: PrInfo = { state: 'OPEN', checkedAt: now.toISOString() }
 const url = 'https://github.com/o/r/pull/1'
 
-test('isHidden : pr-open mergée cachée, ouverte visible', () => {
+test('isHidden : pr-ouverte mergée cachée, ouverte visible', () => {
   expect(isHidden(mk({ step: 'pr-open', prUrl: url }), merged, now)).toBe(true)
   expect(isHidden(mk({ step: 'pr-open', prUrl: url }), open, now)).toBe(false)
   expect(isHidden(mk({ step: 'pr-open', prUrl: url }), undefined, now)).toBe(false)
@@ -87,7 +87,7 @@ test('isHidden : fermée avec PR CLOSED suit la règle des 7 jours depuis la fer
   expect(isHidden(closed('2026-11-02T12:00:00Z'), closedPr, now)).toBe(true)
   expect(isHidden(closed('2026-11-08T12:00:00Z'), closedPr, now)).toBe(false)
 })
-test('isHidden : pr-open avec PR CLOSED reste visible (à traiter)', () => {
+test('isHidden : pr-ouverte avec PR CLOSED reste visible (à traiter)', () => {
   expect(isHidden(mk({ step: 'pr-open', prUrl: url, createdAt: '2026-10-01T00:00:00Z' }), closedPr, now)).toBe(false)
 })
 test('needsPrRefresh : ni PR mergée, ni PR CLOSED d’une mission fermée depuis plus de 7 jours', () => {

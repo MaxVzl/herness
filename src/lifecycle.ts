@@ -221,7 +221,7 @@ export async function resumeMission(id: string, deps: LifecycleDeps, opts: { res
   if (s.step === 'blocked') {
     // Seul le moteur ouvre les portes : la demande passe par l'inbox.
     await postInbox(id, { type: 'request-gate', kind: 'resume-blocked', summary: s.blockedReason ?? 'mission bloquée' })
-    out(`Mission blocked : ${s.blockedReason ?? '(raison inconnue)'}`)
+    out(`Mission bloquée : ${s.blockedReason ?? '(raison inconnue)'}`)
     out(`Pour la reprendre à l'étape ${s.blockedFrom ?? '?'}, valide la porte de reprise : herness valider ${id}`)
   }
   if (opts.focus !== false) await e.herdr.tabFocus(space.tabs.master)
@@ -327,7 +327,7 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
     const wsLeft = !!first.herdr.workspace && (await e.herdr.workspaceList()).some((w) => w.workspaceId === first.herdr.workspace)
     if (!wtLeft && !wsLeft && !first.testDbUp && !first.proofDbUp) {
       await remindPendingErrors(id, out)
-      out(`Mission ${id} déjà closed : rien à fermer.`)
+      out(`Mission ${id} déjà fermée : rien à fermer.`)
       return true
     }
   }
@@ -396,7 +396,7 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
 export async function deleteMission(id: string, deps: LifecycleDeps, opts: { force?: boolean } = {}): Promise<boolean> {
   const out = deps.out ?? console.log
   const s = await load(id)
-  if (s.step !== 'closed') throw new Error(`mission ${id} pas closed : herness fermer ${id} d'abord`)
+  if (s.step !== 'closed') throw new Error(`mission ${id} pas fermée : herness fermer ${id} d'abord`)
   const left: string[] = []
   if (s.worktree && (await exists(s.worktree))) left.push(`le worktree ${s.worktree}`)
   if (s.herdr.workspace && (await deps.e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace)) left.push("l'espace herdr")

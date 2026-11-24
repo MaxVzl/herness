@@ -110,7 +110,7 @@ test('une PR mergée est masquée, visible après a', async () => {
   expect(lastFrame()).not.toContain('livree')
 })
 
-test('PR CLOSED : fermée depuis plus de 7 jours masquée et jamais revérifiée ; pr-open CLOSED visible et revérifiée', async () => {
+test('PR CLOSED : fermée depuis plus de 7 jours masquée et jamais revérifiée ; pr-ouverte CLOSED visible et revérifiée', async () => {
   const old = mission('26110201-31', 'abandonnee', '2026-10-01T10:00:00.000Z')
   old.step = 'closed'
   old.prUrl = 'https://example.test/o/r/pull/31'

@@ -392,7 +392,7 @@ export function useMissionKeys({
       case 'o':
         return void runOnce('open', () => actions.open(state))
       case 'x': {
-        // Le panneau `tasks` disparaît avec sa mission closed : supprimer se fait depuis le cockpit.
+        // Le panneau `tasks` disparaît avec sa mission fermée : supprimer se fait depuis le cockpit.
         if (ownPanel) return
         if (state.step !== 'closed') return say("supprimer indisponible : ferme d'abord la mission (f)", false)
         const id = state.id

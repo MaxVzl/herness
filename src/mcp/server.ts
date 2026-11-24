@@ -35,7 +35,7 @@ function summarize(s: MissionState): string {
   const current = s.tasks.find((t) => t.phase !== 'done')
   const pending = s.gates.filter((g) => g.status === 'pending')
   return [
-    `Étape : ${s.step}${s.blockedReason ? ` (blocked : ${s.blockedReason})` : ''}`,
+    `Étape : ${s.step}${s.blockedReason ? ` (bloquée : ${s.blockedReason})` : ''}`,
     `Tâche courante : ${current ? `${current.n} « ${current.title} » (phase ${current.phase}, tour ${current.round})` : 'aucune'}`,
     `Tours : revue globale ${s.loops.globalReview.round}, preflight ${s.loops.preflight.round}`,
     `Portes en attente : ${pending.length === 0 ? 'aucune' : pending.map((g) => `${g.kind} (${g.summary})`).join(' ; ')}`,
@@ -157,14 +157,14 @@ export function buildServer(id: string): McpServer {
     'fin_de_pause',
     {
       description:
-        "Lève une pause demandée avec `pause`, rien d'autre. Ne reprend PAS une mission blocked : seul l'utilisateur la reprend (herness reprendre <id> puis validation), ou la débloque en validant un amendement.",
+        "Lève une pause demandée avec `pause`, rien d'autre. Ne reprend PAS une mission bloquée : seul l'utilisateur la reprend (herness reprendre <id> puis validation), ou la débloque en validant un amendement.",
     },
     guard(id, 'fin_de_pause', async () => {
       const s = await loadState(id)
       await postInbox(id, { type: 'resume' })
       const note =
         s.step === 'blocked'
-          ? ` La mission reste blocked : seul l'utilisateur la reprend (herness reprendre ${id} puis validation), ou la débloque en validant un amendement.`
+          ? ` La mission reste bloquée : seul l'utilisateur la reprend (herness reprendre ${id} puis validation), ou la débloque en validant un amendement.`
           : ''
       return ok(`Fin de pause demandée.${note}`)
     }),

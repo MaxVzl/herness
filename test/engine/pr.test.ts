@@ -61,7 +61,7 @@ async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState>
 const prompts = (fx: FakeEffects) => fx.callsOf('herdr.agentPrompt').map((c) => c[1] as string)
 const notes = (fx: FakeEffects) => fx.callsOf('herdr.notify').map((c) => c[1] as string)
 
-test('stepPr pousse, crée la PR et passe en pr-open', async () => {
+test('stepPr pousse, crée la PR et passe en pr-ouverte', async () => {
   const { fx, eng } = await setup({ over: { git: { unpushedCount: async () => 3 } } })
   await eng.tick()
   const s = await loadState('T-1')
@@ -163,7 +163,7 @@ test('stepPr idempotent : branche déjà poussée et PR existante réutilisée',
   expect(fx.callsOf('forge.createPr')).toEqual([])
 })
 
-test('stepPr avec prUrl déjà enregistrée passe directement en pr-open', async () => {
+test('stepPr avec prUrl déjà enregistrée passe directement en pr-ouverte', async () => {
   const { fx, eng } = await setup({ patch: { prUrl: 'https://github.com/o/r/pull/9' } })
   await eng.tick()
   expect((await loadState('T-1')).step).toBe('pr-open')

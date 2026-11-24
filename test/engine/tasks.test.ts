@@ -912,24 +912,24 @@ test("I3 : mission bloquée par la tâche 1, amendement qui la change : la porte
   await mkdir(taskDir(), { recursive: true })
   await writeFile(join(taskDir(), 'brief.md'), BRIEF1)
   const s = await proposeAndApprove(eng, PLAN1_FIXED)
-  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toBe('amende (mission blocked : valider cet amendement relancera la tâche 1)')
+  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toBe('amende (mission bloquée : valider cet amendement relancera la tâche 1)')
   expect(s.step).toBe('tasks')
   expect(s.tasks[0]!.round).toBe(0)
 })
 
-test("I3 : amendement qui ne change pas la tâche blocked : appliqué, la mission reste bloquée et l'orchestrateur le sait", async () => {
+test("I3 : amendement qui ne change pas la tâche bloquée : appliqué, la mission reste bloquée et l'orchestrateur le sait", async () => {
   const { fx, eng } = await setup({ patch: blockedOn('tâche 1 : contrôle du commit en échec') })
   await mkdir(taskDir(), { recursive: true })
   await writeFile(join(taskDir(), 'brief.md'), BRIEF1)
   const s = await proposeAndApprove(eng, PLAN2)
-  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toBe("amende (mission blocked : valider n'enlève pas le blocage)")
+  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toBe("amende (mission bloquée : valider n'enlève pas le blocage)")
   expect(s.appliedAmendments).toHaveLength(1)
   expect(s.tasks.map((t) => t.n)).toEqual([1, 2])
   expect(s.step).toBe('blocked')
   expect(s.blockedReason).toBe('tâche 1 : contrôle du commit en échec')
   expect(s.tasks[0]).toMatchObject({ phase: 'control', round: 2 })
   const prompts = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1]))
-  expect(prompts.some((p) => p.includes('mission toujours blocked : herness reprendre T-1 pour la relancer'))).toBe(true)
+  expect(prompts.some((p) => p.includes('mission toujours bloquée : herness reprendre T-1 pour la relancer'))).toBe(true)
 })
 
 test("I3 : blocage venu d'ailleurs que la tâche (agent sans réponse), amendement de la tâche : appliqué, la mission reste bloquée", async () => {

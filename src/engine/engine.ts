@@ -51,9 +51,9 @@ export async function block(s: MissionState, e: Effects, reason: string): Promis
   if (s.step !== 'blocked') s.blockedFrom = s.step
   s.step = 'blocked'
   s.blockedReason = reason
-  log(s, e, `mission blocked : ${reason}`)
-  await notify(s, e, `Mission blocked : ${reason.split('\n')[0]}`)
-  await informOrchestrator(s, e, `Mission blocked : ${reason}`)
+  log(s, e, `mission bloquée : ${reason}`)
+  await notify(s, e, `Mission bloquée : ${reason.split('\n')[0]}`)
+  await informOrchestrator(s, e, `Mission bloquée : ${reason}`)
   return 'continue'
 }
 
@@ -362,7 +362,7 @@ export class Engine {
           // Consommée : sa note n'entrera pas dans un fichier de correctifs ultérieur sans rapport avec elle.
           s.consumedArbitrages.push(g.id)
           log(s, e, `arbitrage ${g.id} ${g.status === 'approved' ? 'validé' : 'refusé'} sans effet : aucune correction n'attendait de décision`)
-          const hint = s.step === 'blocked' ? ` La mission reste blocked : l'utilisateur la reprend avec herness reprendre ${s.id} puis validation, ou la débloque en validant un amendement.` : ''
+          const hint = s.step === 'blocked' ? ` La mission reste bloquée : l'utilisateur la reprend avec herness reprendre ${s.id} puis validation, ou la débloque en validant un amendement.` : ''
           await informOrchestrator(s, e, `arbitrage ${g.id} sans effet : aucune correction n'attendait de décision.${hint}`)
           return
         }
@@ -466,15 +466,15 @@ export class Engine {
       return
     }
     log(s, e, `amendement ${gateId} appliqué, la mission reste bloquée (${s.blockedReason ?? '?'})`)
-    await informOrchestrator(s, e, `Amendement ${gateId} appliqué, mission toujours blocked : herness reprendre ${s.id} pour la relancer.`)
+    await informOrchestrator(s, e, `Amendement ${gateId} appliqué, mission toujours bloquée : herness reprendre ${s.id} pour la relancer.`)
   }
 
-  /** Mission blocked : ce que changera la validation d'un amendement, à ajouter au résumé de sa porte. */
+  /** Mission bloquée : ce que changera la validation d'un amendement, à ajouter au résumé de sa porte. */
   private async blockedAmendmentNote(s: MissionState): Promise<string> {
     if (s.step !== 'blocked') return ''
     const plan = await readFile(proposedPlanPath(s.id), 'utf8').catch(() => '')
     const n = plan ? await amendmentWouldResume(s, plan) : undefined
-    return n !== undefined ? ` (mission blocked : valider cet amendement relancera la tâche ${n})` : " (mission blocked : valider n'enlève pas le blocage)"
+    return n !== undefined ? ` (mission bloquée : valider cet amendement relancera la tâche ${n})` : " (mission bloquée : valider n'enlève pas le blocage)"
   }
 
   async tick(): Promise<StepResult> {

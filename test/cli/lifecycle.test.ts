@@ -234,7 +234,7 @@ test('fermer ne change pas le dossier courant hors du worktree', async () => {
 
 test('supprimer refuse une mission qui n\'est pas fermée', async () => {
   const { d } = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: true, confirm: async () => true })
-  await expect(deleteMission('gh12', d)).rejects.toThrow('mission gh12 pas closed : herness fermer gh12 d\'abord')
+  await expect(deleteMission('gh12', d)).rejects.toThrow('mission gh12 pas fermée : herness fermer gh12 d\'abord')
   expect(await exists(missionDir('gh12'))).toBe(true)
 })
 
@@ -398,7 +398,7 @@ test('reprendre une mission bloquée demande la porte resume-blocked', async () 
   expect(out.join('\n')).toContain('herness valider gh12')
 })
 
-test('reprendre une mission pr-open ou fermée affiche son état et ne relance rien', async () => {
+test('reprendre une mission pr-ouverte ou fermée affiche son état et ne relance rien', async () => {
   const { fx, out, d } = await started()
   for (const step of ['pr-open', 'closed'] as const) {
     await patch({ step, prUrl: 'https://github.com/o/r/pull/9' })
@@ -446,7 +446,7 @@ test('statut liste les missions et détaille une mission', async () => {
   expect(lines.find((l) => l.startsWith('B-2'))).toContain('https://github.com/o/r/pull/3')
   const detail = (await missionStatus('A-1')).join('\n')
   expect(detail).toContain('Tâche 2 : Deux')
-  expect(detail).toContain('g1 (amendement) : ajout')
+  expect(detail).toContain('g1 (amendment) : ajout')
 
   const r = await execa('node', ['bin/herness.js', 'statut'], { reject: false, stdin: 'ignore', env: { HERNESS_HOME: home } })
   expect(r.exitCode).toBe(0)

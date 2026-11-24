@@ -508,7 +508,7 @@ const blockedByTask = (s: MissionState, n: number): boolean =>
   s.step === 'blocked' && s.blockedFrom === 'tasks' && (s.blockedReason ?? '').startsWith(`tâche ${n} :`)
 
 /**
- * Mission blocked : la tâche que relancerait la validation de ce plan amendé (elle bloque la mission et
+ * Mission bloquée : la tâche que relancerait la validation de ce plan amendé (elle bloque la mission et
  * l'amendement change son texte), sinon `undefined`. Sert à annoncer l'effet de la porte à son ouverture.
  */
 export async function amendmentWouldResume(s: MissionState, plan: string): Promise<number | undefined> {

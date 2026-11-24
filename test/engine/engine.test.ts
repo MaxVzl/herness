@@ -334,7 +334,7 @@ test('état illisible persistant : une seule paire d\'entrées pour plusieurs to
   expect(journal.match(/moteur : enregistrement du blocage/g)).toHaveLength(1)
 })
 
-test('pr-open et fermée arrêtent la boucle', async () => {
+test('pr-ouverte et fermée arrêtent la boucle', async () => {
   await mission({ step: 'pr-open' })
   expect(await engine().eng.tick()).toBe('stop')
 })
@@ -406,8 +406,8 @@ test("request-gate amendement : le hachage de la proposition est enregistré dan
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.gates).toHaveLength(1)
-  // Mission blocked : le résumé dit ce que changera la validation.
-  expect(s.gates[0]).toMatchObject({ summary: "b (mission blocked : valider n'enlève pas le blocage)", hash: 'h2' })
+  // Mission bloquée : le résumé dit ce que changera la validation.
+  expect(s.gates[0]).toMatchObject({ summary: "b (mission bloquée : valider n'enlève pas le blocage)", hash: 'h2' })
 })
 
 test("classified : l'orchestrateur reçoit les chemins exacts de la spec et du plan", async () => {
