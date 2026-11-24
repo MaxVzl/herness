@@ -32,7 +32,7 @@ async function readLog(): Promise<string> {
 
 function item<T>(items: readonly T[], index: number): T {
   const value = items[index]
-  if (value === undefined) throw new Error(`élément ${index} absent`)
+  if (value === undefined) throw new Error(`item ${index} missing`)
   return value
 }
 
@@ -52,7 +52,7 @@ test('parseErrorLog reads both (étape X) and (step X) headers', () => {
   ])
 })
 
-test('découpe deux entrées et lit leur en-tête', async () => {
+test('splits two entries and reads their header', async () => {
   await logHernessError({ mission: 'm1', origin: 'moteur', step: 'tasks' }, new Error('boum'))
   await logHernessError({ origin: 'lancement du moteur' }, 'texte')
   const entries = parseErrorLog(await readLog())
@@ -66,21 +66,21 @@ test('découpe deux entrées et lit leur en-tête', async () => {
   expect(second.body).toBe('texte')
 })
 
-test('un corps avec lignes vides et cause reste une seule entrée', async () => {
+test('a body with blank lines and a cause stays a single entry', async () => {
   await logHernessError({ origin: 'moteur' }, new Error('haut', { cause: new Error('bas') }))
   await logHernessError({ mission: 'm1', origin: "signalement de l'orchestrateur" }, 'ligne 1\n\nligne 3')
   const entries = parseErrorLog(await readLog())
   expect(entries).toHaveLength(2)
-  expect(item(entries, 0).body).toContain('cause :')
+  expect(item(entries, 0).body).toContain('cause:')
   expect(item(entries, 0).body).toContain('Error: bas')
   expect(item(entries, 1).body).toBe('ligne 1\n\nligne 3')
 })
 
-test("une ligne === illisible ne crée pas d'entrée", () => {
+test("an unreadable === line does not create an entry", () => {
   expect(parseErrorLog("=== n'importe quoi\n")).toEqual([])
 })
 
-test('entryHash diffère pour deux entrées identiques à des instants différents', async () => {
+test('entryHash differs for two identical entries at different times', async () => {
   await logHernessError({ origin: 'moteur' }, 'même')
   await new Promise((resolve) => setTimeout(resolve, 5))
   await logHernessError({ origin: 'moteur' }, 'même')
@@ -93,7 +93,7 @@ test('entryHash diffère pour deux entrées identiques à des instants différen
   expect(entryHash(first)).not.toBe(entryHash(second))
 })
 
-test('la signature ignore étape, version et pile, pas la première ligne', async () => {
+test('the signature ignores step, version and stack, not the first line', async () => {
   await logHernessError({ origin: 'moteur', step: 'tasks' }, new Error('même'))
   await logHernessError({ origin: 'moteur', step: 'preflight' }, new Error('même'))
   await logHernessError({ origin: 'moteur', step: 'tasks' }, new Error('autre'))
@@ -106,11 +106,11 @@ test('la signature ignore étape, version et pile, pas la première ligne', asyn
   expect(errorSignature(same)).not.toBe(errorSignature(other))
 })
 
-test('maskHome remplace le dossier personnel', () => {
+test('maskHome replaces the home directory', () => {
   expect(maskHome('/home/x/a et /home/x/b', '/home/x')).toBe('~/a et ~/b')
 })
 
-test("groupEntries regroupe les répétitions dans l'ordre", async () => {
+test("groupEntries groups repeats in order", async () => {
   await logHernessError({ origin: 'moteur', step: 'un' }, new Error('A'))
   await logHernessError({ origin: 'moteur', step: 'deux' }, new Error('B'))
   await logHernessError({ origin: 'moteur', step: 'trois' }, new Error('A'))
@@ -120,44 +120,44 @@ test("groupEntries regroupe les répétitions dans l'ordre", async () => {
   expect(item(groups, 1).entries.map((e) => e.step)).toEqual(['deux'])
 })
 
-test('titre tronqué à 120 caractères', async () => {
+test('title truncated to 120 characters', async () => {
   await logHernessError({ origin: 'moteur' }, 'm'.repeat(300))
   const title = issueTitle(item(groupEntries(parseErrorLog(await readLog())), 0))
   expect(title).toHaveLength(120)
   expect(title.endsWith('…')).toBe(true)
-  expect(title.startsWith('[erreur herness] moteur : ')).toBe(true)
+  expect(title.startsWith('[herness error] moteur: ')).toBe(true)
 })
 
-test("corps d'issue", async () => {
+test("issue body", async () => {
   const perso = '/home/alice'
   await logHernessError({ mission: 'm1', origin: 'moteur', step: 'tasks' }, `boom ${perso}/fichier`)
   await logHernessError({ mission: 'm1', origin: 'moteur', step: 'preflight' }, `boom ${perso}/fichier`)
   const group = item(groupEntries(parseErrorLog(await readLog()), perso), 0)
   const body = issueBody('m1', group, perso)
-  expect(body).toContain('Remontée automatiquement par `herness report` (mission m1).')
-  expect(body).toContain('- Origine : moteur (étape tasks, preflight)')
-  expect(body).toContain('- Vue 2 fois dans la mission : ')
-  expect(body).toContain('- Signature : herness-sig-')
+  expect(body).toContain('Filed automatically by `herness report` (mission m1).')
+  expect(body).toContain('- Origin: moteur (step tasks, preflight)')
+  expect(body).toContain('- Seen 2 times in the mission: ')
+  expect(body).toContain('- Signature: herness-sig-')
   expect(body).toContain('```\nboom ~/fichier\n```')
   expect(body).not.toContain(perso)
 })
 
-test('clôture plus longue que les accents graves du corps', async () => {
+test('fence longer than the backticks in the body', async () => {
   await logHernessError({ mission: 'm1', origin: 'moteur' }, 'avant\n```\naprès')
   const body = issueBody('m1', item(groupEntries(parseErrorLog(await readLog())), 0))
   expect(body).toContain('````\navant\n```\naprès\n````')
 })
 
-test('corps tronqué au-delà de 60 000 caractères', async () => {
+test('body truncated past 60 000 characters', async () => {
   await logHernessError({ mission: 'm1', origin: 'moteur' }, 'y'.repeat(70_000))
   const body = issueBody('m1', item(groupEntries(parseErrorLog(await readLog())), 0))
-  expect(body).toContain('(tronqué)')
+  expect(body).toContain('(truncated)')
   expect(body.length).toBeLessThan(61_000)
 })
 
-test('corps de commentaire', async () => {
+test('comment body', async () => {
   await logHernessError({ mission: 'm2', origin: 'moteur' }, 'détail')
   const body = commentBody('m2', item(groupEntries(parseErrorLog(await readLog())), 0))
-  expect(body.startsWith('Revue dans la mission m2.')).toBe(true)
+  expect(body.startsWith('Seen again in mission m2.')).toBe(true)
   expect(body).not.toContain('Signature')
 })

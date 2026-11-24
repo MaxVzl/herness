@@ -22,7 +22,7 @@ export async function createPr(
   return r.stdout.trim();
 }
 
-/** PR ouverte pour la branche, ou null (aucune PR, ou PR fermée / fusionnée). */
+/** Open PR for the branch, or null (no PR, or a closed / merged PR). */
 export async function findPr(wt: string, branch: string, runner: Runner = run): Promise<string | null> {
   const r = await runner('gh', ['pr', 'view', branch, '--json', 'url,state'], { cwd: wt, reject: false });
   if (r.exitCode !== 0 || !r.stdout.trim()) return null;

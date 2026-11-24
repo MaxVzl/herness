@@ -8,12 +8,12 @@ export type LoopEvent =
   | 'tests-red'
   | 'review-approved'
   | 'review-changes'
-  /** Arrêt sans commit, porte `agent-stopped` validée : un tour de correction comme des tests rouges. */
+  /** Stopped without a commit, `agent-stopped` gate approved: a correction round, like red tests. */
   | 'stopped'
   | 'fixed';
 
-export const EXHAUSTED = '3 tours de correction épuisés';
-const CONTROL_KO = 'contrôle du commit en échec';
+export const EXHAUSTED = '3 correction rounds exhausted';
+const CONTROL_KO = 'commit check failed';
 
 type TaskDecision = {
   phase: TaskState['phase'];
@@ -22,7 +22,7 @@ type TaskDecision = {
   blocked?: string;
 };
 
-/** Décision pure : ne modifie pas `t`. */
+/** Pure decision: does not modify `t`. */
 export function nextTaskPhase(t: TaskState, ev: LoopEvent): TaskDecision {
   const go = (phase: TaskState['phase']): TaskDecision => ({ phase, round: t.round, fixer: 'none' });
   switch (ev) {
@@ -42,7 +42,7 @@ export function nextTaskPhase(t: TaskState, ev: LoopEvent): TaskDecision {
   }
 }
 
-/** Revue globale et preflight : `round` est le tour écoulé, retourne le suivant. */
+/** Global review and preflight: `round` is the round just finished; returns the next one. */
 export function nextLoopRound(round: number): {
   round: number;
   fixer: 'new' | 'strong' | 'none';

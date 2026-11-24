@@ -36,7 +36,7 @@ describe('createPr', () => {
 });
 
 describe('findPr', () => {
-  it('rend l’URL de la PR ouverte pour la branche', async () => {
+  it('returns the URL of the open PR for the branch', async () => {
     const calls: Call[] = [];
     const runner = async (cmd: string, args: string[], opts?: { cwd?: string }): Promise<RunResult> => {
       calls.push({ cmd, args, cwd: opts?.cwd });
@@ -46,7 +46,7 @@ describe('findPr', () => {
     expect(calls[0]).toMatchObject({ cmd: 'gh', args: ['pr', 'view', 'feature/x', '--json', 'url,state'], cwd: '/wt' });
   });
 
-  it('rend null sans PR pour la branche ou si la PR est fermée', async () => {
+  it('returns null when the branch has no PR or the PR is closed', async () => {
     const none = async (): Promise<RunResult> => ({ stdout: '', stderr: 'no pull requests found for branch "feature/x"', exitCode: 1 });
     expect(await findPr('/wt', 'feature/x', none)).toBeNull();
     const closed = async (): Promise<RunResult> => ({ stdout: '{"url":"https://github.com/o/r/pull/4","state":"CLOSED"}', stderr: '', exitCode: 0 });

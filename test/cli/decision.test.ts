@@ -22,13 +22,13 @@ const run = (...args: string[]) =>
     reject: false, stdin: 'ignore', env: { HERNESS_HOME: home },
   })
 
-test('reject sans --note est rejeté par la CLI', async () => {
+test('reject without --note is rejected by the CLI', async () => {
   const r = await run('reject', 'X')
   expect(r.exitCode).not.toBe(0)
   expect(r.stderr).toContain('herness: required option: --note <text> (reason for rejecting)')
 })
 
-test('approve hors terminal interactif échoue et ne poste rien', async () => {
+test('approve outside an interactive terminal fails and posts nothing', async () => {
   const s = newState({ id: 'T-1', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/r' })
   openGate(s, 'spec', 'Spec')
   await saveState(s)

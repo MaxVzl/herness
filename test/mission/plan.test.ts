@@ -5,7 +5,7 @@ const plan = (n: number) =>
   Array.from({ length: n }, (_, i) =>
     `### Tâche ${i + 1} : Titre ${i + 1}\n\nCorps ${i + 1}\n\n**Test :** \`pnpm test t${i + 1}\`\n`).join('\n')
 
-test('lit deux tâches avec titre, commande de test et corps', () => {
+test('reads two tasks with title, test command and body', () => {
   const r = parsePlan(`# Plan\n\nintro\n\n${plan(2)}`)
   expect(r.ok).toBe(true)
   if (!r.ok) return
@@ -27,31 +27,31 @@ test('accepts a plan in English format', () => {
   expect(r.tasks[0]).toMatchObject({ n: 1, title: 'Do it', testCommand: 'pnpm test a' })
 })
 
-test('refuse une tâche sans ligne **Test :**', () => {
+test('refuses a task without a **Test:** line', () => {
   const r = parsePlan('### Tâche 1 : A\n\n**Test :** `x`\n\n### Tâche 2 : B\n\nrien\n')
   expect(r).toEqual({ ok: false, errors: expect.arrayContaining(['Task 2: missing **Test:** line']) })
 })
 
-test('refuse une numérotation non consécutive', () => {
+test('refuses a non-consecutive numbering', () => {
   const r = parsePlan('### Tâche 1 : A\n**Test :** `x`\n\n### Tâche 2 : B\n**Test :** `y`\n\n### Tâche 4 : D\n**Test :** `z`\n')
   expect(r.ok).toBe(false)
   if (r.ok) return
   expect(r.errors).toEqual(['Task 4: unexpected number, 3 expected'])
 })
 
-test('refuse un plan sans tâche', () => {
+test('refuses a plan with no task', () => {
   const r = parsePlan('# Plan vide\n')
   expect(r).toEqual({ ok: false, errors: ['Plan has no task: no "### Task <n>: <title>" heading'] })
 })
 
-test('checkAmendment accepte l\'ajout d\'une tâche 4 quand 1-3 sont done et inchangées', () => {
+test('checkAmendment accepts adding task 4 when 1-3 are done and unchanged', () => {
   const prev = parsePlan(plan(3))
   const next = parsePlan(plan(4))
   if (!prev.ok) throw new Error('prev')
   expect(checkAmendment(prev.tasks.map((t) => ({ n: t.n, body: t.body })), next)).toEqual({ ok: true })
 })
 
-test('checkAmendment refuse la modification du corps de la tâche 2 done', () => {
+test('checkAmendment refuses a change to the body of done task 2', () => {
   const prev = parsePlan(plan(3))
   const next = parsePlan(plan(3).replace('Corps 2', 'Corps modifié'))
   if (!prev.ok) throw new Error('prev')
@@ -60,7 +60,7 @@ test('checkAmendment refuse la modification du corps de la tâche 2 done', () =>
   if (!r.ok) expect(r.reason).toBe('already-validated task 2 has changed: add a follow-up task instead of modifying already-validated task 2')
 })
 
-test('checkAmendment refuse la disparition d\'une tâche done', () => {
+test('checkAmendment refuses the disappearance of a done task', () => {
   const prev = parsePlan(plan(3))
   const next = parsePlan(plan(1))
   if (!prev.ok) throw new Error('prev')
@@ -70,12 +70,12 @@ test('checkAmendment refuse la disparition d\'une tâche done', () => {
   })
 })
 
-test('checkAmendment refuse la disparition de la tâche en cours, accepte la modification de son texte', () => {
+test('checkAmendment refuses the disappearance of the current task and accepts a change to its text', () => {
   const prev = parsePlan(plan(3))
   if (!prev.ok) throw new Error('prev')
   const done = [{ n: 1, body: prev.tasks[0]!.body }]
   const current = { n: 2, body: prev.tasks[1]!.body }
-  // Le plan amendé s'arrête à la tâche 1 : la tâche 2 en cours a disparu.
+  // The amended plan stops at task 1: current task 2 has disappeared.
   const gone = parsePlan(plan(1))
   const r = checkAmendment(done, gone, current)
   expect(r).toEqual({
@@ -85,10 +85,10 @@ test('checkAmendment refuse la disparition de la tâche en cours, accepte la mod
   expect(checkAmendment(done, parsePlan(plan(3).replace('Corps 2', 'Corps 2 amendé')), current)).toEqual({ ok: true })
 })
 
-test('checkAmendment refuse la renumérotation de la tâche en cours', () => {
+test('checkAmendment refuses renumbering the current task', () => {
   const prev = parsePlan(plan(3))
   if (!prev.ok) throw new Error('prev')
-  // Une tâche insérée avant : l'ancienne tâche 2 (en cours), texte inchangé, devient la 3.
+  // A task inserted before: the old task 2 (in progress), text unchanged, becomes 3.
   const old2 = plan(2).split('### Tâche 2')[1]!
   const shifted = parsePlan(`${plan(1)}\n### Tâche 2 : Insérée\n\nNouvelle\n\n**Test :** \`pnpm test n\`\n\n### Tâche 3${old2}`)
   const r = checkAmendment([{ n: 1, body: prev.tasks[0]!.body }], shifted, { n: 2, body: prev.tasks[1]!.body })

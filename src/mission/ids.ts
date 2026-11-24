@@ -1,16 +1,16 @@
 import { readdir } from 'node:fs/promises'
 import { missionsRoot } from '../paths.ts'
 
-export type Demande =
+export type Request =
   | { kind: 'wrike'; id: string; ref: string }
   | { kind: 'github'; id: string; ref: string; number: number }
   | { kind: 'text'; ref: string }
 
-export function parseDemande(input: string): Demande {
+export function parseRequest(input: string): Request {
   const ref = input.trim()
   if (/^https?:\/\/([^/]+\.)?wrike\.com\//i.test(ref)) {
     const id = new URL(ref).searchParams.get('id')
-    if (!id) throw new Error('lien Wrike sans id')
+    if (!id) throw new Error('Wrike link without an id')
     return { kind: 'wrike', id, ref }
   }
   const gh = /^https?:\/\/github\.com\/[^/]+\/[^/]+\/issues\/(\d+)(?:[/?#].*)?$/i.exec(ref)

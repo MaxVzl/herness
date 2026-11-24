@@ -61,8 +61,8 @@ program
   .command('mcp <id>', { hidden: true })
   .action(async (id: string) => {
     const { installProcessErrorLog, withErrorLog } = await import('./errlog.ts')
-    installProcessErrorLog({ mission: id, origin: 'serveur MCP : erreur non rattrapée' })
-    await withErrorLog({ mission: id, origin: 'lancement du serveur MCP' }, async () => {
+    installProcessErrorLog({ mission: id, origin: 'MCP server: uncaught error' })
+    await withErrorLog({ mission: id, origin: 'MCP server startup' }, async () => {
       const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js')
       const { buildServer } = await import('./mcp/server.ts')
       await buildServer(id).connect(new StdioServerTransport())
@@ -74,8 +74,8 @@ program
   .command('engine <id>', { hidden: true })
   .action(async (id: string) => {
     const { installProcessErrorLog, withErrorLog } = await import('./errlog.ts')
-    installProcessErrorLog({ mission: id, origin: 'moteur : erreur non rattrapée' })
-    const engine = await withErrorLog({ mission: id, origin: 'lancement du moteur' }, async () => {
+    installProcessErrorLog({ mission: id, origin: 'engine: uncaught error' })
+    const engine = await withErrorLog({ mission: id, origin: 'engine startup' }, async () => {
       const { assertResumable, loadState } = await import('./mission/state.ts')
       const { loadProjectConfig } = await import('./config/project.ts')
       const { Engine } = await import('./engine/engine.ts')
@@ -181,7 +181,7 @@ program
   .action((id: string) =>
     lifecycle(async (deps) => {
       const { closeMission } = await import('./lifecycle.ts')
-      await closeMission(id, deps, { signaler: true })
+      await closeMission(id, deps, { report: true })
     }),
   )
 

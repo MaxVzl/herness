@@ -17,34 +17,34 @@ const SETS: Record<string, string[]> = {
 const full = (keys: string[]) => Object.fromEntries(keys.map((k) => [k, `<<${k}>>`]))
 
 describe('render', () => {
-  it('remplace toutes les clés', async () => {
+  it('replaces every key', async () => {
     const out = await render('diagnostic', full(SETS.diagnostic!))
     expect(out).toContain('<<logPath>>')
     expect(out).toContain('<<outPath>>')
     expect(out).not.toMatch(/\{\{/)
   })
 
-  it('lève en listant les clés manquantes', async () => {
+  it('throws listing the missing keys', async () => {
     await expect(render('diagnostic', {})).rejects.toThrow(/logPath.*outPath|outPath.*logPath/)
     await expect(render('diagnostic', { logPath: 'x' })).rejects.toThrow(/outPath/)
   })
 
   for (const [name, keys] of Object.entries(SETS)) {
-    it(`le gabarit ${name} se rend sans erreur avec un jeu complet`, async () => {
+    it(`template ${name} renders without error with a complete set`, async () => {
       const out = await render(name, full(keys))
       expect(out).not.toMatch(/\{\{/)
       for (const k of keys) expect(out).toContain(`<<${k}>>`)
     })
   }
 
-  it('les gabarits d’implémentation se terminent par la consigne de compte rendu', async () => {
+  it('implementation templates end with the report instruction', async () => {
     for (const name of ['brief', 'correction']) {
       const out = await render(name, full(SETS[name]!))
       expect(out.trim()).toMatch(/<<reportPath>>[\s\S]*DONE`?\.?$/)
     }
   })
 
-  it('les gabarits de revue imposent la première ligne du verdict', async () => {
+  it('review templates require the verdict on the first line', async () => {
     for (const name of ['review', 'rereview', 'global-review']) {
       const out = await render(name, full(SETS[name]!))
       expect(out).toContain('VERDICT: APPROVED')
@@ -54,7 +54,7 @@ describe('render', () => {
     }
   })
 
-  it('diagnostic impose la première ligne CAUSE', async () => {
+  it('diagnostic requires CAUSE on the first line', async () => {
     const out = await render('diagnostic', full(SETS.diagnostic!))
     for (const c of ['BRANCH', 'MAIN', 'ENVIRONMENT']) expect(out).toContain(`CAUSE: ${c}`)
     expect(out).toMatch(/in English/)
@@ -76,7 +76,7 @@ describe('render', () => {
     expect(raw).toContain('[herness]')
   })
 
-  it('correction demande d’ajouter le compte rendu à la fin du fichier, sans l’écraser', async () => {
+  it('correction asks to append the report at the end of the file, without overwriting it', async () => {
     const out = await render('correction', full(SETS.correction!))
     expect(out).toContain('Append this report to the end of `<<reportPath>>`')
     expect(out).not.toContain('Write this report in')

@@ -1,7 +1,9 @@
 export type PlanTask = { n: number; title: string; testCommand: string; body: string }
 export type ParsedPlan = { ok: true; tasks: PlanTask[] } | { ok: false; errors: string[] }
 
+// Compatibility: also recognizes the 0.8 heading "### Tâche <n>:".
 const TITLE = /^### (?:Tâche|Task) (\d+)\s*[:：]\s*(.+)$/gm
+// Compatibility: also recognizes the 0.8 marker "**Test :**".
 const TEST_LINE = /^\*\*Test ?:\*\*\s*`([^`\n]+)`/m
 
 function normalize(body: string): string {

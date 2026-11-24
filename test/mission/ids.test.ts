@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { missionDir } from '../../src/paths.ts'
-import { nextFreeTextId, parseDemande } from '../../src/mission/ids.ts'
+import { nextFreeTextId, parseRequest } from '../../src/mission/ids.ts'
 
 let home: string
 beforeEach(async () => {
@@ -15,25 +15,25 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-test('lien Wrike avec id', () => {
+test('Wrike link with an id', () => {
   const ref = 'https://www.wrike.com/open.htm?id=1234567890'
-  expect(parseDemande(ref)).toEqual({ kind: 'wrike', id: '1234567890', ref })
+  expect(parseRequest(ref)).toEqual({ kind: 'wrike', id: '1234567890', ref })
 })
 
-test('lien Wrike sans id lève', () => {
-  expect(() => parseDemande('https://www.wrike.com/open.htm')).toThrow('lien Wrike sans id')
+test('Wrike link without an id throws', () => {
+  expect(() => parseRequest('https://www.wrike.com/open.htm')).toThrow('Wrike link without an id')
 })
 
 test('issue GitHub', () => {
   const ref = 'https://github.com/demo/projet/issues/42'
-  expect(parseDemande(ref)).toEqual({ kind: 'github', id: 'gh42', number: 42, ref })
+  expect(parseRequest(ref)).toEqual({ kind: 'github', id: 'gh42', number: 42, ref })
 })
 
-test('texte libre', () => {
-  expect(parseDemande('corrige le bouton export')).toEqual({ kind: 'text', ref: 'corrige le bouton export' })
+test('free text', () => {
+  expect(parseRequest('corrige le bouton export')).toEqual({ kind: 'text', ref: 'corrige le bouton export' })
 })
 
-test('nextFreeTextId incrémente selon les dossiers existants', async () => {
+test('nextFreeTextId increments from existing directories', async () => {
   const d = new Date('2026-10-29')
   expect(await nextFreeTextId(d)).toBe('20261029-1')
   await mkdir(missionDir('20261029-1'), { recursive: true })

@@ -4,14 +4,14 @@ import { join } from 'node:path'
 import { missionDir } from '../paths.ts'
 
 /**
- * Un amendement est proposé HORS du worktree : l'orchestrateur écrit le plan amendé complet dans
- * `<missionDir>/plan.proposed.md` (et, s'il amende la spec, `<missionDir>/spec.proposed.md`). Le worktree n'est
- * modifié que par le moteur, quand aucun agent n'a de consigne en cours, après validation par l'utilisateur.
+ * An amendment is proposed OUTSIDE the worktree: the orchestrator writes the full amended plan to
+ * `<missionDir>/plan.proposed.md` (and, when it amends the spec, `<missionDir>/spec.proposed.md`). The worktree
+ * is modified only by the engine, when no agent has a brief in progress, after the user approves.
  */
 export const proposedPlanPath = (id: string): string => join(missionDir(id), 'plan.proposed.md')
 export const proposedSpecPath = (id: string): string => join(missionDir(id), 'spec.proposed.md')
 
-/** Hachage qui lie la validation au contenu proposé (plan, et spec s'il y en a une). */
+/** Hash that binds the approval to the proposed content (plan, and spec when there is one). */
 export function proposalHash(plan: string, spec?: string): string {
   const h = createHash('sha256').update(plan)
   if (spec !== undefined) h.update('\0spec\0').update(spec)
@@ -20,7 +20,7 @@ export function proposalHash(plan: string, spec?: string): string {
 
 export type Proposal = { plan: string; spec?: string; hash: string }
 
-/** La proposition en cours, ou `null` sans `plan.proposed.md`. */
+/** The current proposal, or `null` when there is no `plan.proposed.md`. */
 export async function readProposal(id: string): Promise<Proposal | null> {
   let plan: string
   try {

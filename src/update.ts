@@ -9,22 +9,22 @@ import { missionsRoot } from './paths.ts'
 
 export const INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/MaxVzl/herness/main/install.sh'
 
-/** Racine du paquet en cours d'exécution. */
+/** Root of the package currently running. */
 export const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-/** Dossier d'installation : HERNESS_INSTALL_DIR, sinon $XDG_DATA_HOME/herness, sinon ~/.local/share/herness. */
+/** Install directory: HERNESS_INSTALL_DIR, otherwise $XDG_DATA_HOME/herness, otherwise ~/.local/share/herness. */
 export function installDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.HERNESS_INSTALL_DIR || join(env.XDG_DATA_HOME || join(env.HOME || homedir(), '.local', 'share'), 'herness')
 }
 
-/** Lanceur de la version active, posé par install.sh : c'est lui qui exécute le nouveau code. */
+/** Launcher of the active version, placed by install.sh: it is what executes the new code. */
 export function installedBin(env: NodeJS.ProcessEnv = process.env): string {
   return join(installDir(env), 'current', 'bin', 'herness')
 }
 
 type InstalledExec = (file: string, args: string[], opts: { stdio: 'inherit' }) => Promise<unknown>
 
-/** `herness resume <id> --restart` avec le binaire fraîchement installé. */
+/** `herness resume <id> --restart` with the freshly installed binary. */
 export async function restartInstalled(
   id: string,
   exec: InstalledExec = (file, args, opts) => execa(file, args, opts),
@@ -33,24 +33,24 @@ export async function restartInstalled(
   await exec(installedBin(env), ['resume', id, '--restart'], { stdio: 'inherit' })
 }
 
-/** Vrai si la racine réelle du processus est strictement sous le dossier versions/ de l'installation. */
+/** True when the process's real root is strictly under the installation's versions/ directory. */
 export function runsInstalled(env: NodeJS.ProcessEnv = process.env, root: string = PACKAGE_ROOT): boolean {
   try {
     const versions = realpathSync(join(installDir(env), 'versions'))
     return realpathSync(root).startsWith(versions + sep)
   } catch {
-    // versions/ ou la racine absents : ce n'est pas une installation
+    // versions/ or the root is missing: this is not an installation
     return false
   }
 }
 
-/** Commande pour lancer herness : binaire direct, ou node et un script. */
+/** Command used to launch herness: a direct binary, or node and a script. */
 export interface HernessCommand {
   cmd: string
   args: string[]
 }
 
-/** Lanceur installé si ce processus tourne depuis versions/ et que current/bin/herness existe, sinon node et bin/herness.js. */
+/** Installed launcher when this process runs from versions/ and current/bin/herness exists, otherwise node and bin/herness.js. */
 export function hernessCommand(env: NodeJS.ProcessEnv = process.env, root: string = PACKAGE_ROOT): HernessCommand {
   const bin = installedBin(env)
   if (runsInstalled(env, root) && existsSync(bin)) return { cmd: bin, args: [] }
@@ -59,56 +59,56 @@ export function hernessCommand(env: NodeJS.ProcessEnv = process.env, root: strin
 
 const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
 
-/** Ligne à taper dans un panneau herdr : node reste nu, les autres chemins sont cités pour le shell. */
+/** Line to type in a herdr pane: node stays bare, other paths are quoted for the shell. */
 export function shellLine(c: HernessCommand, words: string): string {
   const cmd = c.cmd === 'node' ? c.cmd : shq(c.cmd)
   const args = c.args.map(shq).join(' ')
   return `${args ? `${cmd} ${args}` : cmd} ${words}`
 }
 
-/** Version déclarée par current/package.json, ou null si elle est absente, illisible ou vide. */
+/** Version declared by current/package.json, or null when it is missing, unreadable or empty. */
 export function installedVersion(env: NodeJS.ProcessEnv = process.env): string | null {
   try {
     const version = (JSON.parse(readFileSync(join(installDir(env), 'current', 'package.json'), 'utf8')) as { version?: unknown }).version
     return typeof version === 'string' && version !== '' ? version : null
   } catch {
-    // fichier absent ou JSON invalide : pas de version connue
+    // missing file or invalid JSON: no known version
     return null
   }
 }
 
-/** Bandeau si ce processus tourne depuis une installation dont la version active diffère, sinon null. */
+/** Banner when this process runs from an installation whose active version differs, otherwise null. */
 export function staleNotice(own: string, env: NodeJS.ProcessEnv = process.env, root: string = PACKAGE_ROOT): string | null {
   if (!runsInstalled(env, root)) return null
   const installed = installedVersion(env)
   if (installed === null || installed === own) return null
-  return `herness ${installed} installé, ce cockpit tourne en ${own} : quitte-le et relance herness`
+  return `herness ${installed} is installed, this cockpit is running ${own}: quit it and start herness again`
 }
 
 export interface UpdateDeps {
-  /** Lance install.sh avec ces arguments ; lève s'il échoue. */
+  /** Runs install.sh with these arguments; throws when it fails. */
   install: (args: string[]) => Promise<void>
-  /** `herness resume <id> --restart` avec la version fraîchement installée. */
+  /** `herness resume <id> --restart` with the freshly installed version. */
   restart: (id: string) => Promise<void>
   isTTY: boolean
   confirm: (question: string) => Promise<boolean>
   out: (line: string) => void
 }
 
-/** Vrai pour une version `0.y.z` avec `y < 9` (préfixe `v` toléré) : herness d'avant le passage à l'anglais. */
+/** True for a `0.y.z` version with `y < 9` (`v` prefix tolerated): herness from before the switch to English. */
 export function isPreEnglish(version: string): boolean {
   const match = /^(?:v)?0\.(\d+)\.\d+$/.exec(version)
   return match !== null && Number(match[1]) < 9
 }
 
 export interface ListedMissions {
-  /** Missions non terminées, non bloquées, au format courant. */
+  /** Unfinished, unblocked missions, in the current format. */
   running: MissionState[]
-  /** Missions héritées non terminées, étape `blocked` comprise. */
+  /** Unfinished legacy missions, including step `blocked`. */
   legacy: MissionState[]
 }
 
-/** Missions dont le moteur, le tableau et les visionneuses tournent encore sur l'ancien code. */
+/** Missions whose engine, dashboard and viewers are still running the old code. */
 export async function runningMissions(): Promise<ListedMissions> {
   const ids = (await readdir(missionsRoot()).catch(() => [] as string[])).sort()
   const running: MissionState[] = []
@@ -121,24 +121,25 @@ export async function runningMissions(): Promise<ListedMissions> {
         legacy.push(s)
         continue
       }
-      // Bloquée : rien ne tourne, et `resume` y ouvrirait une porte de reprise.
+      // Blocked: nothing is running, and `resume` would open a resume gate.
       if (s.step !== 'blocked') running.push(s)
     } catch {
-      // état illisible ou dossier étranger : ignoré
+      // unreadable state or foreign directory: ignored
     }
   }
   return { running, legacy }
 }
 
 /**
- * `herness update [--version x.y.z]` : installe la version par install.sh, puis
- * propose de redémarrer les missions en cours pour qu'elles passent au nouveau code.
- * Une version antérieure à l'anglais ne sait pas lire les missions créées après : on ne propose rien.
+ * `herness update [--version x.y.z]`: installs the version through install.sh, then
+ * offers to restart running missions so they pick up the new code.
+ * A version from before the switch to English cannot read missions created afterwards: nothing is offered.
  */
 export async function update(opts: { version?: string }, deps: UpdateDeps, list: () => Promise<ListedMissions> = runningMissions): Promise<void> {
   await deps.install(opts.version ? ['--version', opts.version] : [])
   if (opts.version && isPreEnglish(opts.version)) {
     deps.out(`herness ${opts.version} cannot read missions created by newer versions.`)
+    // Compatibility: 0.8 still uses this command line.
     deps.out('Missions it started can be restarted with: herness reprendre <id> --redemarrer')
     return
   }
@@ -166,8 +167,8 @@ export async function update(opts: { version?: string }, deps: UpdateDeps, list:
       await deps.restart(s.id)
     } catch (e) {
       failed.push(s.id)
-      deps.out(`${s.id} : redémarrage échoué : ${e instanceof Error ? e.message : String(e)}`)
+      deps.out(`${s.id}: restart failed: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
-  if (failed.length) throw new Error(`redémarrage à relancer à la main : ${failed.map((id) => `herness resume ${id} --restart`).join(' ; ')}`)
+  if (failed.length) throw new Error(`restart these by hand: ${failed.map((id) => `herness resume ${id} --restart`).join('; ')}`)
 }

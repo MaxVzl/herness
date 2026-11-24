@@ -15,7 +15,7 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-test('drainInbox rend les messages dans l\'ordre de dépôt et vide la boîte', async () => {
+test('drainInbox returns messages in deposit order and empties the box', async () => {
   await postInbox('T-1', { type: 'pause' })
   await new Promise((r) => setTimeout(r, 5))
   await postInbox('T-1', { type: 'resume' })
@@ -27,17 +27,17 @@ test('drainInbox rend les messages dans l\'ordre de dépôt et vide la boîte', 
   expect((await readdir(join(missionDir('T-1'), 'inbox'))).filter((f) => f.endsWith('.json'))).toEqual([])
 })
 
-test('drainInbox déplace un JSON invalide ou de type inconnu dans inbox/rejected et rend les autres', async () => {
+test('drainInbox moves invalid JSON or an unknown type into inbox/rejected and returns the others', async () => {
   await postInbox('T-1', { type: 'pause' })
   const dir = join(missionDir('T-1'), 'inbox')
   await writeFile(join(dir, '1-bad.json'), '{pas du json')
-  await writeFile(join(dir, '2-unknown.json'), JSON.stringify({ type: 'inconnu' }))
+  await writeFile(join(dir, '2-unknown.json'), JSON.stringify({ type: 'unknown' }))
   const msgs = await drainInbox('T-1')
   expect(msgs).toEqual([{ type: 'pause' }])
   expect((await readdir(join(dir, 'rejected'))).sort()).toEqual(['1-bad.json', '2-unknown.json'])
 })
 
-test('drainInbox rend dans l\'ordre de dépôt des messages postés dans la même milliseconde', async () => {
+test('drainInbox returns, in deposit order, messages posted in the same millisecond', async () => {
   for (let i = 0; i < 50; i++) await postInbox('T-1', { type: 'abandon', reason: String(i) })
   const msgs = await drainInbox('T-1')
   expect(msgs.map((m) => (m.type === 'abandon' ? m.reason : ''))).toEqual(Array.from({ length: 50 }, (_, i) => String(i)))

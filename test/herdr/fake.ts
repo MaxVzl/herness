@@ -44,7 +44,7 @@ export class FakeHerdr implements HerdrApi {
 
   pane(id: string): FakePane {
     const p = this.panes.find((x) => x.paneId === id);
-    if (!p) throw new Error(`panneau ${id} inconnu`);
+    if (!p) throw new Error(`unknown pane ${id}`);
     return p;
   }
 

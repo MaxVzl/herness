@@ -21,6 +21,7 @@ export type LogEntry = {
 export type ReportGroup = { signature: string; entries: LogEntry[] }
 
 const HEADER = /^=== (\S+) · (?:mission (\S+) · )?herness (\S+) · (.+)$/
+// Compatibility: also recognizes the 0.8 header form "(étape …)".
 const STEP = /^(.*) \((?:étape|step) ([^)]+)\)$/
 
 function stripTrailingBlank(lines: string[]): string[] {
@@ -62,12 +63,12 @@ function longestBackticks(text: string): number {
 }
 
 function codeBlock(body: string): string {
-  const content = body.length > 60_000 ? `${body.slice(0, 60_000)}\n(tronqué)` : body
+  const content = body.length > 60_000 ? `${body.slice(0, 60_000)}\n(truncated)` : body
   const fence = '`'.repeat(Math.max(3, longestBackticks(content) + 1))
   return `${fence}\n${content}\n${fence}`
 }
 
-/** Découpe le journal. Ne lève jamais. */
+/** Splits the log into entries. Never throws. */
 export function parseErrorLog(text: string): LogEntry[] {
   try {
     const lines = text.split('\n')
@@ -154,7 +155,7 @@ export function groupEntries(entries: LogEntry[], home?: string): ReportGroup[] 
 
 export function issueTitle(g: ReportGroup, home?: string): string {
   const entry = g.entries[0]
-  const title = maskHome(`[erreur herness] ${entry?.origin ?? ''} : ${entry ? firstNonEmpty(entry.body) : ''}`, home)
+  const title = maskHome(`[herness error] ${entry?.origin ?? ''}: ${entry ? firstNonEmpty(entry.body) : ''}`, home)
   if (title.length <= 120) return title
   return `${title.slice(0, 119)}…`
 }
@@ -165,17 +166,18 @@ function reportText(missionId: string, g: ReportGroup, home: string | undefined,
   const steps = unique(g.entries.flatMap((entry) => (entry.step ? [entry.step] : [])))
   const dates = g.entries.map((entry) => entry.at).join(', ')
   const origin = first?.origin ?? ''
-  const originLine = steps.length > 0 ? `- Origine : ${origin} (étape ${steps.join(', ')})` : `- Origine : ${origin}`
+  const originLine = steps.length > 0 ? `- Origin: ${origin} (step ${steps.join(', ')})` : `- Origin: ${origin}`
+  const times = g.entries.length === 1 ? '1 time' : `${g.entries.length} times`
   const lines = [
     kind === 'issue'
-      ? `Remontée automatiquement par \`herness report\` (mission ${missionId}).`
-      : `Revue dans la mission ${missionId}.`,
+      ? `Filed automatically by \`herness report\` (mission ${missionId}).`
+      : `Seen again in mission ${missionId}.`,
     '',
-    `- Version : herness ${versions.join(', ')}`,
+    `- Version: herness ${versions.join(', ')}`,
     originLine,
-    `- Vue ${g.entries.length} fois dans la mission : ${dates}`,
+    `- Seen ${times} in the mission: ${dates}`,
   ]
-  if (kind === 'issue') lines.push(`- Signature : ${g.signature}`)
+  if (kind === 'issue') lines.push(`- Signature: ${g.signature}`)
   lines.push('', codeBlock(first?.body ?? ''))
   return maskHome(lines.join('\n'), home)
 }
@@ -217,16 +219,16 @@ export async function readSent(id: string): Promise<SentRecord[]> {
     text = await readFile(path, 'utf8')
   } catch (err) {
     if (isEnoent(err)) return []
-    throw new Error(`issues.json illisible (${path}) : ${errorDetail(err)}`)
+    throw new Error(`issues.json unreadable (${path}): ${errorDetail(err)}`)
   }
   let data: unknown
   try {
     data = JSON.parse(text)
   } catch (err) {
-    throw new Error(`issues.json illisible (${path}) : ${errorDetail(err)}`)
+    throw new Error(`issues.json unreadable (${path}): ${errorDetail(err)}`)
   }
   if (typeof data !== 'object' || data === null || !Array.isArray((data as { sent?: unknown }).sent)) {
-    throw new Error(`issues.json illisible (${path}) : tableau sent absent`)
+    throw new Error(`issues.json unreadable (${path}): sent array missing`)
   }
   return (data as { sent: SentRecord[] }).sent
 }
@@ -240,7 +242,7 @@ async function readLogIfExists(path: string): Promise<string | undefined> {
   }
 }
 
-/** Ancien journal puis nouveau, sans dédoublonner : les signatures française et anglaise restent distinctes. */
+/** Compatibility: the legacy log is read before the new one, without deduplication, so French and English signatures stay distinct. */
 export async function pendingEntries(id: string): Promise<LogEntry[]> {
   const parts: string[] = []
   const legacy = await readLogIfExists(legacyErrorLogPath())
@@ -284,16 +286,16 @@ export async function planReport(id: string, runner: Runner, home?: string): Pro
 }
 
 export function previewLines(id: string, plan: PlannedSend[]): string[] {
-  const lines = [`Erreurs herness de la mission ${id} à remonter sur ${ISSUES_REPO} (dépôt public) :`, '']
+  const lines = [`herness errors for mission ${id} to file on ${ISSUES_REPO} (public repository):`, '']
   for (const send of plan) {
     lines.push(
       send.kind === 'issue'
-        ? `── Nouvelle issue : ${send.title}`
-        : `── Commentaire sur #${send.issue.number} (${send.issue.title})`,
+        ? `── New issue: ${send.title}`
+        : `── Comment on #${send.issue.number} (${send.issue.title})`,
     )
     lines.push(...send.body.split('\n'), '')
   }
-  lines.push('Relis : tout ce qui est affiché sera public.')
+  lines.push('Review: everything shown will be public.')
   return lines
 }
 
@@ -305,10 +307,10 @@ function countLabel(count: number, one: string, many: string): string | undefine
 export function confirmQuestion(plan: PlannedSend[]): string {
   const issues = plan.filter((send) => send.kind === 'issue').length
   const comments = plan.length - issues
-  const parts = [countLabel(issues, 'issue', 'issues'), countLabel(comments, 'commentaire', 'commentaires')].filter(
+  const parts = [countLabel(issues, 'issue', 'issues'), countLabel(comments, 'comment', 'comments')].filter(
     (part) => part !== undefined,
   )
-  return `Envoyer ${parts.join(' et ')} sur ${ISSUES_REPO} ?`
+  return `Send ${parts.join(' and ')} to ${ISSUES_REPO}?`
 }
 
 async function writeSent(id: string, sent: SentRecord[]): Promise<void> {
@@ -341,7 +343,7 @@ export async function sendReport(
       sent.push({ entry: entryHash(entry), signature: send.group.signature, url, at })
     }
     await writeSent(id, sent)
-    lines.push(send.kind === 'issue' ? `issue créée : ${url}` : `commentaire ajouté : ${url}`)
+    lines.push(send.kind === 'issue' ? `issue created: ${url}` : `comment added: ${url}`)
   }
   return lines
 }

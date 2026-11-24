@@ -80,9 +80,9 @@ test('un redémarrage en échec n’empêche pas les autres, puis erreur récapi
     if (id === 'a1') throw new Error('herdr absent')
   }
   await expect(update({}, d, listed([mission('a1', 'tasks'), mission('b2', 'tasks')])))
-    .rejects.toThrow('redémarrage à relancer à la main : herness resume a1 --restart')
+    .rejects.toThrow('restart these by hand: herness resume a1 --restart')
   expect(d.calls).toContain('restart b2')
-  expect(d.lines).toContain('a1 : redémarrage échoué : herdr absent')
+  expect(d.lines).toContain('a1: restart failed: herdr absent')
 })
 
 test('installation en échec : aucune mission touchée', async () => {
@@ -271,7 +271,7 @@ test('staleNotice : message seulement si la version installée diffère et que l
     await symlink('versions/0.8.0', join(data, 'current'))
     const pkg = join(data, 'current', 'package.json')
     await writeFile(pkg, '{"version":"0.8.0"}')
-    expect(staleNotice('0.6.0', env, root)).toBe('herness 0.8.0 installé, ce cockpit tourne en 0.6.0 : quitte-le et relance herness')
+    expect(staleNotice('0.6.0', env, root)).toBe('herness 0.8.0 is installed, this cockpit is running 0.6.0: quit it and start herness again')
     expect(staleNotice('0.8.0', env, root)).toBeNull()
     expect(staleNotice('0.6.0', env, process.cwd())).toBeNull()
     await rm(pkg)

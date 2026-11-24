@@ -212,7 +212,7 @@ test('global review: a strong implementer on round 3, then the mission is blocke
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1', 'cgt-1-3'])
   expect((fx.callsOf('agents.start')[1]![3] as { args: string[] }).args).toContain('grok-4.7-high')
   s = await until(eng, (x) => x.step === 'blocked')
-  expect(s.blockedReason).toContain('3 tours de correction épuisés')
+  expect(s.blockedReason).toContain('3 correction rounds exhausted')
 })
 
 // ---------- preflight ----------

@@ -13,7 +13,7 @@ beforeEach(() => {
   for (const k of Object.keys(replies)) delete replies[k]
 })
 
-test.each(['working', 'starting', 'quelque-chose'])("agentPrompt/agentWait : un état « %s » n'est jamais pris pour une fin (timeout, état brut journalisé)", async (raw) => {
+test.each(['working', 'starting', 'something-else'])("agentPrompt/agentWait: a status « %s » is never taken as a finish (timeout, raw status logged)", async (raw) => {
   const logs: string[] = []
   const h = new Herdr((m) => logs.push(m))
   replies['agent prompt'] = status(raw)
@@ -24,16 +24,16 @@ test.each(['working', 'starting', 'quelque-chose'])("agentPrompt/agentWait : un 
   expect(logs.every((l) => l.includes(raw) && l.includes('a1'))).toBe(true)
 })
 
-test('agentPrompt/agentWait : sans état lisible ni agent, timeout', async () => {
+test('agentPrompt/agentWait: with no readable status and no agent, timeout', async () => {
   const logs: string[] = []
   const h = new Herdr((m) => logs.push(m))
   replies['agent prompt'] = { stdout: '{}', stderr: '', exitCode: 0 }
   replies['agent get'] = { stdout: '', stderr: JSON.stringify({ error: { code: 'agent_not_found', message: 'x' } }), exitCode: 1 }
   expect(await h.agentPrompt('a1', 'x', { wait: true })).toBe('timeout')
-  expect(logs[0]).toContain('inconnu')
+  expect(logs[0]).toContain('unknown')
 })
 
-test('agentPrompt/agentWait : idle, done et blocked sont rendus tels quels', async () => {
+test('agentPrompt/agentWait: idle, done and blocked are returned as-is', async () => {
   const h = new Herdr(() => {})
   for (const s of ['idle', 'done', 'blocked']) {
     replies['agent prompt'] = status(s)
@@ -43,7 +43,7 @@ test('agentPrompt/agentWait : idle, done et blocked sont rendus tels quels', asy
   }
 })
 
-test('paneCurrent lit pane_id, tab_id, workspace_id et cwd', async () => {
+test('paneCurrent reads pane_id, tab_id, workspace_id and cwd', async () => {
   const h = new Herdr(() => {})
   replies['pane current'] = {
     stdout: '{"result":{"pane":{"pane_id":"w2D:p1","tab_id":"w2D:t1","workspace_id":"w2D","cwd":"/x"}}}',
@@ -53,7 +53,7 @@ test('paneCurrent lit pane_id, tab_id, workspace_id et cwd', async () => {
   expect(await h.paneCurrent()).toEqual({ paneId: 'w2D:p1', tabId: 'w2D:t1', workspaceId: 'w2D', cwd: '/x' })
 })
 
-test('paneCurrent lève une HerdrError si un identifiant manque', async () => {
+test('paneCurrent throws a HerdrError when an id is missing', async () => {
   const h = new Herdr(() => {})
   replies['pane current'] = {
     stdout: '{"result":{"pane":{"pane_id":"w2D:p1","tab_id":"w2D:t1","cwd":"/x"}}}',

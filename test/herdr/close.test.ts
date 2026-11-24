@@ -8,7 +8,7 @@ vi.mock('../../src/exec.ts', () => ({
   },
 }))
 
-test('Herdr.workspaceClose ferme un seul espace, jamais avec --group', async () => {
+test('Herdr.workspaceClose closes a single workspace, never with --group', async () => {
   const { Herdr } = await import('../../src/herdr/client.ts')
   await new Herdr().workspaceClose('w7')
   expect(calls).toEqual([['herdr', 'workspace', 'close', 'w7']])

@@ -10,19 +10,19 @@ import { FakeHerdr } from './herdr/fake.ts'
 timing.retireDelayMs = 0
 timing.pollMs = 0
 signals.kill = () => {
-  throw new Error('signal réel interdit dans les tests')
+  throw new Error('a real signal is forbidden in tests')
 }
 
 export type Call = { fn: string; args: unknown[] }
 type Fn = (...a: any[]) => any
 
-/** Réponses scriptées dans l'ordre ; la dernière est répétée ensuite. */
+/** Scripted replies in order; the last one is repeated afterwards. */
 export function seq<T>(...values: T[]): () => T {
   let i = 0
   return () => values[Math.min(i++, values.length - 1)] as T
 }
 
-/** Doublure de herdr complète : la disposition de `FakeHerdr`, plus les agents et les notifications. */
+/** Full herdr fake: the `FakeHerdr` layout, plus agents and notifications. */
 export class FakeEngineHerdr extends FakeHerdr {
   started = new Set<string>()
   async agentStart(name: string, _kind: string, _pane: string, _args: string[], _timeoutMs: number): Promise<void> {
@@ -67,17 +67,17 @@ export interface FakeOverrides {
 
 export interface FakeEffects extends Effects {
   herdr: FakeEngineHerdr
-  /** Tous les appels, dans l'ordre : `herdr.agentPrompt`, `git.commitFiles`, `runInPane`, `run`, `sleep`… */
+  /** Every call, in order: `herdr.agentPrompt`, `git.commitFiles`, `runInPane`, `run`, `sleep`… */
   calls: Call[]
-  /** Arguments de chaque appel à `fn`. */
+  /** Arguments of each call to `fn`. */
   callsOf(fn: string): unknown[][]
 }
 
 const ok: RunResult = { stdout: '', stderr: '', exitCode: 0 }
 
 /**
- * Effets factices : chaque appel est enregistré dans `calls`, et chaque fonction rend une réponse par défaut
- * (succès) que `overrides` remplace. `seq(...)` scripte des réponses successives.
+ * Fake effects: each call is recorded in `calls`, and each function returns a default reply
+ * (success) that `overrides` replaces. `seq(...)` scripts successive replies.
  */
 export function fakeEffects(overrides: FakeOverrides = {}): FakeEffects {
   const calls: Call[] = []
@@ -108,7 +108,7 @@ export function fakeEffects(overrides: FakeOverrides = {}): FakeEffects {
     renameBranch: async () => {},
     fetchMain: async () => {},
     fetchBranch: async () => {},
-    // Par défaut : pas de branche distante, la branche locale est gardée.
+    // Default: no remote branch, the local branch is kept.
     localOnlyCommits: async () => null,
     deleteBranch: async () => {},
     identity: async () => ({ name: 'Moi', email: 'moi@example.com' }),
@@ -131,7 +131,7 @@ export function fakeEffects(overrides: FakeOverrides = {}): FakeEffects {
     findPr: async () => null,
   }
   const agents: Agents = {
-    // Un agent démarré est visible par `herdr.agentGet`, comme avec le vrai `AgentRunner`.
+    // A started agent is visible to `herdr.agentGet`, as with the real `AgentRunner`.
     start: async (name: string, _role: string, pane: string) => {
       herdr.started.add(name)
       const p = herdr.pane(pane)
@@ -148,7 +148,7 @@ export function fakeEffects(overrides: FakeOverrides = {}): FakeEffects {
     git: wrapAll('git', git, overrides.git),
     forge: wrapAll('forge', forge, overrides.forge),
     runInPane: rec('runInPane', overrides.runInPane ?? (async () => ({ exitCode: 0, logPath: '/dev/null', tail: '', durationMs: 1 }))),
-    // Par défaut tout réussit, y compris les contrôles d'environnement (`cursor-agent status` connecté).
+    // By default everything succeeds, including environment checks (`cursor-agent status` connected).
     run: rec('run', overrides.run ?? (async (cmd: string) => (cmd === 'cursor-agent' ? { ...ok, stdout: 'Logged in' } : ok))),
     now: overrides.now ?? (() => new Date('2026-10-29T10:00:00Z')),
     sleep: rec('sleep', overrides.sleep ?? (async () => {})),

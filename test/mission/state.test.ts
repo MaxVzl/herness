@@ -30,7 +30,7 @@ const init = {
   repoPath: '/tmp/repo',
 }
 
-test('saveState puis loadState rend un état identique', async () => {
+test('saveState then loadState returns an identical state', async () => {
   const s = newState(init)
   s.tasks.push({ n: 1, title: 'a', testCommand: 'pnpm test', phase: 'pending', round: 0 })
   await saveState(s)
@@ -39,7 +39,7 @@ test('saveState puis loadState rend un état identique', async () => {
   expect(typeof s.createdAt).toBe('string')
 })
 
-test("saveState n'abîme pas l'état existant si l'écriture échoue", async () => {
+test("saveState does not damage the existing state when the write fails", async () => {
   const s = newState(init)
   await saveState(s)
   const tmp = join(missionDir('T-1'), 'state.json.tmp')
@@ -49,7 +49,7 @@ test("saveState n'abîme pas l'état existant si l'écriture échoue", async () 
   expect((await loadState('T-1')).step).toBe('env')
 })
 
-test('loadState rejette un état qui ne respecte pas le schéma', async () => {
+test('loadState rejects a state that does not match the schema', async () => {
   await mkdir(missionDir('T-2'), { recursive: true })
   await writeFile(join(missionDir('T-2'), 'state.json'), JSON.stringify({ id: 'T-2', step: 'nope' }))
   await expect(loadState('T-2')).rejects.toThrow()

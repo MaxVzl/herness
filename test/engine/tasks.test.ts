@@ -199,9 +199,9 @@ test('on round 4 the mission is blocked and a notification is sent', async () =>
   const { fx, eng } = await setup({ over: { runInPane: async () => red } })
   const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedFrom).toBe('tasks')
-  expect(s.blockedReason).toContain('3 tours de correction épuisés')
+  expect(s.blockedReason).toContain('3 correction rounds exhausted')
   expect(s.tasks[0]!.round).toBe(4)
-  expect(String(fx.callsOf('herdr.notify').at(-1)![1])).toContain('3 tours de correction épuisés')
+  expect(String(fx.callsOf('herdr.notify').at(-1)![1])).toContain('3 correction rounds exhausted')
   expect(fx.callsOf('agents.ask')).toHaveLength(4)
 })
 
@@ -759,7 +759,7 @@ test('stop without a commit, agent-stopped gate refused: the mission is blocked'
 test('no commit and no report: the mission is blocked as before, with no gate', async () => {
   const { eng } = await setup({ over: { agents: { ask: stoppingAsk('') }, git: { controlCommits: async () => noCommit } } })
   const s = await until(eng, (x) => x.step === 'blocked')
-  expect(s.blockedReason).toContain('contrôle du commit en échec')
+  expect(s.blockedReason).toContain('commit check failed')
   expect(s.gates).toEqual([])
 })
 
@@ -1010,7 +1010,7 @@ test("M1: a report that has not grown since the brief was sent does not open an 
   await writeFile(join(taskDir(), 'report.md'), 'old report\n')
   const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.tasks[0]!.reportSize).toBe(Buffer.byteLength('old report\n'))
-  expect(s.blockedReason).toContain('contrôle du commit en échec')
+  expect(s.blockedReason).toContain('commit check failed')
   expect(s.gates).toEqual([])
 })
 
