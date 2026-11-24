@@ -12,7 +12,7 @@ describe('agentArgs', () => {
       '--model', 'm', '--effort', 'high', '--permission-mode', 'auto', '--session-id', 'sid-1',
       '--mcp-config', '/m/mcp.json', '--append-system-prompt-file', '/m/p.md',
       '--add-dir', '/home/u/missions/42', '--name', 'herness-42',
-      '--disallowedTools', 'Bash(herness valider:*)', 'Bash(herness refuser:*)', 'Edit(//home/u/missions/42/inbox/**)',
+      '--disallowedTools', 'Bash(herness approve:*)', 'Bash(herness reject:*)', 'Edit(//home/u/missions/42/inbox/**)',
       'Bash(herdr:*)', 'Bash(script:*)', 'Bash(unbuffer:*)',
     ]);
   });

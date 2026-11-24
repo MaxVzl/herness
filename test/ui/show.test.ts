@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { DocViewer, resolveDoc, type DocState, type ViewerChild, type ViewerDeps } from '../../src/ui/voir.ts'
+import { DocViewer, resolveDoc, type DocState, type ViewerChild, type ViewerDeps } from '../../src/ui/show.ts'
 import { planPath, specPath } from '../../src/paths.ts'
 
 const dir = '/m/gh12'

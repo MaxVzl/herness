@@ -640,7 +640,7 @@ async function proveOnMain(s: MissionState, e: Effects, cfg: ProjectConfig): Pro
   await informOrchestrator(
     s,
     e,
-    `Le check « ${f.label} » est rouge aussi sur ${mainRef(cfg)} (diagnostic : ${P.diagnosis}). Porte ${g.id} (pr-despite-main) ouverte : l'utilisateur décide s'il ouvre la PR malgré tout (herness valider|refuser ${s.id} --porte ${g.id}).`,
+    `Le check « ${f.label} » est rouge aussi sur ${mainRef(cfg)} (diagnostic : ${P.diagnosis}). Porte ${g.id} (pr-despite-main) ouverte : l'utilisateur décide s'il ouvre la PR malgré tout (herness approve|reject ${s.id} --gate ${g.id}).`,
   )
   return 'continue'
 }

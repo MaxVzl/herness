@@ -929,7 +929,7 @@ test("I3 : amendement qui ne change pas la tâche bloquée : appliqué, la missi
   expect(s.blockedReason).toBe('tâche 1 : contrôle du commit en échec')
   expect(s.tasks[0]).toMatchObject({ phase: 'control', round: 2 })
   const prompts = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1]))
-  expect(prompts.some((p) => p.includes('mission toujours bloquée : herness reprendre T-1 pour la relancer'))).toBe(true)
+  expect(prompts.some((p) => p.includes('mission toujours bloquée : herness resume T-1 pour la relancer'))).toBe(true)
 })
 
 test("I3 : blocage venu d'ailleurs que la tâche (agent sans réponse), amendement de la tâche : appliqué, la mission reste bloquée", async () => {

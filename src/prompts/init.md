@@ -33,7 +33,7 @@ herness mène des missions de développement sur ce dépôt : chaque mission tra
    Ne renseigne `falsePositives` que pour des échecs que l'utilisateur te confirme.
 4. Quand tu ne peux pas deviner (un secret, un service externe, une convention d'équipe), pose la question à l'utilisateur plutôt que d'inventer.
 5. Avant de modifier, résume tes changements à l'utilisateur et attends son accord.
-6. Après chaque modification, lance `herness projet` depuis le dépôt : il doit afficher « config valide ». Si tu as touché `prepare-worktree.sh`, vérifie au moins sa syntaxe avec `bash -n`.
+6. Après chaque modification, lance `herness project` depuis le dépôt : il doit afficher « config valide ». Si tu as touché `prepare-worktree.sh`, vérifie au moins sa syntaxe avec `bash -n`.
 
 ## Règles
 

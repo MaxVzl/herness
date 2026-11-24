@@ -86,8 +86,8 @@ test('dev crée l\'espace, enregistre l\'état puis lance moteur, tableau et orc
   expect(runs).toEqual([
     { pane: s.herdr.panes['engine'], cmd: `node '${BIN}' engine gh12` },
     { pane: s.herdr.panes['tasks'], cmd: `node '${BIN}' tasks gh12` },
-    { pane: s.herdr.panes['spec'], cmd: `node '${BIN}' voir spec gh12` },
-    { pane: s.herdr.panes['plan'], cmd: `node '${BIN}' voir plan gh12` },
+    { pane: s.herdr.panes['spec'], cmd: `node '${BIN}' show spec gh12` },
+    { pane: s.herdr.panes['plan'], cmd: `node '${BIN}' show plan gh12` },
   ])
   const [name, role, pane, launch] = fx.callsOf('agents.start')[0]!
   expect([name, role, pane]).toEqual(['ogh12', 'orchestrator', s.herdr.panes['orchestrator']])
@@ -131,7 +131,7 @@ test('dev refuse un id de mission déjà existant', async () => {
   await mkdir(missionDir('gh12'), { recursive: true })
   const { fx, d } = deps()
   await expect(startMission('https://github.com/o/r/issues/12', repo, d)).rejects.toThrow(
-    'mission gh12 déjà existante : utilise herness reprendre gh12',
+    'mission gh12 déjà existante : utilise herness resume gh12',
   )
   expect(fx.calls).toEqual([])
   expect(fx.herdr.calls).toEqual([])
@@ -234,14 +234,14 @@ test('fermer ne change pas le dossier courant hors du worktree', async () => {
 
 test('supprimer refuse une mission qui n\'est pas fermée', async () => {
   const { d } = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: true, confirm: async () => true })
-  await expect(deleteMission('gh12', d)).rejects.toThrow('mission gh12 pas fermée : herness fermer gh12 d\'abord')
+  await expect(deleteMission('gh12', d)).rejects.toThrow('mission gh12 pas fermée : herness close gh12 d\'abord')
   expect(await exists(missionDir('gh12'))).toBe(true)
 })
 
 test('supprimer refuse une mission fermée dont l\'espace herdr existe encore', async () => {
   const { d } = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: true, confirm: async () => true })
   await patch({ step: 'closed' })
-  await expect(deleteMission('gh12', d)).rejects.toThrow(/il reste l'espace herdr : relance herness fermer gh12/)
+  await expect(deleteMission('gh12', d)).rejects.toThrow(/il reste l'espace herdr : relance herness close gh12/)
   expect(await exists(missionDir('gh12'))).toBe(true)
 })
 
@@ -262,7 +262,7 @@ test('supprimer efface le dossier d\'une mission fermée après confirmation', a
 test('supprimer hors terminal demande --oui', async () => {
   const r = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: false })
   await closeMission('gh12', r.d)
-  await expect(deleteMission('gh12', r.d)).rejects.toThrow(/confirmation dans un terminal interactif \(ou --oui\)/)
+  await expect(deleteMission('gh12', r.d)).rejects.toThrow(/confirmation dans un terminal interactif \(ou --yes\)/)
   expect(await deleteMission('gh12', r.d, { force: true })).toBe(true)
   expect(await exists(missionDir('gh12'))).toBe(false)
 })
@@ -367,7 +367,7 @@ test('reprendre relance les visionneuses spec et plan dont le panneau est au rep
   fx.herdr.pane(s.herdr.panes['plan']!).busy = true
   fx.herdr.runs.length = 0
   await resumeMission('gh12', d)
-  expect(fx.herdr.runs).toEqual([{ pane: s.herdr.panes['spec'], cmd: `node '${BIN}' voir spec gh12` }])
+  expect(fx.herdr.runs).toEqual([{ pane: s.herdr.panes['spec'], cmd: `node '${BIN}' show spec gh12` }])
 })
 
 test("reprendre recrée l'onglet docs manquant, l'enregistre et y relance les visionneuses", async () => {
@@ -384,8 +384,8 @@ test("reprendre recrée l'onglet docs manquant, l'enregistre et y relance les vi
   expect(after.herdr.tabs['docs']).not.toBe(docs)
   expect(fx.herdr.runs).toEqual(
     expect.arrayContaining([
-      { pane: after.herdr.panes['spec'], cmd: `node '${BIN}' voir spec gh12` },
-      { pane: after.herdr.panes['plan'], cmd: `node '${BIN}' voir plan gh12` },
+      { pane: after.herdr.panes['spec'], cmd: `node '${BIN}' show spec gh12` },
+      { pane: after.herdr.panes['plan'], cmd: `node '${BIN}' show plan gh12` },
     ]),
   )
 })
@@ -395,7 +395,7 @@ test('reprendre une mission bloquée demande la porte resume-blocked', async () 
   await patch({ step: 'blocked', blockedFrom: 'tasks', blockedReason: 'tâche 2 : 3 tours de correction épuisés' })
   await resumeMission('gh12', d)
   expect(await drainInbox('gh12')).toEqual([{ type: 'request-gate', kind: 'resume-blocked', summary: 'tâche 2 : 3 tours de correction épuisés' }])
-  expect(out.join('\n')).toContain('herness valider gh12')
+  expect(out.join('\n')).toContain('herness approve gh12')
 })
 
 test('reprendre une mission pr-ouverte ou fermée affiche son état et ne relance rien', async () => {
@@ -448,14 +448,14 @@ test('statut liste les missions et détaille une mission', async () => {
   expect(detail).toContain('Tâche 2 : Deux')
   expect(detail).toContain('g1 (amendment) : ajout')
 
-  const r = await execa('node', ['bin/herness.js', 'statut'], { reject: false, stdin: 'ignore', env: { HERNESS_HOME: home } })
+  const r = await execa('node', ['bin/herness.js', 'status'], { reject: false, stdin: 'ignore', env: { HERNESS_HOME: home } })
   expect(r.exitCode).toBe(0)
   expect(r.stdout).toContain('A-1')
   expect(r.stdout).toContain('B-2')
 })
 
 test('CLI fermer sur une mission inconnue échoue avec un message clair', async () => {
-  const r = await execa('node', ['bin/herness.js', 'fermer', 'C-3'], { reject: false, stdin: 'ignore', env: { HERNESS_HOME: home } })
+  const r = await execa('node', ['bin/herness.js', 'close', 'C-3'], { reject: false, stdin: 'ignore', env: { HERNESS_HOME: home } })
   expect(r.exitCode).toBe(1)
   expect(r.stderr).toMatch(/mission C-3 introuvable/)
 })
@@ -463,11 +463,11 @@ test('CLI fermer sur une mission inconnue échoue avec un message clair', async 
 test('CLI supprimer --oui efface une mission fermée ; sans --oui hors terminal, refuse', async () => {
   await saveState({ ...newState({ id: 'D-4', source: { kind: 'text', ref: 'x' }, project: 'demo', repoPath: repo }), step: 'closed' })
   const env = { HERNESS_HOME: home }
-  const no = await execa('node', ['bin/herness.js', 'supprimer', 'D-4'], { reject: false, stdin: 'ignore', env })
+  const no = await execa('node', ['bin/herness.js', 'delete', 'D-4'], { reject: false, stdin: 'ignore', env })
   expect(no.exitCode).toBe(1)
-  expect(no.stderr).toMatch(/--oui/)
+  expect(no.stderr).toMatch(/--yes/)
   expect(await exists(missionDir('D-4'))).toBe(true)
-  const yes = await execa('node', ['bin/herness.js', 'supprimer', 'D-4', '--oui'], { reject: false, stdin: 'ignore', env })
+  const yes = await execa('node', ['bin/herness.js', 'delete', 'D-4', '--yes'], { reject: false, stdin: 'ignore', env })
   expect(yes.exitCode).toBe(0)
   expect(yes.stdout).toContain('Mission D-4 supprimée.')
   expect(await exists(missionDir('D-4'))).toBe(false)
@@ -537,8 +537,8 @@ test('reprendre --redemarrer arrête le moteur puis relance moteur, tableau et v
     expect.arrayContaining([
       { pane: s.herdr.panes['engine'], cmd: `node '${BIN}' engine gh12` },
       { pane: s.herdr.panes['tasks'], cmd: `node '${BIN}' tasks gh12` },
-      { pane: s.herdr.panes['spec'], cmd: `node '${BIN}' voir spec gh12` },
-      { pane: s.herdr.panes['plan'], cmd: `node '${BIN}' voir plan gh12` },
+      { pane: s.herdr.panes['spec'], cmd: `node '${BIN}' show spec gh12` },
+      { pane: s.herdr.panes['plan'], cmd: `node '${BIN}' show plan gh12` },
     ]),
   )
   expect(fx.herdr.runs).toHaveLength(4)
@@ -734,7 +734,7 @@ test('fermer : un échec de gh n\'empêche pas la fermeture', async () => {
     { isTTY: true, confirm: async () => true },
   )
   expect(await closeMission('gh12', d, { signaler: true })).toBe(true)
-  expect(out.join('\n')).toContain('erreurs herness non remontées (gh non connecté) : herness signaler gh12')
+  expect(out.join('\n')).toContain('erreurs herness non remontées (gh non connecté) : herness report gh12')
   expect((await loadState('gh12')).step).toBe('closed')
 })
 
@@ -747,14 +747,14 @@ test('fermer sans erreur à remonter ne dit rien de plus', async () => {
   expect(fx.callsOf('run').some((call) => call[0] === 'gh')).toBe(false)
   const text = out.join('\n')
   expect(text).not.toContain('Aucune erreur herness')
-  expect(text).not.toContain('herness signaler')
+  expect(text).not.toContain('herness report')
 })
 
 test('fermer sans l\'option rappelle la commande sans contacter GitHub', async () => {
   await logHernessError({ mission: 'gh12', origin: 'moteur' }, new Error('boum'))
   const { fx, out, d } = await started({ git: { unpushedCount: async () => 0 }, run: ghRun })
   expect(await closeMission('gh12', d)).toBe(true)
-  expect(out.join('\n')).toContain('1 erreur(s) herness non remontée(s) : herness signaler gh12')
+  expect(out.join('\n')).toContain('1 erreur(s) herness non remontée(s) : herness report gh12')
   expect(fx.callsOf('run').some((call) => call[0] === 'gh')).toBe(false)
 })
 
@@ -783,7 +783,7 @@ test('fermer sur une mission déjà fermée et nettoyée rappelle seulement la c
   expect(await closeMission('gh12', d, { signaler: true })).toBe(true)
   const text = out.join('\n')
   expect(text).toContain('déjà fermée')
-  expect(text).toContain('herness signaler gh12')
+  expect(text).toContain('herness report gh12')
   expect(fx.callsOf('run').some((call) => call[0] === 'gh')).toBe(false)
 })
 

@@ -76,7 +76,7 @@ export function staleNotice(own: string, env: NodeJS.ProcessEnv = process.env, r
 export interface UpdateDeps {
   /** Lance install.sh avec ces arguments ; lève s'il échoue. */
   install: (args: string[]) => Promise<void>
-  /** `herness reprendre <id> --redemarrer` avec la version fraîchement installée. */
+  /** `herness resume <id> --restart` avec la version fraîchement installée. */
   restart: (id: string) => Promise<void>
   isTTY: boolean
   confirm: (question: string) => Promise<boolean>
@@ -100,7 +100,7 @@ export async function runningMissions(): Promise<MissionState[]> {
 }
 
 /**
- * `herness mise-a-jour [--version x.y.z]` : installe la version par install.sh, puis
+ * `herness update [--version x.y.z]` : installe la version par install.sh, puis
  * propose de redémarrer les missions en cours pour qu'elles passent au nouveau code.
  */
 export async function update(opts: { version?: string }, deps: UpdateDeps, list: () => Promise<MissionState[]> = runningMissions): Promise<void> {
@@ -109,11 +109,11 @@ export async function update(opts: { version?: string }, deps: UpdateDeps, list:
   if (missions.length === 0) return
   deps.out(`Missions en cours, encore sur l'ancien code : ${missions.map((s) => s.id).join(', ')}`)
   if (!deps.isTTY) {
-    for (const s of missions) deps.out(`  herness reprendre ${s.id} --redemarrer`)
+    for (const s of missions) deps.out(`  herness resume ${s.id} --restart`)
     return
   }
   if (!(await deps.confirm('Les redémarrer sur la nouvelle version ?'))) {
-    deps.out(`Plus tard : herness reprendre <id> --redemarrer`)
+    deps.out(`Plus tard : herness resume <id> --restart`)
     return
   }
   const failed: string[] = []
@@ -125,5 +125,5 @@ export async function update(opts: { version?: string }, deps: UpdateDeps, list:
       deps.out(`${s.id} : redémarrage échoué : ${e instanceof Error ? e.message : String(e)}`)
     }
   }
-  if (failed.length) throw new Error(`redémarrage à relancer à la main : ${failed.map((id) => `herness reprendre ${id} --redemarrer`).join(' ; ')}`)
+  if (failed.length) throw new Error(`redémarrage à relancer à la main : ${failed.map((id) => `herness resume ${id} --restart`).join(' ; ')}`)
 }

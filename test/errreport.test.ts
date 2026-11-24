@@ -118,7 +118,7 @@ test("corps d'issue", async () => {
   await logHernessError({ mission: 'm1', origin: 'moteur', step: 'preflight' }, `boom ${perso}/fichier`)
   const group = item(groupEntries(parseErrorLog(await readLog()), perso), 0)
   const body = issueBody('m1', group, perso)
-  expect(body).toContain('Remontée automatiquement par `herness signaler` (mission m1).')
+  expect(body).toContain('Remontée automatiquement par `herness report` (mission m1).')
   expect(body).toContain('- Origine : moteur (étape tasks, preflight)')
   expect(body).toContain('- Vue 2 fois dans la mission : ')
   expect(body).toContain('- Signature : herness-sig-')

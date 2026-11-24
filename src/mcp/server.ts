@@ -157,14 +157,14 @@ export function buildServer(id: string): McpServer {
     'fin_de_pause',
     {
       description:
-        "Lève une pause demandée avec `pause`, rien d'autre. Ne reprend PAS une mission bloquée : seul l'utilisateur la reprend (herness reprendre <id> puis validation), ou la débloque en validant un amendement.",
+        "Lève une pause demandée avec `pause`, rien d'autre. Ne reprend PAS une mission bloquée : seul l'utilisateur la reprend (herness resume <id> puis validation), ou la débloque en validant un amendement.",
     },
     guard(id, 'fin_de_pause', async () => {
       const s = await loadState(id)
       await postInbox(id, { type: 'resume' })
       const note =
         s.step === 'blocked'
-          ? ` La mission reste bloquée : seul l'utilisateur la reprend (herness reprendre ${id} puis validation), ou la débloque en validant un amendement.`
+          ? ` La mission reste bloquée : seul l'utilisateur la reprend (herness resume ${id} puis validation), ou la débloque en validant un amendement.`
           : ''
       return ok(`Fin de pause demandée.${note}`)
     }),

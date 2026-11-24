@@ -103,7 +103,7 @@ test('restartDetached lance herness reprendre --redemarrer détaché via node, s
     const [cmd, args, opts] = seen[0] as [string, string[], { detached: boolean; stdio: unknown[] }]
     expect(cmd).toBe('node')
     expect(args[0]).toMatch(/bin\/herness\.js$/)
-    expect(args.slice(1)).toEqual(['reprendre', 'm1', '--redemarrer'])
+    expect(args.slice(1)).toEqual(['resume', 'm1', '--restart'])
     expect(opts.detached).toBe(true)
     expect(opts.stdio[0]).toBe('ignore')
     expect(typeof opts.stdio[1]).toBe('number')

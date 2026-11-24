@@ -60,14 +60,14 @@ test('refusé : rien de redémarré, la commande est rappelée', async () => {
   const d = deps(false)
   await update({}, d, async () => [mission('a1', 'tasks')])
   expect(d.calls).not.toContain('restart a1')
-  expect(d.lines.at(-1)).toBe('Plus tard : herness reprendre <id> --redemarrer')
+  expect(d.lines.at(-1)).toBe('Plus tard : herness resume <id> --restart')
 })
 
 test('hors terminal : ne demande rien, liste les commandes', async () => {
   const d = { ...deps(true), isTTY: false }
   await update({}, d, async () => [mission('a1', 'tasks')])
   expect(d.calls).toEqual(['install'])
-  expect(d.lines).toContain('  herness reprendre a1 --redemarrer')
+  expect(d.lines).toContain('  herness resume a1 --restart')
 })
 
 test('un redémarrage en échec n’empêche pas les autres, puis erreur récapitulative', async () => {
@@ -77,7 +77,7 @@ test('un redémarrage en échec n’empêche pas les autres, puis erreur récapi
     if (id === 'a1') throw new Error('herdr absent')
   }
   await expect(update({}, d, async () => [mission('a1', 'tasks'), mission('b2', 'tasks')]))
-    .rejects.toThrow('redémarrage à relancer à la main : herness reprendre a1 --redemarrer')
+    .rejects.toThrow('redémarrage à relancer à la main : herness resume a1 --restart')
   expect(d.calls).toContain('restart b2')
   expect(d.lines).toContain('a1 : redémarrage échoué : herdr absent')
 })
@@ -109,7 +109,7 @@ test('lanceur installé : HERNESS_INSTALL_DIR, sinon XDG_DATA_HOME, sinon ~/.loc
 })
 
 test('la CLI accepte --version sur mise-a-jour sans le confondre avec --version de herness', async () => {
-  const r = await execa('node', ['bin/herness.js', 'mise-a-jour', '--help'], { reject: false, stdin: 'ignore' })
+  const r = await execa('node', ['bin/herness.js', 'update', '--help'], { reject: false, stdin: 'ignore' })
   expect(r.stdout).toContain('--version <x.y.z>')
 })
 

@@ -115,7 +115,7 @@ export async function startMission(input: string, cwd: string, deps: LifecycleDe
   const cfg = await (deps.loadConfig ?? loadProjectConfig)(cwd)
   const d = parseDemande(input)
   const id = d.kind === 'text' ? await nextFreeTextId(e.now()) : d.id
-  if (await exists(missionDir(id))) throw new Error(`mission ${id} déjà existante : utilise herness reprendre ${id}`)
+  if (await exists(missionDir(id))) throw new Error(`mission ${id} déjà existante : utilise herness resume ${id}`)
   const s = newState({ id, source: { kind: d.kind, ref: d.ref }, project: cfg.name, repoPath: cfg.repoPath })
   s.createdAt = e.now().toISOString()
 
@@ -148,8 +148,8 @@ export async function startMission(input: string, cwd: string, deps: LifecycleDe
 
   await e.herdr.paneRun(space.panes.engine, shellLine(hernessCommand(), `engine ${id}`))
   await e.herdr.paneRun(space.panes.tasks, shellLine(hernessCommand(), `tasks ${id}`))
-  await e.herdr.paneRun(space.panes.spec, shellLine(hernessCommand(), `voir spec ${id}`))
-  await e.herdr.paneRun(space.panes.plan, shellLine(hernessCommand(), `voir plan ${id}`))
+  await e.herdr.paneRun(space.panes.spec, shellLine(hernessCommand(), `show spec ${id}`))
+  await e.herdr.paneRun(space.panes.plan, shellLine(hernessCommand(), `show plan ${id}`))
   await startOrchestrator(s, e, cfg, space.panes.orchestrator, false)
   await openOrchestrator(id, e, orchestratorName(id))
   await e.herdr.tabFocus(space.tabs.master)
@@ -158,8 +158,8 @@ export async function startMission(input: string, cwd: string, deps: LifecycleDe
 }
 
 /**
- * `herness reprendre <id>` : rouvre l'espace, relance ce qui ne tourne plus ; une mission bloquée demande une porte
- * de reprise. `restart` (`--redemarrer`, après une mise à jour de herness) : moteur, tableau et visionneuses sont
+ * `herness resume <id>` : rouvre l'espace, relance ce qui ne tourne plus ; une mission bloquée demande une porte
+ * de reprise. `restart` (`--restart`, après une mise à jour de herness) : moteur, tableau et visionneuses sont
  * arrêtés puis relancés même s'ils tournent, pour exécuter le nouveau code ; rien n'est envoyé aux agents.
  */
 /** `focus` (vrai par défaut) : finit en focalisant l'onglet master ; le cockpit passe faux pour rester à l'écran. */
@@ -197,7 +197,7 @@ export async function resumeMission(id: string, deps: LifecycleDeps, opts: { res
       applySpace(s, space)
       await saveState(s)
     } else {
-      out(`attention : l'espace herdr de ${id} a changé alors que le moteur tourne ; arrête-le (ctrl+c dans le panneau engine) puis relance herness reprendre ${id}`)
+      out(`attention : l'espace herdr de ${id} a changé alors que le moteur tourne ; arrête-le (ctrl+c dans le panneau engine) puis relance herness resume ${id}`)
     }
   }
   if (engineStopped) {
@@ -206,7 +206,7 @@ export async function resumeMission(id: string, deps: LifecycleDeps, opts: { res
   }
   if (await paneIdle(e, space.panes.tasks)) await e.herdr.paneRun(space.panes.tasks, shellLine(hernessCommand(), `tasks ${id}`))
   for (const kind of ['spec', 'plan'] as const) {
-    if (await paneIdle(e, space.panes[kind])) await e.herdr.paneRun(space.panes[kind], shellLine(hernessCommand(), `voir ${kind} ${id}`))
+    if (await paneIdle(e, space.panes[kind])) await e.herdr.paneRun(space.panes[kind], shellLine(hernessCommand(), `show ${kind} ${id}`))
   }
   const orchestrator = s.orchestrator.agent ?? orchestratorName(id)
   if (!(await e.herdr.agentGet(orchestrator))) {
@@ -222,7 +222,7 @@ export async function resumeMission(id: string, deps: LifecycleDeps, opts: { res
     // Seul le moteur ouvre les portes : la demande passe par l'inbox.
     await postInbox(id, { type: 'request-gate', kind: 'resume-blocked', summary: s.blockedReason ?? 'mission bloquée' })
     out(`Mission bloquée : ${s.blockedReason ?? '(raison inconnue)'}`)
-    out(`Pour la reprendre à l'étape ${s.blockedFrom ?? '?'}, valide la porte de reprise : herness valider ${id}`)
+    out(`Pour la reprendre à l'étape ${s.blockedFrom ?? '?'}, valide la porte de reprise : herness approve ${id}`)
   }
   if (opts.focus !== false) await e.herdr.tabFocus(space.tabs.master)
 }
@@ -303,14 +303,14 @@ async function cleanBranch(s: MissionState, e: Effects, cfg: ProjectConfig, out:
 async function remindPendingErrors(id: string, out: (l: string) => void): Promise<void> {
   try {
     const n = (await pendingEntries(id)).length
-    if (n > 0) out(`${n} erreur(s) herness non remontée(s) : herness signaler ${id}`)
+    if (n > 0) out(`${n} erreur(s) herness non remontée(s) : herness report ${id}`)
   } catch {
     // Journal illisible : pas de rappel, la fermeture suit son cours.
   }
 }
 
 /**
- * `herness fermer <id>`. Commits non poussés ou worktree sale → confirmation dans un terminal interactif. Avec
+ * `herness close <id>`. Commits non poussés ou worktree sale → confirmation dans un terminal interactif. Avec
  * `opts.signaler` (ligne de commande), propose ensuite de remonter les erreurs herness avant d'arrêter le moteur
  * (seul écrivain de l'état ; s'il ne s'arrête pas, rien n'est fermé). Puis bases de test supprimées d'après l'état
  * relu (un échec arrête tout), worktree supprimé, état `closed` enregistré, et enfin l'espace herdr de la mission
@@ -356,7 +356,7 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
       if ((await pendingEntries(id)).length > 0) await reportMissionErrors(id, deps)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      out(`erreurs herness non remontées (${message}) : herness signaler ${id}`)
+      out(`erreurs herness non remontées (${message}) : herness report ${id}`)
     }
   } else {
     await remindPendingErrors(id, out)
@@ -379,7 +379,7 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
   }
   const branchDeleted = await cleanBranch(s, e, cfg, out)
   s.step = 'closed'
-  s.log.push({ at: e.now().toISOString(), msg: 'mission fermée (herness fermer)' })
+  s.log.push({ at: e.now().toISOString(), msg: 'mission fermée (herness close)' })
   await saveState(s)
   // En dernier : `fermer` peut être lancé depuis un panneau de cet espace.
   if (s.herdr.workspace && (!closed || (await e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace))) {
@@ -390,20 +390,20 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
 }
 
 /**
- * `herness supprimer` : efface le dossier d'une mission complètement fermée (état, spec, plan, journaux).
+ * `herness delete` : efface le dossier d'une mission complètement fermée (état, spec, plan, journaux).
  * Refuse tant qu'il reste quelque chose à fermer : `fermer` est le seul à arrêter moteur, bases et espace.
  */
 export async function deleteMission(id: string, deps: LifecycleDeps, opts: { force?: boolean } = {}): Promise<boolean> {
   const out = deps.out ?? console.log
   const s = await load(id)
-  if (s.step !== 'closed') throw new Error(`mission ${id} pas fermée : herness fermer ${id} d'abord`)
+  if (s.step !== 'closed') throw new Error(`mission ${id} pas fermée : herness close ${id} d'abord`)
   const left: string[] = []
   if (s.worktree && (await exists(s.worktree))) left.push(`le worktree ${s.worktree}`)
   if (s.herdr.workspace && (await deps.e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace)) left.push("l'espace herdr")
   if (s.testDbUp || s.proofDbUp) left.push('une base de test')
-  if (left.length > 0) throw new Error(`il reste ${left.join(', ')} : relance herness fermer ${id}`)
+  if (left.length > 0) throw new Error(`il reste ${left.join(', ')} : relance herness close ${id}`)
   if (!opts.force) {
-    if (!deps.isTTY || !deps.confirm) throw new Error('la suppression demande une confirmation dans un terminal interactif (ou --oui)')
+    if (!deps.isTTY || !deps.confirm) throw new Error('la suppression demande une confirmation dans un terminal interactif (ou --yes)')
     if (!(await deps.confirm(`Supprimer définitivement la mission ${id} (état, spec, plan, journaux) ?`))) {
       out('suppression annulée')
       return false
@@ -415,7 +415,7 @@ export async function deleteMission(id: string, deps: LifecycleDeps, opts: { for
 }
 
 /**
- * `herness signaler` : remonte les erreurs herness d'une mission en issues GitHub.
+ * `herness report` : remonte les erreurs herness d'une mission en issues GitHub.
  * Ne lit ni n'écrit `state.json` au-delà du chargement initial.
  */
 export async function reportMissionErrors(id: string, deps: LifecycleDeps, opts: { force?: boolean } = {}): Promise<boolean> {
@@ -427,11 +427,11 @@ export async function reportMissionErrors(id: string, deps: LifecycleDeps, opts:
     return true
   }
   if (!opts.force && !(deps.isTTY && deps.confirm)) {
-    throw new Error("l'envoi demande une confirmation dans un terminal interactif (ou --oui)")
+    throw new Error("l'envoi demande une confirmation dans un terminal interactif (ou --yes)")
   }
   for (const line of previewLines(id, plan)) out(line)
   if (!opts.force && deps.confirm && !(await deps.confirm(confirmQuestion(plan)))) {
-    out(`rien n'a été envoyé (herness signaler ${id} pour le refaire)`)
+    out(`rien n'a été envoyé (herness report ${id} pour le refaire)`)
     return false
   }
   for (const line of await sendReport(id, plan, deps.e.run, () => deps.e.now())) out(line)
@@ -443,7 +443,7 @@ function taskSummary(s: MissionState): string {
   return t ? `${t.n}/${s.tasks.length} ${t.phase}` : '-'
 }
 
-/** `herness statut [<id>]` : une ligne par mission, ou le détail d'une mission. */
+/** `herness status [<id>]` : une ligne par mission, ou le détail d'une mission. */
 export async function missionStatus(id?: string): Promise<string[]> {
   if (id === undefined) {
     const names = (await readdir(missionsRoot()).catch(() => [] as string[])).sort()

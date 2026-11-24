@@ -78,7 +78,7 @@ export function restart(id: string, d: ActionDeps, o: ResumeOpts = {}): Promise<
 
 /**
  * Redémarrage lancé hors de ce processus : depuis le panneau `tasks` de la mission, `resumeMission` interromprait ce
- * panneau lui-même au milieu du redémarrage. `herness reprendre <id> --redemarrer` survit à cette interruption ; sa
+ * panneau lui-même au milieu du redémarrage. `herness resume <id> --restart` survit à cette interruption ; sa
  * sortie va dans `<mission>/logs/redemarrage-<horodatage>.log` (rien n'est écrit dans le terminal d'ink).
  */
 export function restartDetached(
@@ -93,7 +93,7 @@ export function restartDetached(
     const fd = openSync(log, 'a')
     try {
       const c = hernessCommand()
-      const child = spawn(c.cmd, [...c.args, 'reprendre', id, '--redemarrer'], { detached: true, stdio: ['ignore', fd, fd] })
+      const child = spawn(c.cmd, [...c.args, 'resume', id, '--restart'], { detached: true, stdio: ['ignore', fd, fd] })
       await new Promise<void>((resolve, reject) => {
         child.once('spawn', () => resolve())
         child.once('error', (err) => reject(err ?? new Error('lancement impossible')))

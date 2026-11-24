@@ -89,7 +89,7 @@ export async function onCorrections(s: MissionState, e: Effects, what: string, r
   await informOrchestrator(
     s,
     e,
-    `${what} : la revue contredit le plan (${lines.length} remarque(s)). Porte ${g.id} (arbitrage) ouverte : expose la situation à l'utilisateur, qui tranche (herness valider|refuser ${s.id} --porte ${g.id}, avec une note). Les correctifs attendent sa décision.`,
+    `${what} : la revue contredit le plan (${lines.length} remarque(s)). Porte ${g.id} (arbitrage) ouverte : expose la situation à l'utilisateur, qui tranche (herness approve|reject ${s.id} --gate ${g.id}, avec une note). Les correctifs attendent sa décision.`,
   )
 }
 
@@ -137,7 +137,7 @@ export async function stopWithoutCommit(s: MissionState, e: Effects, h: StopHold
     e,
     `${what} : l'implémenteur s'est arrêté sans commit en laissant un compte rendu (${reportPath}). Porte ${g.id} (agent-stopped) ouverte. ` +
       `Lis ce compte rendu et explique-le à l'utilisateur. Si le plan est en cause, propose un amendement (proposer_amendement) : validé, il est appliqué aussitôt et l'implémenteur repart de la consigne amendée. ` +
-      `Sinon, l'utilisateur valide pour relancer l'implémenteur avec sa décision en note (herness valider ${s.id} --porte ${g.id} --note "…"), ou refuse pour bloquer la mission (herness refuser ${s.id} --porte ${g.id} --note "…").`,
+      `Sinon, l'utilisateur valide pour relancer l'implémenteur avec sa décision en note (herness approve ${s.id} --gate ${g.id} --note "…"), ou refuse pour bloquer la mission (herness reject ${s.id} --gate ${g.id} --note "…").`,
   )
   return 'continue'
 }
@@ -283,7 +283,7 @@ export async function settle(s: MissionState, e: Effects, h: AskHolder, what: st
   await informOrchestrator(
     s,
     e,
-    `L'agent ${name} (${what}) attend une intervention dans son panneau. Porte ${g.id} (agent-blocked) ouverte : l'utilisateur le débloque puis valide (herness valider ${s.id} --porte ${g.id}).`,
+    `L'agent ${name} (${what}) attend une intervention dans son panneau. Porte ${g.id} (agent-blocked) ouverte : l'utilisateur le débloque puis valide (herness approve ${s.id} --gate ${g.id}).`,
   )
   return 'wait'
 }

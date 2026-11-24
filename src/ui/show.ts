@@ -240,7 +240,7 @@ export function realViewerDeps(id: string): ViewerDeps {
   }
 }
 
-/** `herness voir <spec|plan> <id>` : tourne jusqu'à ctrl+c. */
+/** `herness show <spec|plan> <id>` : tourne jusqu'à ctrl+c. */
 export async function runViewer(kind: DocKind, id: string): Promise<void> {
   const viewer = new DocViewer(kind, missionDir(id), realViewerDeps(id))
   const stop = (): void => void viewer.close().finally(() => process.exit(0))

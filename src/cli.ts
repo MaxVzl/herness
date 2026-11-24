@@ -4,31 +4,31 @@ import { VERSION } from './version.ts'
 const program = new Command()
 program.name('herness').version(VERSION)
 
-// Sans argument : ouvre (ou crée) l'onglet cockpit du projet dans herdr.
+// No arguments: open (or create) the project's cockpit tab in herdr.
 program.action(async () => {
   const { Herdr } = await import('./herdr/client.ts')
   const h = new Herdr()
   const inHerdr = process.env.HERDR_ENV === '1' && (await h.paneCurrent().then(() => true, () => false))
   if (!inHerdr) {
-    console.log('hors herdr : lance « herness cockpit » dans un terminal')
+    console.log('outside herdr: run "herness cockpit" in a terminal')
     return
   }
   try {
     const { openCockpit } = await import('./ui/location.ts')
     await openCockpit(process.cwd(), h)
   } catch (e) {
-    console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+    console.error(`herness: ${e instanceof Error ? e.message : String(e)}`)
     process.exitCode = 1
   }
 })
 
-// Écran du cockpit : missions du projet du dossier courant ; hors TTY, une seule image.
+// Cockpit screen: missions of the project in the current directory; outside a TTY, a single frame.
 program
   .command('cockpit')
-  .description('Cockpit des missions du projet (↑/↓ mission, v/r/n porte, p/R/f/o, + nouvelle mission, a terminées, q quitter)')
+  .description('Project mission cockpit (↑/↓ mission, v/r/n gate, p/R/f/o, + new mission, a finished, q quit)')
   .action(async () => {
     try {
-      // Aucune invite de git/ssh pendant qu'ink dessine.
+      // No git/ssh prompt while ink is drawing.
       const { prepareTuiEnv } = await import('./ui/tui-env.ts')
       prepareTuiEnv(process.env)
       const { default: React } = await import('react')
@@ -51,12 +51,12 @@ program
       const { Cockpit } = await import('./ui/cockpit.tsx')
       await render(React.createElement(Cockpit, { repoPath: cfg.repoPath, name: cfg.name })).waitUntilExit()
     } catch (e) {
-      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      console.error(`herness: ${e instanceof Error ? e.message : String(e)}`)
       process.exitCode = 1
     }
   })
 
-// Serveur MCP de l'orchestrateur : rien d'autre que le protocole ne doit écrire sur stdout.
+// Orchestrator MCP server: nothing but the protocol may write to stdout.
 program
   .command('mcp <id>', { hidden: true })
   .action(async (id: string) => {
@@ -69,7 +69,7 @@ program
     })
   })
 
-// Moteur de la mission : lancé par herness dans le panneau `engine`, seul écrivain de state.json.
+// Mission engine: started by herness in the `engine` pane, sole writer of state.json.
 program
   .command('engine <id>', { hidden: true })
   .action(async (id: string) => {
@@ -91,8 +91,8 @@ async function askYesNo(question: string): Promise<boolean> {
   const { createInterface } = await import('node:readline/promises')
   const rl = createInterface({ input: process.stdin, output: process.stdout })
   try {
-    const answer = (await rl.question(`${question} (o/N) `)).trim().toLowerCase()
-    return answer === 'o' || answer === 'oui'
+    const answer = (await rl.question(`${question} (y/N) `)).trim().toLowerCase()
+    return answer === 'y' || answer === 'yes'
   } finally {
     rl.close()
   }
@@ -101,37 +101,37 @@ async function askYesNo(question: string): Promise<boolean> {
 async function runDecision(
   id: string,
   decision: 'approved' | 'refused',
-  opts: { porte?: string; note?: string },
+  opts: { gate?: string; note?: string },
 ): Promise<void> {
   try {
     const { decide } = await import('./engine/gates.ts')
     await decide(id, decision, {
-      ...(opts.porte !== undefined ? { gateId: opts.porte } : {}),
+      ...(opts.gate !== undefined ? { gateId: opts.gate } : {}),
       ...(opts.note !== undefined ? { note: opts.note } : {}),
       isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
-      confirm: () => askYesNo(decision === 'approved' ? 'Valider cette porte ?' : 'Refuser cette porte ?'),
+      confirm: () => askYesNo(decision === 'approved' ? 'Approve this gate?' : 'Reject this gate?'),
     })
   } catch (e) {
-    console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+    console.error(`herness: ${e instanceof Error ? e.message : String(e)}`)
     process.exitCode = 1
   }
 }
 
 program
-  .command('valider <id>')
-  .description('Valider une porte en attente (terminal interactif uniquement)')
-  .option('--porte <gateId>', 'identifiant de la porte (défaut : la plus ancienne en attente)')
-  .option('--note <texte>', 'commentaire')
-  .action((id: string, opts: { porte?: string; note?: string }) => runDecision(id, 'approved', opts))
+  .command('approve <id>')
+  .description('Approve a pending gate (interactive terminal only)')
+  .option('--gate <gateId>', 'gate id (default: the oldest pending one)')
+  .option('--note <text>', 'comment')
+  .action((id: string, opts: { gate?: string; note?: string }) => runDecision(id, 'approved', opts))
 
 program
-  .command('refuser <id>')
-  .description('Refuser une porte en attente (terminal interactif uniquement)')
-  .option('--porte <gateId>', 'identifiant de la porte (défaut : la plus ancienne en attente)')
-  .option('--note <texte>', 'motif du refus (obligatoire)')
-  .action(async (id: string, opts: { porte?: string; note?: string }) => {
+  .command('reject <id>')
+  .description('Reject a pending gate (interactive terminal only)')
+  .option('--gate <gateId>', 'gate id (default: the oldest pending one)')
+  .option('--note <text>', 'reason for rejecting (required)')
+  .action(async (id: string, opts: { gate?: string; note?: string }) => {
     if (!opts.note) {
-      console.error('herness : option requise : --note <texte> (motif du refus)')
+      console.error('herness: required option: --note <text> (reason for rejecting)')
       process.exitCode = 1
       return
     }
@@ -147,36 +147,36 @@ async function lifecycle(fn: (deps: import('./lifecycle.ts').LifecycleDeps) => P
       confirm: askYesNo,
     })
   } catch (e) {
-    console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+    console.error(`herness: ${e instanceof Error ? e.message : String(e)}`)
     process.exitCode = 1
   }
 }
 
 program
-  .command('dev <demande...>')
-  .description('Démarrer une mission : lien Wrike, issue GitHub ou texte libre')
-  .option('--note <texte>', 'précisions qui complètent la demande')
-  .action((demande: string[], opts: { note?: string }) =>
+  .command('dev <request...>')
+  .description('Start a mission: Wrike link, GitHub issue, or free text')
+  .option('--note <text>', 'details that complement the request')
+  .action((request: string[], opts: { note?: string }) =>
     lifecycle(async (deps) => {
       const { startMission } = await import('./lifecycle.ts')
-      await startMission(demande.join(' '), process.cwd(), deps, opts.note !== undefined ? { note: opts.note } : {})
+      await startMission(request.join(' '), process.cwd(), deps, opts.note !== undefined ? { note: opts.note } : {})
     }),
   )
 
 program
-  .command('reprendre <id>')
-  .description("Rouvrir l'espace d'une mission et relancer ce qui ne tourne plus")
-  .option('--redemarrer', 'arrêter puis relancer moteur, tableau et visionneuses même en cours (après une mise à jour de herness)')
-  .action((id: string, opts: { redemarrer?: boolean }) =>
+  .command('resume <id>')
+  .description('Reopen a mission workspace and restart whatever is no longer running')
+  .option('--restart', 'stop then restart the engine, dashboard and viewers even if they are running (after a herness update)')
+  .action((id: string, opts: { restart?: boolean }) =>
     lifecycle(async (deps) => {
       const { resumeMission } = await import('./lifecycle.ts')
-      await resumeMission(id, deps, { restart: opts.redemarrer === true })
+      await resumeMission(id, deps, { restart: opts.restart === true })
     }),
   )
 
 program
-  .command('fermer <id>')
-  .description('Fermer une mission : base de test, moteur, worktree et espace herdr')
+  .command('close <id>')
+  .description('Close a mission: test database, engine, worktree and herdr workspace')
   .action((id: string) =>
     lifecycle(async (deps) => {
       const { closeMission } = await import('./lifecycle.ts')
@@ -185,30 +185,30 @@ program
   )
 
 program
-  .command('signaler <id>')
-  .description("Remonter en issues GitHub (MaxVzl/herness) les erreurs herness d'une mission")
-  .option('--oui', 'sans demander de confirmation')
-  .action((id: string, opts: { oui?: boolean }) =>
+  .command('report <id>')
+  .description("File GitHub issues (MaxVzl/herness) for a mission's herness errors")
+  .option('--yes', 'skip confirmation')
+  .action((id: string, opts: { yes?: boolean }) =>
     lifecycle(async (deps) => {
       const { reportMissionErrors } = await import('./lifecycle.ts')
-      await reportMissionErrors(id, deps, { force: opts.oui === true })
+      await reportMissionErrors(id, deps, { force: opts.yes === true })
     }),
   )
 
 program
-  .command('supprimer <id>')
-  .description("Supprimer le dossier d'une mission fermée (état, spec, plan, journaux)")
-  .option('--oui', 'sans demander de confirmation')
-  .action((id: string, opts: { oui?: boolean }) =>
+  .command('delete <id>')
+  .description('Delete a closed mission folder (state, spec, plan, logs)')
+  .option('--yes', 'skip confirmation')
+  .action((id: string, opts: { yes?: boolean }) =>
     lifecycle(async (deps) => {
       const { deleteMission } = await import('./lifecycle.ts')
-      await deleteMission(id, deps, { force: opts.oui === true })
+      await deleteMission(id, deps, { force: opts.yes === true })
     }),
   )
 
 program
   .command('init')
-  .description("Créer la config herness du dépôt courant, puis proposer de l'affiner avec Claude")
+  .description('Create the herness config for the current repository, then offer to refine it with Claude')
   .action(async () => {
     try {
       const { initProject } = await import('./config/init.ts')
@@ -222,32 +222,32 @@ program
         log: (line) => console.log(line),
       })
     } catch (e) {
-      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      console.error(`herness: ${e instanceof Error ? e.message : String(e)}`)
       process.exitCode = 1
     }
   })
 
 program
-  .command('projet')
-  .description('Config herness du dépôt courant : fichier, dépôt, validité')
+  .command('project')
+  .description('herness config for the current repository: file, repository, validity')
   .action(async () => {
     try {
       const { findProjectConfig } = await import('./config/project.ts')
       const { config, file } = await findProjectConfig(process.cwd())
-      console.log(`projet ${config.name}`)
-      console.log(`config : ${file}`)
-      console.log(`dépôt : ${config.repoPath}`)
-      console.log('config valide')
+      console.log(`project ${config.name}`)
+      console.log(`config: ${file}`)
+      console.log(`repo: ${config.repoPath}`)
+      console.log('config valid')
     } catch (e) {
-      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      console.error(`herness: ${e instanceof Error ? e.message : String(e)}`)
       process.exitCode = 1
     }
   })
 
 program
-  .command('mise-a-jour')
-  .description('Installer la dernière version de herness (ou --version), puis proposer de redémarrer les missions en cours')
-  .option('--version <x.y.z>', 'version à installer (retour arrière compris)')
+  .command('update')
+  .description('Install the latest herness version (or --version), then offer to restart running missions')
+  .option('--version <x.y.z>', 'version to install (including a downgrade)')
   .action(async (opts: { version?: string }) => {
     try {
       const { update, installedBin, INSTALL_SCRIPT_URL } = await import('./update.ts')
@@ -258,37 +258,37 @@ program
           await execa('sh', ['-s', '--', ...args], { input: script, stdout: 'inherit', stderr: 'inherit' })
         },
         restart: async (id) => {
-          await execa(installedBin(), ['reprendre', id, '--redemarrer'], { stdio: 'inherit' })
+          await execa(installedBin(), ['resume', id, '--restart'], { stdio: 'inherit' })
         },
         isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
         confirm: askYesNo,
         out: (line) => console.log(line),
       })
     } catch (e) {
-      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      console.error(`herness: ${e instanceof Error ? e.message : String(e)}`)
       process.exitCode = 1
     }
   })
 
 program
-  .command('statut [id]')
-  .description("État des missions, ou détail d'une mission")
+  .command('status [id]')
+  .description('State of the missions, or the detail of one mission')
   .action(async (id?: string) => {
     try {
       const { missionStatus } = await import('./lifecycle.ts')
       for (const line of await missionStatus(id)) console.log(line)
     } catch (e) {
-      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      console.error(`herness: ${e instanceof Error ? e.message : String(e)}`)
       process.exitCode = 1
     }
   })
 
 program
   .command('tasks <id>')
-  .description("Tableau de bord d'une mission : les gestes du cockpit sur cette mission (c retour au cockpit, q quitter)")
+  .description('Mission dashboard: the cockpit actions for this mission (c back to the cockpit, q quit)')
   .action(async (id: string) => {
     try {
-      // Aucune invite de git/ssh pendant qu'ink dessine.
+      // No git/ssh prompt while ink is drawing.
       const { prepareTuiEnv } = await import('./ui/tui-env.ts')
       prepareTuiEnv(process.env)
       const { default: React } = await import('react')
@@ -302,21 +302,21 @@ program
       }
       await render(React.createElement(TasksDashboard, { id })).waitUntilExit()
     } catch (e) {
-      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      console.error(`herness: ${e instanceof Error ? e.message : String(e)}`)
       process.exitCode = 1
     }
   })
 
 program
-  .command('voir <doc> <id>')
-  .description('Afficher la spec ou le plan de la mission, rechargé à chaque modification (panneaux spec et plan)')
+  .command('show <doc> <id>')
+  .description('Show the mission spec or plan, reloaded on every change (spec and plan panes)')
   .action(async (doc: string, id: string) => {
     try {
-      if (doc !== 'spec' && doc !== 'plan') throw new Error(`document inconnu : « ${doc} » (spec ou plan)`)
-      const { runViewer } = await import('./ui/voir.ts')
+      if (doc !== 'spec' && doc !== 'plan') throw new Error(`unknown document: "${doc}" (spec or plan)`)
+      const { runViewer } = await import('./ui/show.ts')
       await runViewer(doc, id)
     } catch (e) {
-      console.error(`herness : ${e instanceof Error ? e.message : String(e)}`)
+      console.error(`herness: ${e instanceof Error ? e.message : String(e)}`)
       process.exitCode = 1
     }
   })

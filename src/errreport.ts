@@ -168,7 +168,7 @@ function reportText(missionId: string, g: ReportGroup, home: string | undefined,
   const originLine = steps.length > 0 ? `- Origine : ${origin} (étape ${steps.join(', ')})` : `- Origine : ${origin}`
   const lines = [
     kind === 'issue'
-      ? `Remontée automatiquement par \`herness signaler\` (mission ${missionId}).`
+      ? `Remontée automatiquement par \`herness report\` (mission ${missionId}).`
       : `Revue dans la mission ${missionId}.`,
     '',
     `- Version : herness ${versions.join(', ')}`,

@@ -42,7 +42,7 @@ test('restartDetached lance le lanceur installé', async () => {
   await restartDetached('m1', spawn, () => new Date('2026-11-02T10:11:12.000Z'))
   const [cmd, args] = seen[0] as [string, string[]]
   expect(cmd).toBe('/inst/current/bin/herness')
-  expect(args).toEqual(['reprendre', 'm1', '--redemarrer'])
+  expect(args).toEqual(['resume', 'm1', '--restart'])
 })
 
 const LAUNCHER = "'/inst/current/bin/herness'"
@@ -61,8 +61,8 @@ test('startMission lance moteur, tableau et visionneuses par le lanceur install�
   expect(h.runs.map((r) => r.cmd)).toEqual(expect.arrayContaining([
     `${LAUNCHER} engine ${id}`,
     `${LAUNCHER} tasks ${id}`,
-    `${LAUNCHER} voir spec ${id}`,
-    `${LAUNCHER} voir plan ${id}`,
+    `${LAUNCHER} show spec ${id}`,
+    `${LAUNCHER} show plan ${id}`,
   ]))
 })
 
@@ -78,8 +78,8 @@ test('resumeMission relance moteur, tableau et visionneuses arrêtés par le lan
   expect(h.runs.map((r) => r.cmd)).toEqual(expect.arrayContaining([
     `${LAUNCHER} engine ${id}`,
     `${LAUNCHER} tasks ${id}`,
-    `${LAUNCHER} voir spec ${id}`,
-    `${LAUNCHER} voir plan ${id}`,
+    `${LAUNCHER} show spec ${id}`,
+    `${LAUNCHER} show plan ${id}`,
   ]))
 })
 

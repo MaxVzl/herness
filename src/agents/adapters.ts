@@ -58,7 +58,7 @@ export function agentArgs(role: Role, o: AgentOptions): AgentLaunch {
       args.push(
         '--add-dir', o.missionDir,
         '--name', `herness-${basename(o.missionDir)}`,
-        '--disallowedTools', 'Bash(herness valider:*)', 'Bash(herness refuser:*)', absRule('Edit', o.missionDir, 'inbox/**'),
+        '--disallowedTools', 'Bash(herness approve:*)', 'Bash(herness reject:*)', absRule('Edit', o.missionDir, 'inbox/**'),
         'Bash(herdr:*)', 'Bash(script:*)', 'Bash(unbuffer:*)',
       );
       return { kind: 'claude', args };

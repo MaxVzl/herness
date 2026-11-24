@@ -110,7 +110,7 @@ const value = (v: unknown): string => JSON.stringify(v, null, 2).replace(/\n/g, 
 export function configSource(d: Detected, date: string): string {
   const field = (k: string, v: unknown): string => `  ${k}: ${value(v)},\n`
   return `// Config herness du projet ${d.name}, générée par « herness init » le ${date}.
-// Champs : section « Ajouter un projet » du README de herness. Vérifier avec « herness projet ».
+// Champs : section « Ajouter un projet » du README de herness. Vérifier avec « herness project ».
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -192,8 +192,8 @@ export async function initProject(cwd: string, deps: InitDeps): Promise<FoundCon
   // `--add-dir` prend plusieurs dossiers : sans `--`, la consigne serait lue comme un dossier de plus.
   await deps.claude(['--model', found.config.models.orchestrator, '--add-dir', dir, '--', prompt], root)
   // La config vient d'être réécrite : ce processus l'a déjà importée, on la revalide ailleurs.
-  const check = await run('node', [BIN, 'projet'], { cwd: root, reject: false })
-  if (check.exitCode !== 0) throw new Error(`config à corriger après Claude : ${(check.stderr || check.stdout).replace(/^herness : /, '').trim()}`)
+  const check = await run('node', [BIN, 'project'], { cwd: root, reject: false })
+  if (check.exitCode !== 0) throw new Error(`config à corriger après Claude : ${(check.stderr || check.stdout).replace(/^herness: /, '').trim()}`)
   deps.log(`config valide : ${found.file}`)
   return found
 }

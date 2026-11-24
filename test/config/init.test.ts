@@ -113,7 +113,7 @@ test('accepté : lance Claude à la racine du dépôt avec le dossier de config 
   expect(args.slice(0, 5)).toEqual(['--model', 'claude-opus-5-5', '--add-dir', join(dir, found.config.name), '--'])
   expect(args).toHaveLength(6)
   expect(args[5]).toContain(found.file)
-  expect(args[5]).toContain('herness projet')
+  expect(args[5]).toContain('herness project')
   expect(d.lines.at(-1)).toBe(`config valide : ${found.file}`)
 })
 

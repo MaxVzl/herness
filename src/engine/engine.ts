@@ -362,7 +362,7 @@ export class Engine {
           // Consommée : sa note n'entrera pas dans un fichier de correctifs ultérieur sans rapport avec elle.
           s.consumedArbitrages.push(g.id)
           log(s, e, `arbitrage ${g.id} ${g.status === 'approved' ? 'validé' : 'refusé'} sans effet : aucune correction n'attendait de décision`)
-          const hint = s.step === 'blocked' ? ` La mission reste bloquée : l'utilisateur la reprend avec herness reprendre ${s.id} puis validation, ou la débloque en validant un amendement.` : ''
+          const hint = s.step === 'blocked' ? ` La mission reste bloquée : l'utilisateur la reprend avec herness resume ${s.id} puis validation, ou la débloque en validant un amendement.` : ''
           await informOrchestrator(s, e, `arbitrage ${g.id} sans effet : aucune correction n'attendait de décision.${hint}`)
           return
         }
@@ -400,7 +400,7 @@ export class Engine {
         const g = openGate(s, m.kind, summary, m.path, m.hash)
         log(s, e, `porte ${g.id} (${g.kind}) ouverte : ${g.summary}`)
         await notify(s, e, `Porte ${g.kind} à valider : ${g.summary}`)
-        await informOrchestrator(s, e, `Porte ${g.id} (${g.kind}) ouverte, en attente de la décision de l'utilisateur (herness valider|refuser ${s.id} --porte ${g.id}).`)
+        await informOrchestrator(s, e, `Porte ${g.id} (${g.kind}) ouverte, en attente de la décision de l'utilisateur (herness approve|reject ${s.id} --gate ${g.id}).`)
         return
       }
       case 'classified': {
@@ -445,7 +445,7 @@ export class Engine {
         const g = openGate(s, 'abandon', m.reason)
         log(s, e, `porte ${g.id} (abandon) ouverte : ${m.reason}`)
         await notify(s, e, `Abandon à valider : ${m.reason}`)
-        await informOrchestrator(s, e, `Porte ${g.id} (abandon) ouverte, en attente de la décision de l'utilisateur (herness valider|refuser ${s.id} --porte ${g.id}).`)
+        await informOrchestrator(s, e, `Porte ${g.id} (abandon) ouverte, en attente de la décision de l'utilisateur (herness approve|reject ${s.id} --gate ${g.id}).`)
         return
       }
     }
@@ -466,7 +466,7 @@ export class Engine {
       return
     }
     log(s, e, `amendement ${gateId} appliqué, la mission reste bloquée (${s.blockedReason ?? '?'})`)
-    await informOrchestrator(s, e, `Amendement ${gateId} appliqué, mission toujours bloquée : herness reprendre ${s.id} pour la relancer.`)
+    await informOrchestrator(s, e, `Amendement ${gateId} appliqué, mission toujours bloquée : herness resume ${s.id} pour la relancer.`)
   }
 
   /** Mission bloquée : ce que changera la validation d'un amendement, à ajouter au résumé de sa porte. */

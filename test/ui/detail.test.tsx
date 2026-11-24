@@ -564,7 +564,7 @@ test('missionActions relie les actions aux dépendances', async () => {
     await rm(home, { recursive: true, force: true })
   })
   expect(seen).toHaveLength(3)
-  expect(spawned).toEqual([['node', ['reprendre', 'T-1', '--redemarrer'], expect.objectContaining({ detached: true })], 'unref'])
+  expect(spawned).toEqual([['node', ['resume', 'T-1', '--restart'], expect.objectContaining({ detached: true })], 'unref'])
   expect(r.lines[0]).toMatch(/^redémarrage lancé \(ce panneau va se relancer\) ; journal : .*redemarrage-.*\.log$/)
 })
 

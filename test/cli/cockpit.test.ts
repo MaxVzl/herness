@@ -7,7 +7,7 @@ const run = (env: Record<string, string>, ...args: string[]) =>
 test('herness sans argument hors herdr : message et code 0', async () => {
   const r = await run({ PATH: process.env.PATH ?? '' })
   expect(r.exitCode).toBe(0)
-  expect(r.stdout).toContain('hors herdr')
+  expect(r.stdout).toContain('outside herdr: run "herness cockpit" in a terminal')
 })
 
 test('commande inconnue : code non nul', async () => {
