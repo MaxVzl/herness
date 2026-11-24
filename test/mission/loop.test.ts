@@ -67,7 +67,7 @@ describe('nextLoopRound', () => {
     expect(nextLoopRound(1)).toEqual({ round: 2, fixer: 'new' });
     expect(nextLoopRound(2)).toEqual({ round: 3, fixer: 'strong' });
   });
-  it('nextLoopRound(3) bloque', () => {
+  it('nextLoopRound(3) blocks', () => {
     expect(nextLoopRound(3)).toEqual({ round: 4, fixer: 'none', blocked: '3 correction rounds exhausted' });
   });
 });

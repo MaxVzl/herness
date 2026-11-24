@@ -81,7 +81,7 @@ test('dev creates the workspace, saves the state, then starts the engine, dashbo
   expect(prompt).not.toContain('Tu réponds en français')
   expect(prompt).toContain(join(missionDir('gh12'), 'request.md'))
   // After the PR: the mission branch read from the worktree (renamed at classification), the project main and
-  // preflight de la config, en clair.
+  // the project preflight, spelled out.
   expect(prompt).toContain('git push --force-with-lease origin HEAD')
   expect(prompt).toContain('git branch --show-current')
   expect(prompt).not.toContain('herness/gh12')
@@ -163,7 +163,7 @@ test('dev stops on an environment KO without creating anything', async () => {
   expect(fx.callsOf('agents.start')).toEqual([])
 })
 
-// ---------- missions existantes ----------
+// ---------- existing missions ----------
 
 /** Mission created by `dev` with the herdr fake (workspace, tabs, real panes of the fake). */
 async function started(over: FakeOverrides = {}, extra: Extra = {}) {
@@ -263,6 +263,12 @@ test('delete refuses a closed mission whose herdr workspace still exists', async
   await patch({ step: 'closed' })
   await expect(deleteMission('gh12', d)).rejects.toThrow(/the herdr workspace is still there: run herness close gh12/)
   expect(await exists(missionDir('gh12'))).toBe(true)
+})
+
+test('delete names every leftover and agrees in the plural', async () => {
+  const { d } = await started({ git: { unpushedCount: async () => 0 } }, { isTTY: true, confirm: async () => true })
+  await patch({ step: 'closed', testDbUp: true })
+  await expect(deleteMission('gh12', d)).rejects.toThrow('the herdr workspace, a test database are still there: run herness close gh12 again')
 })
 
 test('delete removes a closed mission folder after confirmation', async () => {
@@ -466,7 +472,7 @@ test("resume: orchestrator alive but never started on the mission, the opening p
 test('status lists missions and details one mission', async () => {
   const a = { ...newState({ id: 'A-1', source: { kind: 'text', ref: 'x' }, project: 'demo', repoPath: repo }), step: 'tasks' as const }
   a.tasks = [
-    { n: 1, title: 'Un', testCommand: 't1', phase: 'done', round: 0 },
+    { n: 1, title: 'One', testCommand: 't1', phase: 'done', round: 0 },
     { n: 2, title: 'Two', testCommand: 't2', phase: 'review', round: 1 },
   ]
   a.gates = [{ id: 'g1', kind: 'amendment', status: 'pending', summary: 'add', createdAt: 'x' }]

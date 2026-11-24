@@ -405,7 +405,7 @@ export async function deleteMission(id: string, deps: LifecycleDeps, opts: { for
   if (s.worktree && (await exists(s.worktree))) left.push(`the worktree ${s.worktree}`)
   if (s.herdr.workspace && (await deps.e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace)) left.push('the herdr workspace')
   if (s.testDbUp || s.proofDbUp) left.push('a test database')
-  if (left.length > 0) throw new Error(`${left.join(', ')} is still there: run herness close ${id} again`)
+  if (left.length > 0) throw new Error(`${left.join(', ')} ${left.length > 1 ? 'are' : 'is'} still there: run herness close ${id} again`)
   if (!opts.force) {
     if (!deps.isTTY || !deps.confirm) throw new Error('deletion requires confirmation in an interactive terminal (or --yes)')
     if (!(await deps.confirm(`Permanently delete mission ${id} (state, spec, plan, logs)?`))) {

@@ -41,43 +41,43 @@ test('parseErrorLog reads both (étape X) and (step X) headers', () => {
     '=== 2026-01-01T00:00:00.000Z · mission m1 · herness 1.0.0 · moteur (étape tasks)',
     'ancien',
     '',
-    '=== 2026-01-02T00:00:00.000Z · mission m1 · herness 1.0.0 · moteur (step preflight)',
-    'nouveau',
+    '=== 2026-01-02T00:00:00.000Z · mission m1 · herness 1.0.0 · engine (step preflight)',
+    'new',
     '',
   ].join('\n')
   const entries = parseErrorLog(text)
   expect(entries.map((e) => ({ origin: e.origin, step: e.step, body: e.body }))).toEqual([
     { origin: 'moteur', step: 'tasks', body: 'ancien' },
-    { origin: 'moteur', step: 'preflight', body: 'nouveau' },
+    { origin: 'engine', step: 'preflight', body: 'new' },
   ])
 })
 
 test('splits two entries and reads their header', async () => {
-  await logHernessError({ mission: 'm1', origin: 'moteur', step: 'tasks' }, new Error('boum'))
-  await logHernessError({ origin: 'lancement du moteur' }, 'texte')
+  await logHernessError({ mission: 'm1', origin: 'engine', step: 'tasks' }, new Error('boom'))
+  await logHernessError({ origin: 'engine startup' }, 'text')
   const entries = parseErrorLog(await readLog())
   expect(entries).toHaveLength(2)
   const first = item(entries, 0)
   const second = item(entries, 1)
-  expect(first).toMatchObject({ mission: 'm1', origin: 'moteur', step: 'tasks', version: VERSION })
-  expect(first.body.startsWith('Error: boum')).toBe(true)
+  expect(first).toMatchObject({ mission: 'm1', origin: 'engine', step: 'tasks', version: VERSION })
+  expect(first.body.startsWith('Error: boom')).toBe(true)
   expect(second.mission).toBeUndefined()
   expect(second.step).toBeUndefined()
-  expect(second.body).toBe('texte')
+  expect(second.body).toBe('text')
 })
 
 test('a body with blank lines and a cause stays a single entry', async () => {
-  await logHernessError({ origin: 'moteur' }, new Error('haut', { cause: new Error('bas') }))
-  await logHernessError({ mission: 'm1', origin: "signalement de l'orchestrateur" }, 'ligne 1\n\nligne 3')
+  await logHernessError({ origin: 'engine' }, new Error('top', { cause: new Error('bottom') }))
+  await logHernessError({ mission: 'm1', origin: 'orchestrator anomaly report' }, 'line 1\n\nline 3')
   const entries = parseErrorLog(await readLog())
   expect(entries).toHaveLength(2)
   expect(item(entries, 0).body).toContain('cause:')
-  expect(item(entries, 0).body).toContain('Error: bas')
-  expect(item(entries, 1).body).toBe('ligne 1\n\nligne 3')
+  expect(item(entries, 0).body).toContain('Error: bottom')
+  expect(item(entries, 1).body).toBe('line 1\n\nline 3')
 })
 
 test("an unreadable === line does not create an entry", () => {
-  expect(parseErrorLog("=== n'importe quoi\n")).toEqual([])
+  expect(parseErrorLog('=== not a header\n')).toEqual([])
 })
 
 test('entryHash differs for two identical entries at different times', async () => {
@@ -96,7 +96,7 @@ test('entryHash differs for two identical entries at different times', async () 
 test('the signature ignores step, version and stack, not the first line', async () => {
   await logHernessError({ origin: 'engine', step: 'tasks' }, new Error('same'))
   await logHernessError({ origin: 'engine', step: 'preflight' }, new Error('same'))
-  await logHernessError({ origin: 'moteur', step: 'tasks' }, new Error('autre'))
+  await logHernessError({ origin: 'engine', step: 'tasks' }, new Error('other'))
   const entries = parseErrorLog(await readLog())
   const same = item(entries, 0)
   const sameAgain = item(entries, 1)

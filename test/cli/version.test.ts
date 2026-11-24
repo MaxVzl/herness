@@ -3,7 +3,7 @@ import { execa } from 'execa'
 import { expect, test } from 'vitest'
 import { VERSION } from '../../src/version.ts'
 
-test('herness --version affiche la version de package.json', async () => {
+test('herness --version prints the package.json version', async () => {
   const { version } = JSON.parse(await readFile('package.json', 'utf8')) as { version: string }
   expect(VERSION).toBe(version)
   const r = await execa('node', ['bin/herness.js', '--version'], { reject: false, stdin: 'ignore' })

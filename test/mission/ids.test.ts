@@ -24,13 +24,13 @@ test('Wrike link without an id throws', () => {
   expect(() => parseRequest('https://www.wrike.com/open.htm')).toThrow('Wrike link without an id')
 })
 
-test('issue GitHub', () => {
-  const ref = 'https://github.com/demo/projet/issues/42'
+test('GitHub issue', () => {
+  const ref = 'https://github.com/demo/project/issues/42'
   expect(parseRequest(ref)).toEqual({ kind: 'github', id: 'gh42', number: 42, ref })
 })
 
 test('free text', () => {
-  expect(parseRequest('corrige le bouton export')).toEqual({ kind: 'text', ref: 'corrige le bouton export' })
+  expect(parseRequest('fix the export button')).toEqual({ kind: 'text', ref: 'fix the export button' })
 })
 
 test('nextFreeTextId increments from existing directories', async () => {

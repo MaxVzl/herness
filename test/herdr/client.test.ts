@@ -13,7 +13,7 @@ beforeEach(() => {
   for (const k of Object.keys(replies)) delete replies[k]
 })
 
-test.each(['working', 'starting', 'something-else'])("agentPrompt/agentWait: a status « %s » is never taken as a finish (timeout, raw status logged)", async (raw) => {
+test.each(['working', 'starting', 'something-else'])('agentPrompt/agentWait: a status "%s" is never taken as a finish (timeout, raw status logged)', async (raw) => {
   const logs: string[] = []
   const h = new Herdr((m) => logs.push(m))
   replies['agent prompt'] = status(raw)

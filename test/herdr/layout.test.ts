@@ -92,7 +92,7 @@ describe('slot', () => {
 
   it('splits a wide pane to the right and a tall pane downward', async () => {
     const { h, tab, pane } = setup();
-    h.pane(pane).label = 'T1'; // racine 200x60 : large (200 > 2*60)
+    h.pane(pane).label = 'T1'; // 200x60 root: wide (200 > 2*60)
     const p2 = await slot(h, tab, '/wt', 'T2');
     expect(h.calls.at(-2)).toMatch(/^paneSplit right/);
     expect(h.pane(p2).rect.x).toBeGreaterThan(0);

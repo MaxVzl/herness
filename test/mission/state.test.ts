@@ -25,7 +25,7 @@ afterEach(async () => {
 
 const init = {
   id: 'T-1',
-  source: { kind: 'text' as const, ref: 'faire un truc' },
+  source: { kind: 'text' as const, ref: 'do something' },
   project: 'demo',
   repoPath: '/tmp/repo',
 }

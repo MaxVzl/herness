@@ -282,7 +282,7 @@ describe('rebaseOnto, unpushedCount, isAncestor', () => {
     await rm(bare, { recursive: true, force: true });
   });
 
-  /** Fait avancer `origin/main` d'un commit touchant `file`, depuis un clone. */
+  /** Advances `origin/main` by one commit touching `file`, from a clone. */
   async function advanceMain(file: string, content: string) {
     const clone = `${dir}-clone`;
     await run('git', ['clone', '-q', bare, clone]);

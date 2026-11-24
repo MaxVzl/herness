@@ -23,62 +23,62 @@ test('errorLogPath is <HERNESS_HOME>/errors.log', () => {
 })
 
 test('logHernessError writes to errors.log with a (step X) header', async () => {
-  await logHernessError({ mission: 'T-1', origin: 'moteur', step: 'tasks' }, new Error('boum'))
+  await logHernessError({ mission: 'T-1', origin: 'engine', step: 'tasks' }, new Error('boom'))
   const text = await readFile(join(home, 'errors.log'), 'utf8')
-  expect(text).toMatch(/· moteur \(step tasks\)$/m)
-  expect(text).toContain('Error: boum')
+  expect(text).toMatch(/· engine \(step tasks\)$/m)
+  expect(text).toContain('Error: boom')
 })
 
 test('an Error gets a full header and its stack', async () => {
-  await logHernessError({ mission: 'T-1', origin: 'moteur', step: 'tasks' }, new Error('boum'))
+  await logHernessError({ mission: 'T-1', origin: 'engine', step: 'tasks' }, new Error('boom'))
   const text = await readFile(errorLogPath(), 'utf8')
   expect(text).toMatch(
     new RegExp(
-      `^=== \\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z · mission T-1 · herness ${version} · moteur \\(step tasks\\)$`,
+      `^=== \\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z · mission T-1 · herness ${version} · engine \\(step tasks\\)$`,
       'm',
     ),
   )
-  expect(text).toContain('Error: boum')
+  expect(text).toContain('Error: boom')
   expect(text).toMatch(/^ {4}at /m)
 })
 
 test('without a mission or a step, those segments are omitted', async () => {
-  await logHernessError({ origin: 'lancement du moteur' }, 'incident')
+  await logHernessError({ origin: 'engine startup' }, 'incident')
   const text = await readFile(errorLogPath(), 'utf8')
-  expect(text).toMatch(new RegExp(`· herness ${version} · lancement du moteur$`, 'm'))
+  expect(text).toMatch(new RegExp(`· herness ${version} · engine startup$`, 'm'))
   expect(text).not.toContain('mission')
   expect(text).not.toContain('step')
 })
 
 test("a value that is not an Error is written as-is", async () => {
-  await logHernessError({ origin: 'x' }, 'texte libre')
-  expect(await readFile(errorLogPath(), 'utf8')).toContain('texte libre')
+  await logHernessError({ origin: 'x' }, 'free text')
+  expect(await readFile(errorLogPath(), 'utf8')).toContain('free text')
   await rm(errorLogPath())
   await logHernessError({ origin: 'x' }, 42)
   expect(await readFile(errorLogPath(), 'utf8')).toContain('42')
 })
 
 test("an Error cause is appended", async () => {
-  await logHernessError({ origin: 'x' }, new Error('haut', { cause: new Error('bas') }))
+  await logHernessError({ origin: 'x' }, new Error('top', { cause: new Error('bottom') }))
   const text = await readFile(errorLogPath(), 'utf8')
   expect(text).toContain('cause:')
-  expect(text).toContain('Error: bas')
+  expect(text).toContain('Error: bottom')
 })
 
 test('a cyclic cause chain is written only once', async () => {
-  const haut = new Error('haut')
-  const bas = new Error('bas')
-  haut.cause = bas
-  bas.cause = haut
-  await expect(logHernessError({ origin: 'x' }, haut)).resolves.toBe(true)
+  const top = new Error('top')
+  const bottom = new Error('bottom')
+  top.cause = bottom
+  bottom.cause = top
+  await expect(logHernessError({ origin: 'x' }, top)).resolves.toBe(true)
   const text = await readFile(errorLogPath(), 'utf8')
-  expect(text.match(/Error: haut/g)).toHaveLength(1)
-  expect(text.match(/Error: bas/g)).toHaveLength(1)
+  expect(text.match(/Error: top/g)).toHaveLength(1)
+  expect(text.match(/Error: bottom/g)).toHaveLength(1)
 })
 
 test("two entries are appended, separated by a blank line", async () => {
-  await logHernessError({ origin: 'a' }, 'un')
-  await logHernessError({ origin: 'b' }, 'deux')
+  await logHernessError({ origin: 'a' }, 'one')
+  await logHernessError({ origin: 'b' }, 'two')
   const text = await readFile(errorLogPath(), 'utf8')
   expect(text.match(/^=== /gm)).toHaveLength(2)
   expect(text).toContain('\n\n=== ')
@@ -95,7 +95,7 @@ test("never writes to stdout", async () => {
 })
 
 test('never throws when the log is unavailable', async () => {
-  const file = join(home, 'pas-un-dossier')
+  const file = join(home, 'not-a-directory')
   await writeFile(file, 'x')
   process.env.HERNESS_HOME = file
   await expect(logHernessError({ origin: 'x' }, new Error('e'))).resolves.toBe(false)
@@ -114,13 +114,13 @@ test('withErrorLog returns the result without writing anything', async () => {
 test('withErrorLog logs then rethrows the same error', async () => {
   const boom = new Error('unreadable state')
   await expect(
-    withErrorLog({ mission: 'T-1', origin: 'lancement du moteur' }, async () => {
+    withErrorLog({ mission: 'T-1', origin: 'engine startup' }, async () => {
       throw boom
     }),
   ).rejects.toBe(boom)
   const text = await readFile(errorLogPath(), 'utf8')
   expect(text).toContain('· mission T-1 · herness ')
-  expect(text).toContain('· lancement du moteur')
+  expect(text).toContain('· engine startup')
   expect(text).toContain('unreadable state')
 })
 
@@ -137,14 +137,14 @@ test("the process listener does not write an error already logged by withErrorLo
   const boom = new Error('unreadable state')
   installProcessErrorLog({ mission: 'T-1', origin: 'engine: uncaught error' }, proc)
   await expect(
-    withErrorLog({ mission: 'T-1', origin: 'lancement du moteur' }, async () => {
+    withErrorLog({ mission: 'T-1', origin: 'engine startup' }, async () => {
       throw boom
     }),
   ).rejects.toBe(boom)
   await listeners.get('uncaughtException')!(boom)
   const text = await readFile(errorLogPath(), 'utf8')
   expect(text.match(/^=== /gm)).toHaveLength(1)
-  expect(text).toContain('lancement du moteur')
+  expect(text).toContain('engine startup')
   expect(text).not.toContain('uncaught error')
   expect(exit).toHaveBeenCalledWith(1)
   expect(error).toHaveBeenCalled()

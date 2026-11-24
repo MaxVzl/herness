@@ -44,7 +44,8 @@ async function writeDoc(rel: string, body: string) {
   await mkdir(join(file, '..'), { recursive: true })
   await writeFile(file, body)
 }
-const PLAN = '### Tâche 1 : a\n\n**Test :** `pnpm t`\n\nbody\n'
+const PLAN = '### Task 1: a\n\n**Test:** `pnpm t`\n\nbody\n'
+const LEGACY_PLAN = '### Tâche 1 : a\n\n**Test :** `pnpm t`\n\nbody\n'
 
 test('the tool list contains no decision tool (valider, refuser, approuver)', async () => {
   const c = await connect()
@@ -61,6 +62,13 @@ test('request_approval(plan) with an invalid plan returns the errors and posts n
   expect(r.isError).toBe(true)
   expect(r.content[0]!.text).toContain('Plan has no task')
   expect(await drainInbox('T-1')).toEqual([])
+})
+
+test('request_approval(plan) accepts a legacy 0.8 plan', async () => {
+  await writeDoc(planPath(state), LEGACY_PLAN)
+  const r = await call('request_approval', { kind: 'plan', summary: 's' })
+  expect(r.isError).toBeFalsy()
+  expect(await drainInbox('T-1')).toEqual([{ type: 'request-gate', kind: 'plan', summary: 's', path: planPath(state) }])
 })
 
 test('request_approval(plan) when valid posts a request-gate with the plan path', async () => {
@@ -123,7 +131,7 @@ test('propose_amendment reads plan.proposed.md from the mission folder, rejects 
   expect(r.isError).toBe(true)
   expect(r.content[0]!.text).toContain('add a follow-up task')
   expect(await drainInbox('T-1')).toEqual([])
-  const next = PLAN + '\n### Tâche 2 : b\n\n**Test :** `pnpm u`\n'
+  const next = PLAN + '\n### Task 2: b\n\n**Test:** `pnpm u`\n'
   await writeFile(proposed, next)
   const ok = await call('propose_amendment', { summary: 's' })
   expect(ok.isError).toBeFalsy()
@@ -134,7 +142,7 @@ test('propose_amendment reads plan.proposed.md from the mission folder, rejects 
 
 test('propose_amendment with a proposed spec also binds the spec into the hash and cites it', async () => {
   await writeFile(join(missionDir('T-1'), 'plan.approved.md'), PLAN)
-  const next = PLAN + '\n### Tâche 2 : b\n\n**Test :** `pnpm u`\n'
+  const next = PLAN + '\n### Task 2: b\n\n**Test:** `pnpm u`\n'
   await writeFile(join(missionDir('T-1'), 'plan.proposed.md'), next)
   await writeFile(join(missionDir('T-1'), 'spec.proposed.md'), '# spec v2\n')
   const ok = await call('propose_amendment', { summary: 's' })
