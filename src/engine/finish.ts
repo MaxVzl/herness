@@ -43,15 +43,15 @@ const logsDir = (s: MissionState): string => join(missionDir(s.id), 'logs')
 /** Relecteur global : relit la branche, puis chaque correction de la revue globale et du preflight. */
 const globalReviewer = (s: MissionState): string => globalReviewerName(s.id, s.loopGeneration)
 
-const constraints = (s: MissionState, cfg: ProjectConfig): string => `Celles de la spec (\`${specPath(s)}\`), et ces interdits :\n${forbidden(cfg)}`
+const constraints = (s: MissionState, cfg: ProjectConfig): string => `Those of the spec (\`${specPath(s)}\`), and these forbidden items:\n${forbidden(cfg)}`
 
 async function firstLine(path: string): Promise<string> {
   return (await readFile(path, 'utf8').catch(() => '')).replace(/^﻿/, '').split('\n')[0]!.trim()
 }
 
-const VERDICTS: Record<string, 'approved' | 'changes'> = { 'VERDICT: APPROUVÉ': 'approved', 'VERDICT: CORRECTIONS': 'changes' }
-const causeOf = (line: string): 'BRANCHE' | 'MAIN' | 'ENVIRONNEMENT' | undefined =>
-  /^CAUSE: (BRANCHE|MAIN|ENVIRONNEMENT)$/.exec(line)?.[1] as 'BRANCHE' | 'MAIN' | 'ENVIRONNEMENT' | undefined
+const VERDICTS: Record<string, 'approved' | 'changes'> = { 'VERDICT: APPROVED': 'approved', 'VERDICT: CORRECTIONS': 'changes' }
+const causeOf = (line: string): 'BRANCH' | 'MAIN' | 'ENVIRONMENT' | undefined =>
+  /^CAUSE: (BRANCH|MAIN|ENVIRONMENT)$/.exec(line)?.[1] as 'BRANCH' | 'MAIN' | 'ENVIRONMENT' | undefined
 
 async function markPane(s: MissionState, e: Effects, name: string): Promise<void> {
   const pane = s.herdr.panes[name]
@@ -125,10 +125,10 @@ async function writeFix(
 ): Promise<void> {
   const reportPath = join(dir, 'report.md')
   const head =
-    `Correction demandée par ${origin}, sur toute la branche. Spec : \`${specPath(s)}\`, plan : \`${planPath(s)}\`. ` +
-    `Il n'y a pas de brief de tâche : ton périmètre est ce qui est décrit ci-dessous.\n` +
-    `Ajoute ton compte rendu à la fin de \`${reportPath}\`, sans effacer les comptes rendus précédents.\n\n`
-  const body = await render('correction', { findings, failure, forbidden: forbidden(cfg), reportPath })
+    `Correction requested by ${origin}, for the whole branch. Spec: \`${specPath(s)}\`, plan: \`${planPath(s)}\`. ` +
+    `There is no task brief: your scope is what is described below.\n` +
+    `Append your report to the end of \`${reportPath}\`, without erasing earlier reports.\n\n`
+  const body = await render('correction', { findings, failure, forbidden: forbidden(cfg), reportPath, language: cfg.language })
   await mkdir(dir, { recursive: true })
   await writeFile(file, head + body + (stopDecision ? stopSection(stopDecision) : '') + consumeArbitrations(s))
 }
@@ -513,7 +513,7 @@ async function diagnose(s: MissionState, e: Effects, cfg: ProjectConfig): Promis
     const body = await render('diagnostic', { logPath: f.logPath, outPath: out })
     await writeFile(
       file,
-      `${body}\n## Check concerné\n\n- Libellé : \`${f.label}\`\n- Commande : \`${command}\`\n- Code de sortie : ${f.exitCode}\n- Branche comparée à : \`${mainRef(cfg)}\`\n`,
+      `${body}\n## Check\n\n- Label: \`${f.label}\`\n- Command: \`${command}\`\n- Exit code: ${f.exitCode}\n- Branch compared with: \`${mainRef(cfg)}\`\n`,
     )
     return { agent: name, file, out }
   }
@@ -528,12 +528,12 @@ async function diagnose(s: MissionState, e: Effects, cfg: ProjectConfig): Promis
   P.diagnosis = out
   log(s, e, `${PF} : ${f.label} rouge, cause ${cause} (${out})`)
   switch (cause) {
-    case 'BRANCHE':
+    case 'BRANCH':
       return startFix(s, e, '', await diagnosisBrief(s, cfg, false))
     case 'MAIN':
       P.phase = 'proof'
       return 'continue'
-    case 'ENVIRONNEMENT':
+    case 'ENVIRONMENT':
       restartRun(P)
       return block(s, e, `${PF} : check « ${f.label} » rouge, cause ENVIRONNEMENT (diagnostic : ${out})\n${await findingsOf(out)}`)
   }
@@ -544,9 +544,9 @@ async function diagnosisBrief(s: MissionState, cfg: ProjectConfig, greenOnMain: 
   const P = s.loops.preflight
   const f = P.failing!
   return (
-    `Check du preflight rouge : « ${f.label} » (code ${f.exitCode}), journal complet : ${f.logPath}\n` +
-    (greenOnMain ? `Le même check est vert sur ${mainRef(cfg)} : la cause est dans la branche.\n` : '') +
-    `\nDiagnostic (${P.diagnosis}) :\n\n${await findingsOf(P.diagnosis)}`
+    `Red preflight check: "${f.label}" (exit code ${f.exitCode}), full log: ${f.logPath}\n` +
+    (greenOnMain ? `The same check is green on ${mainRef(cfg)}: the cause is in the branch.\n` : '') +
+    `\nDiagnosis (${P.diagnosis}):\n\n${await findingsOf(P.diagnosis)}`
   )
 }
 
@@ -730,15 +730,15 @@ export function specSummary(md: string): { title: string | undefined; context: s
 async function prBody(s: MissionState, cfg: ProjectConfig, context: string): Promise<string> {
   const P = s.loops.preflight
   const preflight = P.results.map((r) => {
-    const accepted = P.acceptedRed.includes(r.label) ? ' — rouge déjà sur main, accepté' : r.note && r.exitCode !== 0 ? ` — ${r.note}` : ''
+    const accepted = P.acceptedRed.includes(r.label) ? ' — already red on main, accepted' : r.note && r.exitCode !== 0 ? ` — ${r.note}` : ''
     return `- ${r.label} ${r.exitCode === 0 ? '✓' : '✗'} (${formatDuration(r.durationMs)})${accepted}`
   })
   return render('pr-body', {
-    ticket: s.source.kind === 'text' ? 'demande écrite' : s.source.ref,
-    contexte: context || '(voir la spec)',
-    changements: s.tasks.map((t) => `- Tâche ${t.n} : ${t.title}`).join('\n') || '(aucune tâche)',
-    tests: s.tasks.map((t) => `- Tâche ${t.n} : \`${t.testCommand}\``).join('\n') || '(aucun)',
-    preflight: preflight.join('\n') || `(aucun check configuré pour ${cfg.name})`,
+    ticket: s.source.kind === 'text' ? 'written request' : s.source.ref,
+    context: context || '(see the spec)',
+    changes: s.tasks.map((t) => `- Task ${t.n}: ${t.title}`).join('\n') || '(no task)',
+    tests: s.tasks.map((t) => `- Task ${t.n}: \`${t.testCommand}\``).join('\n') || '(none)',
+    preflight: preflight.join('\n') || `(no check configured for ${cfg.name})`,
     specFile: specPath(s),
     planFile: planPath(s),
   })

@@ -118,7 +118,7 @@ const labels = (fx: FakeEffects) => fx.callsOf('runInPane').map((c) => c[3])
 // ---------- revue globale ----------
 
 test('revue globale approuvée passe au preflight', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'] }) } } })
+  const { fx, eng } = await setup({ over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROVED'] }) } } })
   const s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
   expect(fx.callsOf('git.mergeBase')[0]).toEqual([wt, 'origin/main'])
@@ -139,7 +139,7 @@ test('revue globale en corrections démarre un implémenteur neuf puis re-revue 
   const { fx, eng } = await setup({
     patch: { tasks: [task({ baseSha: 'b1', reviewedSha: 'h1' }), task({ n: 2, title: 'Export', testCommand: 'pnpm test b', baseSha: 'b2', reviewedSha: 'h2' })] },
     over: {
-      agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ'] }) },
+      agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROVED'] }) },
       // La correction touche src/a.ts, touché aussi par la tâche 1 seulement.
       git: {
         changedFiles: async (_wt: string, base: string) => (base === 'b1' ? ['src/a.ts'] : ['src/b.ts']),
@@ -183,7 +183,7 @@ test('revue globale en corrections démarre un implémenteur neuf puis re-revue 
 })
 
 test('le relecteur global est arrêté quand le preflight est terminé', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'] }) } } })
+  const { fx, eng } = await setup({ over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROVED'] }) } } })
   const s = await until(eng, (x) => x.step === 'pr')
   expect(fx.herdr.pane(s.herdr.panes['rgt-1']!).busy).toBe(false)
   expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent rgt-1 arrêté')
@@ -192,7 +192,7 @@ test('le relecteur global est arrêté quand le preflight est terminé', async (
 test('revue globale : des tests rouges après correction lancent un nouveau tour avec la sortie rouge', async () => {
   const { fx, eng } = await setup({
     over: {
-      agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ'] }) },
+      agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROVED'] }) },
       runInPane: panes({ 'RG · tests T1': [ko('AssertionError: attendu 2'), ok] }),
     },
   })
@@ -258,7 +258,7 @@ test('le même faux positif rouge deux fois part au diagnostic', async () => {
     patch: { step: 'preflight' },
     over: {
       runInPane: panes({ 'preflight · lint': [ko("Module not found: Can't resolve 'Roboto'")] }),
-      agents: { ask: verdicts({ rd: ['CAUSE: ENVIRONNEMENT'] }) },
+      agents: { ask: verdicts({ rd: ['CAUSE: ENVIRONMENT'] }) },
     },
   })
   let s = await until(eng, (x) => x.loops.preflight.phase === 'diagnose')
@@ -379,7 +379,7 @@ test('CAUSE: MAIN non reproduite sur main est corrigée comme BRANCHE', async ()
     },
     over: {
       runInPane: panes({ 'preflight · lint': [ko('erreur de lint'), ok] }),
-      agents: { ask: verdicts({ rd: ['CAUSE: MAIN'], rg: ['VERDICT: APPROUVÉ'] }) },
+      agents: { ask: verdicts({ rd: ['CAUSE: MAIN'], rg: ['VERDICT: APPROVED'] }) },
     },
   })
   let s = await until(eng, (x) => x.loops.preflight.phase === 'fix')
@@ -392,7 +392,7 @@ test('CAUSE: MAIN non reproduite sur main est corrigée comme BRANCHE', async ()
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rdt-1-1', 'cpt-1-1', 'rgt-1'])
   const fix = await readFile(join(pdir(), 'correctifs-1.md'), 'utf8')
   expect(fix).toContain('remarque de rdt-1-1')
-  expect(fix).toContain('vert sur origin/main')
+  expect(fix).toContain('green on origin/main')
   expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths, 'origin/main'])
   // Re-revue par le relecteur global sur le diff depuis sa dernière tête relue.
   expect(fx.callsOf('git.diffPackage')[0]).toEqual([wt, 'sha-rev', join(pdir(), 'correction-1.diff')])
@@ -413,7 +413,7 @@ test('un diagnostic et un correcteur de preflight sont arrêtés à la fin de le
     },
     over: {
       runInPane: panes({ 'preflight · lint': [ko('erreur de lint'), ok] }),
-      agents: { ask: verdicts({ rd: ['CAUSE: BRANCHE'], rg: ['VERDICT: APPROUVÉ'] }) },
+      agents: { ask: verdicts({ rd: ['CAUSE: BRANCH'], rg: ['VERDICT: APPROVED'] }) },
     },
   })
   let s = await until(eng, (x) => x.loops.preflight.phase === 'fix')
@@ -484,7 +484,7 @@ test('un amendement approuvé pendant une boucle de la revue globale attend sa r
       gates: [amend()],
       loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 1, phase: 'control', fixBase: 'sha-head' } },
     },
-    over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'] }) } },
+    over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROVED'] }) } },
   })
   const s = await until(eng, (x) => x.step !== 'global-review')
   // Revue globale résolue → l'amendement s'applique au preflight, avant tout check.
@@ -504,7 +504,7 @@ test('reprise : un relecteur global vivant est attendu sans renvoi de la consign
       agents: {
         wait: async () => {
           await mkdir(gdir(), { recursive: true })
-          await writeFile(out, 'VERDICT: APPROUVÉ\n')
+          await writeFile(out, 'VERDICT: APPROVED\n')
           return 'done' as const
         },
       },
@@ -528,12 +528,12 @@ test('après un amendement, les dossiers des boucles sont archivés et la nouvel
   const { fx, eng } = await setup({
     plan: PLAN2,
     patch: { gates: [amend()] },
-    over: { agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ'] }) } },
+    over: { agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROVED'] }) } },
   })
   // Restes d'une revue globale et d'un preflight précédents.
   await mkdir(gdir(), { recursive: true })
   await writeFile(join(gdir(), 'correctifs-1.md'), 'ANCIEN correctif\n')
-  await writeFile(join(gdir(), 'review.md'), 'VERDICT: APPROUVÉ\n\nANCIENNE revue\n')
+  await writeFile(join(gdir(), 'review.md'), 'VERDICT: APPROVED\n\nANCIENNE revue\n')
   await mkdir(pdir(), { recursive: true })
   await writeFile(join(pdir(), 'diagnostic-1.md'), 'CAUSE: MAIN\n')
   await eng.tick()
@@ -624,7 +624,7 @@ test("une correction de branche efface les rouges acceptés : le check repasse p
     },
     over: {
       runInPane: panes({ 'preflight · lint': [ko('erreur')] }),
-      agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'], rd: ['CAUSE: ENVIRONNEMENT'] }) },
+      agents: { ask: verdicts({ rg: ['VERDICT: APPROVED'], rd: ['CAUSE: ENVIRONMENT'] }) },
     },
   })
   const s = await until(eng, (x) => x.loops.preflight.phase === 'diagnose')
@@ -638,7 +638,7 @@ test('revue globale : une remarque « imposé par le plan » ouvre un arbitrage 
       const fileName = basename(file)
       const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
       const first = !out.includes('rerevue')
-      await writeFile(out, first ? 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 imposé par le plan mais incohérent\n' : 'VERDICT: APPROUVÉ\n')
+      await writeFile(out, first ? 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 imposé par le plan mais incohérent\n' : 'VERDICT: APPROVED\n')
     }
     return 'done' as const
   }
@@ -666,7 +666,7 @@ test("revue globale : correcteur arrêté sans commit avec compte rendu, porte a
   const { fx, eng } = await setup({
     patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'control', fixer: 'new', fixBase: 'f1', reviewedSha: 'h1', lastReview: join(gdir(), 'review.md') } } },
     over: {
-      agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'] }) },
+      agents: { ask: verdicts({ rg: ['VERDICT: APPROVED'] }) },
       git: { controlCommits: (() => { let i = 0; return async () => (i++ === 0 ? noCommit : { ok: true as const, commits: 1 }) })() },
     },
   })
@@ -685,7 +685,7 @@ test("revue globale : correcteur arrêté sans commit avec compte rendu, porte a
   expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cgt-1-2', join(gdir(), 'correctifs-2.md')])
   const fix = await readFile(join(gdir(), 'correctifs-2.md'), 'utf8')
   expect(fix).toContain('src/a.ts:3 renommer')
-  expect(fix).toContain("Décision de l'utilisateur : ne renomme pas")
+  expect(fix).toContain('User decision: ne renomme pas')
   s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
 })
@@ -721,7 +721,7 @@ test('preflight : correcteur arrêté sans commit avec compte rendu ; porte vali
   expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cpt-1-2', join(pdir(), 'correctifs-2.md')])
   const fix = await readFile(join(pdir(), 'correctifs-2.md'), 'utf8')
   expect(fix).toContain('src/x.ts:1 lint')
-  expect(fix).toContain("Décision de l'utilisateur : désactive la règle localement")
+  expect(fix).toContain('User decision: désactive la règle localement')
 
   const g2 = s.gates.at(-1)!
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g2.id, decision: 'refused', note: 'stop' })

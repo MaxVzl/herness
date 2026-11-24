@@ -1,31 +1,31 @@
-# Diagnostic d'un check rouge
+# Diagnosis of a red check
 
-Un contrôle du preflight a échoué. Ton travail est de trouver la cause avant toute correction. Tu es en lecture seule sur le dépôt : ne modifie ni l'arbre de travail, ni l'index, ni HEAD, ni les branches ; fais tout toi-même, sans sous-agent.
+A preflight check failed. Your job is to find the cause before any correction. You are read-only on the repository: do not modify the working tree, the index, HEAD, or the branches; do everything yourself, with no sub-agent.
 
-## Entrée
+## Input
 
-La sortie du check rouge est dans `{{logPath}}`. Lis-la en entier, puis remonte à la cause réelle : lis le code et les tests concernés, compare avec ce que la branche a changé (`git diff` contre `origin/main`).
+The output of the red check is in `{{logPath}}`. Read it in full, then trace back to the real cause: read the code and the tests involved, and compare with what the branch changed (`git diff` against `origin/main`).
 
-## Commandes git
+## Git commands
 
-Lance git depuis le worktree (ton dossier de travail), **sans** `git -C <chemin>` : les commandes permises sont reconnues par leur début, et `git -C … diff` est refusé.
+Run git from the worktree (your working directory), **without** `git -C <path>`: allowed commands are recognized by their beginning, and `git -C … diff` is refused.
 
-Commandes permises, toutes en lecture seule : `git diff`, `git log`, `git show`, `git rev-parse`, `git merge-base`, `git status`, `git rev-list`, `git ls-files`, `git blame`, `git cat-file`, `git for-each-ref`, `git reflog` (sans argument) et `git reflog show`. Par exemple : `git merge-base origin/main HEAD`, `git rev-parse HEAD`, `git rev-parse --abbrev-ref HEAD` pour le nom de la branche.
+Allowed commands, all read-only: `git diff`, `git log`, `git show`, `git rev-parse`, `git merge-base`, `git status`, `git rev-list`, `git ls-files`, `git blame`, `git cat-file`, `git for-each-ref`, `git reflog` (with no argument) and `git reflog show`. For example: `git merge-base origin/main HEAD`, `git rev-parse HEAD`, `git rev-parse --abbrev-ref HEAD` for the branch name.
 
-`git fetch` est interdit : `origin/main` est déjà à jour. Toute autre commande (`git branch`, `git checkout`, `git reset`, relance du check…) est refusée.
+`git fetch` is forbidden: `origin/main` is already up to date. Any other command (`git branch`, `git checkout`, `git reset`, re-running the check…) is refused.
 
-## Classer la cause
+## Classify the cause
 
-- `BRANCHE` : la cause est dans les changements de la branche (code ou test cassé, oubli, effet de bord).
-- `MAIN` : le rouge existe indépendamment de la branche (le même test échoue sur `origin/main`, ou la cause est dans du code que la branche n'a pas touché).
-- `ENVIRONNEMENT` : cause extérieure au code (base injoignable, dépendance non installée, code généré absent, flake réseau, processus orphelin).
+- `BRANCH`: the cause is in the branch's changes (broken code or test, omission, side effect).
+- `MAIN`: the red exists independently of the branch (the same test fails on `origin/main`, or the cause is in code the branch did not touch).
+- `ENVIRONMENT`: a cause outside the code (database unreachable, dependency not installed, generated code missing, network flake, orphan process).
 
-N'affirme `MAIN` que si tu en as une preuve précise ; sinon, justifie ton choix avec les lignes de la sortie et du code.
+Assert `MAIN` only if you have precise proof; otherwise, justify your choice with lines from the output and the code.
 
-## Sortie
+## Output
 
-Écris ton rapport dans `{{outPath}}`. La première ligne est exactement `CAUSE: BRANCHE`, `CAUSE: MAIN` ou `CAUSE: ENVIRONNEMENT`. Ensuite, la cause en quelques phrases, avec les preuves (`fichier:ligne`, extraits de la sortie).
+Write your report in `{{outPath}}`, in English. The first line is exactly `CAUSE: BRANCH`, `CAUSE: MAIN` or `CAUSE: ENVIRONMENT`. Then the cause in a few sentences, with the evidence (`file:line`, excerpts from the output).
 
-Si la cause est `BRANCHE`, ajoute un brief de correction autoportant pour un implémenteur : le symptôme, la cause, les fichiers à modifier, le comportement attendu, et la commande ciblée qui prouve la correction. Si la cause est `MAIN` ou `ENVIRONNEMENT`, indique à la place ce qu'il faut faire ou vérifier, sans brief de correction.
+If the cause is `BRANCH`, add a self-contained correction brief for an implementer: the symptom, the cause, the files to modify, the expected behavior, and the targeted command that proves the correction. If the cause is `MAIN` or `ENVIRONMENT`, say instead what to do or check, with no correction brief.
 
-Puis réponds seulement `TERMINÉ`.
+Then reply only `DONE`.

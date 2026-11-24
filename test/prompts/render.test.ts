@@ -4,14 +4,14 @@ import { render } from '../../src/prompts/render.js'
 
 const SETS: Record<string, string[]> = {
   orchestrator: ['id', 'request', 'requestFile', 'note', 'specPath', 'planPath', 'missionDir', 'mainBranch', 'preflight', 'language'],
-  brief: ['taskBody', 'specPath', 'planPath', 'testCommand', 'commitFormat', 'forbidden', 'reportPath'],
+  brief: ['taskBody', 'specPath', 'planPath', 'testCommand', 'commitFormat', 'forbidden', 'reportPath', 'language'],
   review: ['briefPath', 'reportPath', 'baseSha', 'headSha', 'diffPath', 'constraints', 'outPath'],
   rereview: ['briefPath', 'reportPath', 'baseSha', 'headSha', 'diffPath', 'constraints', 'findings', 'outPath'],
-  correction: ['findings', 'failure', 'forbidden', 'reportPath'],
+  correction: ['findings', 'failure', 'forbidden', 'reportPath', 'language'],
   'global-review': ['baseSha', 'headSha', 'diffPath', 'specPath', 'planPath', 'constraints', 'outPath'],
   diagnostic: ['logPath', 'outPath'],
   init: ['repoPath', 'configFile', 'configDir'],
-  'pr-body': ['ticket', 'contexte', 'changements', 'tests', 'preflight', 'specFile', 'planFile'],
+  'pr-body': ['ticket', 'context', 'changes', 'tests', 'preflight', 'specFile', 'planFile'],
 }
 
 const full = (keys: string[]) => Object.fromEntries(keys.map((k) => [k, `<<${k}>>`]))
@@ -40,22 +40,22 @@ describe('render', () => {
   it('les gabarits d’implémentation se terminent par la consigne de compte rendu', async () => {
     for (const name of ['brief', 'correction']) {
       const out = await render(name, full(SETS[name]!))
-      expect(out.trim()).toMatch(/<<reportPath>>[\s\S]*TERMINÉ`?\.?$/)
+      expect(out.trim()).toMatch(/<<reportPath>>[\s\S]*DONE`?\.?$/)
     }
   })
 
   it('les gabarits de revue imposent la première ligne du verdict', async () => {
     for (const name of ['review', 'rereview', 'global-review']) {
       const out = await render(name, full(SETS[name]!))
-      expect(out).toContain('VERDICT: APPROUVÉ')
+      expect(out).toContain('VERDICT: APPROVED')
       expect(out).toContain('VERDICT: CORRECTIONS')
-      expect(out.trim()).toMatch(/TERMINÉ`?\.?$/)
+      expect(out.trim()).toMatch(/DONE`?\.?$/)
     }
   })
 
   it('diagnostic impose la première ligne CAUSE', async () => {
     const out = await render('diagnostic', full(SETS.diagnostic!))
-    for (const c of ['BRANCHE', 'MAIN', 'ENVIRONNEMENT']) expect(out).toContain(`CAUSE: ${c}`)
+    for (const c of ['BRANCH', 'MAIN', 'ENVIRONMENT']) expect(out).toContain(`CAUSE: ${c}`)
   })
 
   it('orchestrator.md imposes English plan markers and forbids self-approval', async () => {
@@ -76,8 +76,8 @@ describe('render', () => {
 
   it('correction demande d’ajouter le compte rendu à la fin du fichier, sans l’écraser', async () => {
     const out = await render('correction', full(SETS.correction!))
-    expect(out).toContain('Ajoute ce compte rendu à la fin de `<<reportPath>>`')
-    expect(out).not.toContain('Écris ce compte rendu dans')
+    expect(out).toContain('Append this report to the end of `<<reportPath>>`')
+    expect(out).not.toContain('Write this report in')
   })
 })
 
@@ -108,6 +108,29 @@ describe('orchestrator.md', () => {
     expect(out).toContain('### Task <n>: <title>')
     expect(out).toContain('**Test:**')
     expect(out).not.toContain('Tu réponds en français')
+    expect(out).not.toMatch(/\{\{/)
+  })
+})
+
+describe('agent prompts', () => {
+  it('renders the brief for language fr with the commit-message rule', async () => {
+    const out = await render('brief', { ...full(SETS.brief!), language: 'fr' })
+    expect(out).toMatch(/\bfr\b/)
+    expect(out).toMatch(/commit messages/i)
+    expect(out).toMatch(/report in English/i)
+    expect(out).not.toMatch(/\{\{/)
+  })
+
+  it('renders the PR body with English sections and a task line', async () => {
+    const out = await render('pr-body', {
+      ...full(SETS['pr-body']!),
+      changes: '- Task 1: Export',
+    })
+    expect(out).toContain('## Context')
+    expect(out).toContain('## Changes')
+    expect(out).toContain('- Task 1: Export')
+    expect(out).toContain('Spec:')
+    expect(out).toContain('Plan:')
     expect(out).not.toMatch(/\{\{/)
   })
 })

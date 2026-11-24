@@ -22,11 +22,11 @@ const GLOBAL_FORBIDDEN = [
   '`git push`',
   '`git stash`',
   '`--no-verify`',
-  'changer de branche',
+  'changing branch',
   '`rebase`',
   '`reset --hard`',
-  'sortir du worktree',
-  'éditer les fichiers générés du projet',
+  'leaving the worktree',
+  'editing generated project files',
   '`docker compose`',
   '`--author`',
   '`git -c user.*`',
@@ -99,9 +99,9 @@ export const arbitrationPending = (s: MissionState): boolean => s.gates.some((g)
 /** Décisions d'arbitrage pas encore transmises, à ajouter au fichier de correctifs ; marquées consommées. */
 export function consumeArbitrations(s: MissionState): string {
   const arbitrages = s.gates.filter((g) => g.kind === 'arbitration' && (g.status === 'approved' || g.status === 'refused') && !s.consumedArbitrages.includes(g.id))
-  const notes = arbitrages.filter((g) => g.note).map((g) => `- ${g.summary.split('\n')[0]} → ${g.status === 'approved' ? 'validé' : 'refusé'} : ${g.note}`)
+  const notes = arbitrages.filter((g) => g.note).map((g) => `- ${g.summary.split('\n')[0]} → ${g.status === 'approved' ? 'approved' : 'refused'}: ${g.note}`)
   s.consumedArbitrages.push(...arbitrages.map((g) => g.id))
-  return notes.length ? `\n\n## Décision de l'utilisateur\n\n${notes.join('\n')}\n` : ''
+  return notes.length ? `\n\n## User decision\n\n${notes.join('\n')}\n` : ''
 }
 
 /** Porteur d'une porte `agent-stopped` : une tâche, la revue globale ou le preflight. */
@@ -161,14 +161,14 @@ export async function settleStop(s: MissionState, e: Effects, h: StopHolder, wha
 }
 
 /** Remarques d'un tour de correction né d'un arrêt sans commit : la décision de l'utilisateur les remplace. */
-export const STOP_FINDINGS = "(aucune : tu t'étais arrêté sans commit ; suis la décision de l'utilisateur ci-dessous)"
+export const STOP_FINDINGS = '(none: you stopped without a commit; follow the user decision below)'
 
-/** Section « Décision de l'utilisateur » d'un fichier de correctifs après un arrêt sans commit. */
+/** "User decision" section of a fix file after a stop without a commit. */
 export function stopSection(decision: string, amendedTask?: string): string {
   const amended = amendedTask
-    ? `\n## Consigne amendée de la tâche\n\nLe plan a été amendé depuis ton brief : voici le texte actuel de ta tâche, qui remplace celui du brief.\n\n${amendedTask}\n`
+    ? `\n## Amended task instructions\n\nThe plan has been amended since your brief: here is the current text of your task, which replaces the one in the brief.\n\n${amendedTask}\n`
     : ''
-  return `\n\n## Décision de l'utilisateur\n\nTu t'étais arrêté sans commit ; l'utilisateur a lu ton compte rendu et tranché.\n\nDécision de l'utilisateur : ${decision}\n${amended}`
+  return `\n\n## User decision\n\nYou had stopped without a commit; the user read your report and decided.\n\nUser decision: ${decision}\n${amended}`
 }
 
 /** Où et sous quel nom un agent est lancé : `what` pour le journal (« tâche 1 »), `pane` préfixe du libellé du panneau. */
@@ -351,12 +351,12 @@ function amendmentHold(s: MissionState): string | undefined {
   return other ? `porte ${other.id} (${other.kind}) en attente` : undefined
 }
 
-const REPRISE =
-  "## Reprise\n\nLe plan a été amendé pendant ta tâche : le texte de la tâche ci-dessous remplace ta consigne précédente. " +
-  "Du travail est déjà présent dans l'arbre : garde-le, adapte-le à la nouvelle consigne, puis lance les tests et commite.\n\n"
+const RESUME =
+  '## Resume\n\nThe plan was amended during your task: the task text below replaces your previous instructions. ' +
+  'Work is already present in the tree: keep it, adapt it to the new instructions, then run the tests and commit.\n\n'
 
-/** Marque d'un brief réécrit par l'amendement `gateId` (reprise après un arrêt du moteur). */
-const repriseMark = (gateId: string): string => `<!-- amendement ${gateId} -->`
+/** Mark of a brief rewritten by amendment `gateId` (resume after an engine stop). */
+const resumeMark = (gateId: string): string => `<!-- amendment ${gateId} -->`
 
 /**
  * Écrit le brief de la tâche ; `reprise` (porte de l'amendement) : consigne amendée en cours de tâche, section
@@ -366,15 +366,16 @@ async function writeBrief(s: MissionState, cfg: ProjectConfig, t: TaskState, bod
   const dir = taskDir(s, t)
   await mkdir(dir, { recursive: true })
   let brief = await render('brief', {
-    taskBody: `### Tâche ${t.n} : ${body.title}\n\n${body.body}`,
+    taskBody: taskText(t.n, body),
     specPath: specPath(s),
     planPath: planPath(s),
     testCommand: t.testCommand,
     commitFormat: fill([cfg.commitFormat], { id: s.id })[0] as string,
     forbidden: forbidden(cfg),
     reportPath: join(dir, 'report.md'),
+    language: cfg.language,
   })
-  if (reprise) brief = brief.replace(/^# Brief de tâche\n\n/, `# Brief de tâche\n\n${REPRISE}${repriseMark(reprise)}\n\n`)
+  if (reprise) brief = brief.replace(/^# Task brief\n\n/, `# Task brief\n\n${RESUME}${resumeMark(reprise)}\n\n`)
   const file = join(dir, 'brief.md')
   await writeFile(file, brief)
   return file
@@ -487,7 +488,7 @@ export async function applyAmendment(s: MissionState, e: Effects, cfg: ProjectCo
 }
 
 /** Texte de la tâche tel que le brief le contient. */
-const taskText = (n: number, body: PlanTask): string => `### Tâche ${n} : ${body.title}\n\n${body.body}`
+const taskText = (n: number, body: PlanTask): string => `### Task ${n}: ${body.title}\n\n${body.body}`
 
 /** Tâche en cours : ni `pending` ni `done`. */
 const currentTask = (s: MissionState): TaskState | undefined => s.tasks.find((x) => x.phase !== 'done' && x.phase !== 'pending')
@@ -540,7 +541,7 @@ async function resumeAmendedTask(
   const body = next.find((x) => x.n === t.n)
   if (!body) return undefined
   // Brief déjà réécrit pour cet amendement par une tentative interrompue avant l'enregistrement : on refait tout.
-  const rewritten = (await readFile(join(taskDir(s, t), 'brief.md'), 'utf8').catch(() => '')).includes(repriseMark(gateId))
+  const rewritten = (await readFile(join(taskDir(s, t), 'brief.md'), 'utf8').catch(() => '')).includes(resumeMark(gateId))
   if (!rewritten && !(await taskChanged(s, t, body, approved))) return undefined
   const file = await writeBrief(s, cfg, t, body, gateId)
   log(s, e, `tâche ${t.n} : consigne amendée, brief réécrit (${file}), ${t.phase} → implement (tour ${t.round})`)
@@ -619,7 +620,7 @@ async function stepTest(s: MissionState, e: Effects, t: TaskState): Promise<Step
     delete t.lastFailure
     return apply(s, e, t, 'tests-green')
   }
-  t.lastFailure = `Commande : ${t.testCommand}\nCode de sortie : ${r.exitCode}\nJournal complet : ${r.logPath}\n\n${r.tail}`
+  t.lastFailure = `Command: ${t.testCommand}\nExit code: ${r.exitCode}\nFull log: ${r.logPath}\n\n${r.tail}`
   return apply(s, e, t, 'tests-red')
 }
 
@@ -630,7 +631,7 @@ async function stepReview(s: MissionState, e: Effects, cfg: ProjectConfig, t: Ta
   const common = {
     briefPath: join(dir, 'brief.md'),
     reportPath: join(dir, 'report.md'),
-    constraints: `Celles de la spec (\`${specPath(s)}\`), et ces interdits :\n${forbidden(cfg)}`,
+    constraints: `Those of the spec (\`${specPath(s)}\`), and these forbidden items:\n${forbidden(cfg)}`,
   }
   let prompt: string
   let outPath: string
@@ -660,7 +661,7 @@ async function stepReview(s: MissionState, e: Effects, cfg: ProjectConfig, t: Ta
 /** Première ligne du rapport de revue : l'événement correspondant, ou `undefined` si illisible. */
 export async function readVerdict(outPath: string): Promise<{ first: string; ev: LoopEvent | undefined }> {
   const first = (await readFile(outPath, 'utf8').catch(() => '')).replace(/^\uFEFF/, '').split('\n')[0]!.trim()
-  const ev: LoopEvent | undefined = first === 'VERDICT: APPROUVÉ' ? 'review-approved' : first === 'VERDICT: CORRECTIONS' ? 'review-changes' : undefined
+  const ev: LoopEvent | undefined = first === 'VERDICT: APPROVED' ? 'review-approved' : first === 'VERDICT: CORRECTIONS' ? 'review-changes' : undefined
   return { first, ev }
 }
 
@@ -690,10 +691,10 @@ async function stepFix(s: MissionState, e: Effects, cfg: ProjectConfig, t: TaskS
     const stop = t.stopDecision
     const failure = stop ? '' : (t.lastFailure ?? '')
     const findings = stop ? STOP_FINDINGS : failure ? '' : await findingsOf(t.lastReview)
-    const body = await render('correction', { findings, failure, forbidden: forbidden(cfg), reportPath: join(dir, 'report.md') })
+    const body = await render('correction', { findings, failure, forbidden: forbidden(cfg), reportPath: join(dir, 'report.md'), language: cfg.language })
     const head =
-      `Brief de la tâche d'origine : \`${join(dir, 'brief.md')}\` (lis-le d'abord si tu ne le connais pas).\n` +
-      `Ajoute ton compte rendu à la fin de \`${join(dir, 'report.md')}\`, sans effacer les comptes rendus précédents.\n\n`
+      `Brief of the original task: \`${join(dir, 'brief.md')}\` (read it first if you do not already know it).\n` +
+      `Append your report to the end of \`${join(dir, 'report.md')}\`, without erasing earlier reports.\n\n`
     const decision = stop ? stopSection(stop, await amendedTaskText(s, t)) : ''
     await mkdir(dir, { recursive: true })
     await writeFile(file, head + body + decision + consumeArbitrations(s))

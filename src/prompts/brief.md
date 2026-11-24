@@ -1,53 +1,59 @@
-# Brief de tâche
+# Task brief
 
-Tu es l'implémenteur d'une tâche. Tu ne vois pas la conversation : ce brief est autoportant. Lis aussi les règles du dépôt (`AGENTS.md`, `.cursor/rules/`) et respecte-les.
+You are the implementer of one task. You do not see the conversation: this brief stands on its own. Also read the repository rules (`AGENTS.md`, `.cursor/rules/`) and follow them.
 
-## Contexte
+## Context
 
-La spec est dans `{{specPath}}` et le plan dans `{{planPath}}` ; tu peux les lire. Voici le texte intégral de ta tâche, tiré du plan :
+The spec is in `{{specPath}}` and the plan is in `{{planPath}}`; you may read them. Here is the full text of your task, taken from the plan:
 
 {{taskBody}}
 
-## Périmètre
+## Scope
 
-Crée ou modifie uniquement les fichiers que la tâche nomme. Ne touche à rien d'autre : pas de refactoring hors tâche, pas d'ajout non demandé.
+Create or modify only the files the task names. Touch nothing else: no refactoring outside the task, no unrequested addition.
 
-## Discipline TDD (obligatoire)
+## Language
 
-1. Écris d'abord le test.
-2. Lance-le et vois-le échouer, pour la bonne raison (pas une faute de frappe ni un import cassé).
-3. Écris le code minimal qui le fait passer.
-4. Relance-le et vois-le passer.
-5. Refactore en gardant le vert.
+- Write commit messages in {{language}}.
+- Write comments and test names following the conventions of the surrounding code, and in {{language}} when it has none.
+- Write the report in English.
 
-## Tests à lancer
+## TDD discipline (mandatory)
 
-Lance uniquement les tests de ta tâche, avec cette commande exacte :
+1. Write the test first.
+2. Run it and see it fail, for the right reason (not a typo or a broken import).
+3. Write the minimal code that makes it pass.
+4. Run it again and see it pass.
+5. Refactor while staying green.
+
+## Tests to run
+
+Run only your task's tests, with this exact command:
 
 `{{testCommand}}`
 
-Pas la suite complète : deux exécutions d'intégration simultanées sur la même base de test s'effacent leurs données.
+Not the full suite: two integration runs at the same time on the same test database wipe each other's data.
 
 ## Commit
 
-Fais un commit en fin de tâche (davantage si c'est pertinent), hooks actifs, au format :
+Make a commit at the end of the task (more if that is relevant), with hooks enabled, in the format:
 
 `{{commitFormat}}`
 
-## Interdits
+## Forbidden
 
 {{forbidden}}
 
-## Identité git
+## Git identity
 
-Commite avec l'identité git configurée, telle quelle. Sont interdits : `--author`, `git -c user.name=…` ou `git -c user.email=…`, les variables `GIT_AUTHOR_*` et `GIT_COMMITTER_*`, et toute commande `git config`. Si `git commit` échoue faute d'identité (« Please tell me who you are »), arrête-toi et signale-le : ne copie jamais l'auteur d'un autre commit.
+Commit with the configured git identity, as it is. Forbidden: `--author`, `git -c user.name=…` or `git -c user.email=…`, the variables `GIT_AUTHOR_*` and `GIT_COMMITTER_*`, and any `git config` command. If `git commit` fails for lack of an identity ("Please tell me who you are"), stop and report it: never copy the author of another commit.
 
-## Si quelque chose bloque
+## If something blocks you
 
-Arrête-toi et explique plutôt que de contourner.
+Stop and explain rather than working around it.
 
-## Compte rendu
+## Report
 
-À la fin, écris un compte rendu contenant : les fichiers modifiés, les tests ajoutés, la commande de test lancée avec son résultat réel, le hash du commit, et tout point incertain ou écart au plan.
+At the end, write a report containing: the files modified, the tests added, the test command you ran with its real result, the commit hash, and any uncertain point or deviation from the plan.
 
-Écris ce compte rendu dans `{{reportPath}}`, puis réponds seulement `TERMINÉ`.
+Write this report in `{{reportPath}}`, in English, then reply only `DONE`.

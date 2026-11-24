@@ -47,7 +47,7 @@ function scriptedAsk(verdicts: string[], impl: () => 'done' | 'blocked' | 'timeo
   }
 }
 
-async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState>; plan?: string; approved?: string; proposed?: string } = {}) {
+async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState>; plan?: string; approved?: string; proposed?: string; config?: typeof demo } = {}) {
   const fx: FakeEffects = fakeEffects(opts.over)
   const { ws, tab } = fx.herdr.seedWorkspace('T-1', 'agents')
   const s: MissionState = {
@@ -69,7 +69,7 @@ async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState>
   await writeFile(file, opts.plan ?? PLAN1)
   await writeFile(join(missionDir('T-1'), 'plan.approved.md'), opts.approved ?? opts.plan ?? PLAN1)
   if (opts.proposed !== undefined) await writeFile(join(missionDir('T-1'), 'plan.proposed.md'), opts.proposed)
-  return { fx, eng: new Engine('T-1', fx, demo) }
+  return { fx, eng: new Engine('T-1', fx, opts.config ?? demo) }
 }
 
 async function until(eng: Engine, pred: (s: MissionState) => boolean, max = 40): Promise<MissionState> {
@@ -100,8 +100,28 @@ test("le brief d'une tâche est écrit sous tasks/1/brief.md et le compte rendu 
   expect(brief).toContain(join(dir, 'report.md'))
 })
 
+test('brief rendered for language fr names that language and the commit rule', async () => {
+  const { eng } = await setup({
+    config: { ...demo, language: 'fr' },
+    over: { agents: { ask: async () => 'blocked' as const } },
+  })
+  const dir = join(missionDir('T-1'), 'tasks', '1')
+  let brief = ''
+  for (let i = 0; i < 6; i++) {
+    await eng.tick()
+    try {
+      brief = await readFile(join(dir, 'brief.md'), 'utf8')
+      break
+    } catch {
+      brief = ''
+    }
+  }
+  expect(brief).toMatch(/\bfr\b/)
+  expect(brief).toMatch(/commit messages/i)
+})
+
 test('une tâche verte et approuvée passe par implement, control, test, review puis done', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   const s = await until(eng, (x) => x.step !== 'tasks')
   expect(s.step).toBe('global-review')
   expect(s.tasks[0]).toMatchObject({ phase: 'done', round: 0, baseSha: 'sha-head', reviewedSha: 'sha-head', implementer: 'ct-1-t1', reviewer: 'rt-1-t1' })
@@ -136,7 +156,7 @@ test('une tâche verte et approuvée passe par implement, control, test, review 
 })
 
 test('des tests rouges renvoient au même implémenteur sans démarrer de relecteur', async () => {
-  const { fx, eng } = await setup({ over: { runInPane: seq(red, green) as never, agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+  const { fx, eng } = await setup({ over: { runInPane: seq(red, green) as never, agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   let s = await until(eng, (x) => x.tasks[0]!.phase === 'fix')
   expect(s.tasks[0]).toMatchObject({ round: 1, fixer: 'same' })
   expect(s.tasks[0]!.lastFailure).toContain('AssertionError: attendu 2')
@@ -152,7 +172,7 @@ test('des tests rouges renvoient au même implémenteur sans démarrer de relect
 })
 
 test('au 3e tour, un nouvel implémenteur grok-4.7-high est démarré', async () => {
-  const { fx, eng } = await setup({ over: { runInPane: seq(red, red, red, green) as never, agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+  const { fx, eng } = await setup({ over: { runInPane: seq(red, red, red, green) as never, agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   const s = await until(eng, (x) => x.tasks[0]!.round === 3 && x.tasks[0]!.phase === 'control')
   const starts = fx.callsOf('agents.start')
   expect(starts.map((c) => c[0])).toEqual(['ct-1-t1', 'ct-1-t1b'])
@@ -179,7 +199,7 @@ test('une re-revue utilise le même relecteur et le diff depuis reviewedSha', as
   const heads = seq('h1', 'h2')
   const { fx, eng } = await setup({
     over: {
-      agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ']) },
+      agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROVED']) },
       git: { diffPackage: async (_wt: string, base: string) => ({ base, head: heads(), commits: 1 }) },
     },
   })
@@ -263,7 +283,7 @@ test("un implémenteur vu au repos sans compte rendu n'est pas contrôlé avant 
   const states = seq('working', 'idle', 'idle')
   const { fx, eng } = await setup({
     over: {
-      agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) },
+      agents: { ask: scriptedAsk(['VERDICT: APPROVED']) },
       herdr: { agentGet: async (name: string) => (name.startsWith('c') ? { state: states() } : { state: 'idle' }) },
       sleep: async () => {
         // L'agent finit pendant la 3e attente : il écrit son compte rendu.
@@ -285,7 +305,7 @@ test("un implémenteur vu au repos sans compte rendu n'est pas contrôlé avant 
 })
 
 test('au repos sans compte rendu pendant 10 min : contrôle comme avant', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   const s = await until(eng, () => fx.callsOf('git.controlCommits').length > 0)
   // Le compte d'attente repart de zéro quand l'agent travaille : ici toujours au repos, 40 × 15 s.
   expect(fx.callsOf('sleep')).toHaveLength(40)
@@ -299,7 +319,7 @@ test("un compte rendu déjà complété à l'issue de la consigne : aucune atten
       agents: {
         ask: async (name: string, file: string) => {
           if (name.startsWith('c')) await writeFile(join(taskDir(), 'report.md'), 'fait\n')
-          return scriptedAsk(['VERDICT: APPROUVÉ'])(name, file)
+          return scriptedAsk(['VERDICT: APPROVED'])(name, file)
         },
       },
     },
@@ -337,7 +357,7 @@ test('une porte arbitrage en attente suspend la correction, sa note entre dans l
   expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'correctifs-1.md')])
   const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
   expect(fix).toContain('src/b.ts:9 colonne en trop')
-  expect(fix).toContain("Décision de l'utilisateur")
+  expect(fix).toContain('User decision')
   expect(fix).toContain('garder la colonne')
   expect(s.consumedArbitrages).toEqual(['g1'])
 })
@@ -345,7 +365,7 @@ test('une porte arbitrage en attente suspend la correction, sa note entre dans l
 test("un amendement approuvé pendant une tâche en cours, sans consigne chez un agent, s'applique aussitôt ; la tâche inchangée continue", async () => {
   const { fx, eng } = await setup({
     proposed: PLAN2,
-    over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } },
+    over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } },
     patch: {
       tasks: [task({ phase: 'review', baseSha: 'b0', implementer: 'ct-1-t1' })],
       gates: [gate({ id: 'g1', kind: 'amendment', status: 'approved', hash: proposalHash(PLAN2) })],
@@ -508,7 +528,7 @@ test('reprise : revue en cours, relecteur disparu mais verdict déjà écrit, le
     },
   })
   await mkdir(taskDir(), { recursive: true })
-  await writeFile(out, 'VERDICT: APPROUVÉ\n')
+  await writeFile(out, 'VERDICT: APPROVED\n')
   await eng.tick()
   const s = await loadState('T-1')
   expect(fx.callsOf('agents.ask')).toEqual([])
@@ -519,7 +539,7 @@ test('reprise : revue en cours, relecteur disparu mais verdict déjà écrit, le
 
 test('reprise : revue en cours, relecteur disparu sans verdict, relecteur redémarré et consigne renvoyée', async () => {
   const { fx, eng } = await setup({
-    over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } },
+    over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } },
     patch: {
       tasks: [task({
         phase: 'review', baseSha: 'b0', implementer: 'ct-1-t1', reviewer: 'rt-1-t1',
@@ -637,7 +657,7 @@ test('une remarque « imposé par le plan » ouvre une porte arbitrage et suspen
 })
 
 test('un verdict CORRECTIONS sans contradiction du plan informe l\'orchestrateur sans ouvrir de porte', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ']) } } })
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROVED']) } } })
   const s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
   expect(s.gates).toEqual([])
   const msgs = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).filter((p) => p.includes('revue CORRECTIONS'))
@@ -657,7 +677,7 @@ const REPORT = 'Arrêt : le plan est impossible.\nLe composant de base impose pl
 
 /** L'implémenteur écrit son compte rendu à la consigne initiale (brief), puis le relecteur approuve. */
 function stoppingAsk(report = REPORT) {
-  const review = scriptedAsk(['VERDICT: APPROUVÉ'])
+  const review = scriptedAsk(['VERDICT: APPROVED'])
   return async (name: string, file: string) => {
     if (basename(file) === 'brief.md' && report) await writeFile(join(dirname(file), 'report.md'), report)
     return review(name, file)
@@ -687,8 +707,8 @@ test("arrêt sans commit avec compte rendu : porte agent-stopped, l'orchestrateu
   expect(s.tasks[0]!.stopGate).toBeUndefined()
   expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'correctifs-1.md')])
   const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
-  expect(fix).toContain("Décision de l'utilisateur : garde le placeholder, documente-le")
-  expect(fix).not.toContain('Consigne amendée')
+  expect(fix).toContain('User decision: garde le placeholder, documente-le')
+  expect(fix).not.toContain('Amended task')
   s = await until(eng, (x) => x.step !== 'tasks')
   expect(s.step).toBe('global-review')
 })
@@ -698,7 +718,7 @@ test("arrêt sans commit validé sans note : la décision transmise est « conti
   const s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: s.gates[0]!.id, decision: 'approved' })
   await until(eng, (x) => x.tasks[0]!.round === 1 && x.tasks[0]!.phase === 'control')
-  expect(await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')).toContain("Décision de l'utilisateur : continue")
+  expect(await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')).toContain('User decision: continue')
 })
 
 test('arrêt sans commit, porte agent-stopped refusée : la mission est bloquée', async () => {
@@ -742,8 +762,8 @@ test("arrêt sans commit validé après un amendement de la tâche : les correct
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'ok' })
   await until(eng, (x) => x.tasks[0]!.round === 1 && x.tasks[0]!.phase === 'control')
   const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
-  expect(fix).toContain("Décision de l'utilisateur : ok")
-  expect(fix).toContain('## Consigne amendée de la tâche')
+  expect(fix).toContain('User decision: ok')
+  expect(fix).toContain('## Amended task instructions')
   expect(fix).toContain('faire a, en gardant le placeholder')
 })
 
@@ -774,8 +794,8 @@ test("20261030-5 : arrêt sans commit, amendement de la tâche validé, brief r�
   expect(s.gates.find((g) => g.id === stop.id)!.status).toBe('obsolete')
   expect(fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).some((p) => p.includes(`porte ${stop.id} (agent-stopped) est caduque`))).toBe(true)
   const brief = await readFile(join(taskDir(), 'brief.md'), 'utf8')
-  expect(brief).toContain('## Reprise')
-  expect(brief).toContain("Du travail est déjà présent dans l'arbre : garde-le, adapte-le à la nouvelle consigne, puis lance les tests et commite")
+  expect(brief).toContain('## Resume')
+  expect(brief).toContain('Work is already present in the tree: keep it, adapt it to the new instructions, then run the tests and commit')
   expect(brief).toContain('en gardant le placeholder imposé')
   expect(await readFile(join(wt, planPath(s)), 'utf8')).toBe(PLAN1_FIXED)
 
@@ -816,7 +836,7 @@ test("un amendement validé pendant que la mission est bloquée sur la boucle de
   expect(s.step).toBe('tasks')
   expect(s.blockedReason).toBeUndefined()
   expect(s.blockedFrom).toBeUndefined()
-  expect(await readFile(join(taskDir(), 'brief.md'), 'utf8')).toContain('## Reprise')
+  expect(await readFile(join(taskDir(), 'brief.md'), 'utf8')).toContain('## Resume')
   expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'brief.md')])
 })
 
@@ -906,7 +926,7 @@ test("I2 : une porte agent-stopped caduque ne retient pas un amendement suivant"
 })
 
 // Comme `writeBrief` : titre, puis le corps tel que `parsePlan` le découpe (il commence par la fin de ligne du titre).
-const BRIEF1 = '# Brief de tâche\n\n### Tâche 1 : Modèle\n\n\n\n**Test :** `pnpm test a`\n\nfaire a\n'
+const BRIEF1 = '# Task brief\n\n### Task 1: Modèle\n\n\n\n**Test :** `pnpm test a`\n\nfaire a\n'
 const blockedOn = (reason: string): Partial<MissionState> => ({
   step: 'blocked',
   blockedFrom: 'tasks',
@@ -996,7 +1016,7 @@ test("M2 : arrêt du moteur après la suppression de la proposition (ancien ordr
   const s = await loadState('T-1')
   expect(s.appliedAmendments).toEqual(['g1'])
   expect(s.tasks[0]).toMatchObject({ phase: 'implement' })
-  expect(await readFile(join(taskDir(), 'brief.md'), 'utf8')).toContain('## Reprise')
+  expect(await readFile(join(taskDir(), 'brief.md'), 'utf8')).toContain('## Resume')
   expect(s.log.some((l) => l.msg.includes('non appliqué'))).toBe(false)
 })
 
@@ -1011,7 +1031,7 @@ test("M2 : arrêt du moteur avant l'enregistrement de l'état (brief déjà ré�
   })
   await mkdir(taskDir(), { recursive: true })
   // Brief réécrit par la tentative interrompue.
-  await writeFile(join(taskDir(), 'brief.md'), `# Brief de tâche\n\n## Reprise\n\n<!-- amendement g1 -->\n\n### Tâche 1 : Modèle\n\n\n\n**Test :** \`pnpm test a\`\n\nfaire a, en gardant le placeholder imposé par le composant de base\n`)
+  await writeFile(join(taskDir(), 'brief.md'), `# Brief de tâche\n\n## Reprise\n\n<!-- amendment g1 -->\n\n### Tâche 1 : Modèle\n\n\n\n**Test :** \`pnpm test a\`\n\nfaire a, en gardant le placeholder imposé par le composant de base\n`)
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.appliedAmendments).toEqual(['g1'])
@@ -1039,7 +1059,7 @@ test("M4 : un amendement qui retire la tâche en cours est écarté et l'orchest
 const msgs = (s: MissionState) => s.log.map((l) => l.msg)
 
 test('une tâche validée arrête son implémenteur et son relecteur, panneaux gardés avec ✓', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   const s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
   const impl = fx.herdr.pane(s.herdr.panes['ct-1-t1']!)
   const rev = fx.herdr.pane(s.herdr.panes['rt-1-t1']!)
@@ -1052,7 +1072,7 @@ test('une tâche validée arrête son implémenteur et son relecteur, panneaux g
 })
 
 test("pendant un tour de correction, l'implémenteur et le relecteur restent vivants", async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ']) } } })
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROVED']) } } })
   let s = await until(eng, (x) => x.tasks[0]!.phase === 'fix')
   expect(fx.herdr.pane(s.herdr.panes['ct-1-t1']!).busy).toBe(true)
   expect(fx.herdr.pane(s.herdr.panes['rt-1-t1']!).busy).toBe(true)
@@ -1064,7 +1084,7 @@ test("pendant un tour de correction, l'implémenteur et le relecteur restent viv
 })
 
 test('un arrêt impossible est journalisé, la tâche passe quand même en done', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   const born = await until(eng, (x) => x.herdr.panes['ct-1-t1'] !== undefined)
   fx.herdr.pane(born.herdr.panes['ct-1-t1']!).deaf = true
   const s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
