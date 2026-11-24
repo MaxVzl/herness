@@ -8,7 +8,7 @@ import type { ProjectConfig } from '../../src/config/project.ts'
 import { logHernessError } from '../../src/errlog.ts'
 import { closeMission, deleteMission, missionStatus, reportMissionErrors, resumeMission, startMission, type LifecycleDeps } from '../../src/lifecycle.ts'
 import { drainInbox } from '../../src/mission/inbox.ts'
-import { loadState, newState, saveState, type MissionState } from '../../src/mission/state.ts'
+import { LegacyMissionError, loadState, newState, saveState, type MissionState } from '../../src/mission/state.ts'
 import { missionDir } from '../../src/paths.ts'
 import { fakeEffects, type FakeEffects, type FakeOverrides } from '../fakes.ts'
 
@@ -169,6 +169,13 @@ async function patch(p: Partial<MissionState>): Promise<void> {
   await saveState({ ...(await loadState('gh12')), ...p })
 }
 
+async function dropFormat(id: string): Promise<void> {
+  const file = join(missionDir(id), 'state.json')
+  const raw = JSON.parse(await readFile(file, 'utf8')) as { format?: number }
+  delete raw.format
+  await writeFile(file, JSON.stringify(raw))
+}
+
 test('fermer demande confirmation quand des commits ne sont pas poussés', async () => {
   const asked: string[] = []
   let answer = false
@@ -322,6 +329,21 @@ test("fermer une mission fermée sans reste ne fait rien", async () => {
 })
 
 // ---------- reprendre ----------
+
+test('resumeMission refuses a legacy running mission', async () => {
+  const { fx, d } = await started()
+  await dropFormat('gh12')
+  await expect(resumeMission('gh12', d)).rejects.toThrow(LegacyMissionError)
+  expect(fx.herdr.calls).toEqual([])
+  expect(fx.calls).toEqual([])
+})
+
+test('resumeMission accepts a legacy closed mission', async () => {
+  const { d } = await started()
+  await patch({ step: 'closed' })
+  await dropFormat('gh12')
+  await expect(resumeMission('gh12', d)).resolves.toBeUndefined()
+})
 
 test('reprendre relance moteur, tableau et orchestrateur absents', async () => {
   const { fx, d, s } = await started()

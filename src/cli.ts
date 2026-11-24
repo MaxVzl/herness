@@ -76,11 +76,12 @@ program
     const { installProcessErrorLog, withErrorLog } = await import('./errlog.ts')
     installProcessErrorLog({ mission: id, origin: 'moteur : erreur non rattrapée' })
     const engine = await withErrorLog({ mission: id, origin: 'lancement du moteur' }, async () => {
-      const { loadState } = await import('./mission/state.ts')
+      const { assertResumable, loadState } = await import('./mission/state.ts')
       const { loadProjectConfig } = await import('./config/project.ts')
       const { Engine } = await import('./engine/engine.ts')
       const { realEffects } = await import('./engine/effects.ts')
       const s = await loadState(id)
+      assertResumable(s)
       const cfg = await loadProjectConfig(s.repoPath)
       return new Engine(id, realEffects(), cfg)
     })

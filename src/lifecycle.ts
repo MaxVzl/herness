@@ -12,7 +12,7 @@ import { createMissionSpace, paneIsIdle, type MissionSpace } from './herdr/layou
 import { missionMcpConfig } from './mcp/server.ts'
 import { nextFreeTextId, parseDemande, type Demande } from './mission/ids.ts'
 import { postInbox } from './mission/inbox.ts'
-import { loadState, newState, saveState, type MissionState } from './mission/state.ts'
+import { assertResumable, loadState, newState, saveState, type MissionState } from './mission/state.ts'
 import { missionDir, missionsRoot, planPath, specPath } from './paths.ts'
 import { render } from './prompts/render.ts'
 import { hernessCommand, shellLine } from './update.ts'
@@ -167,6 +167,7 @@ export async function resumeMission(id: string, deps: LifecycleDeps, opts: { res
   const { e } = deps
   const out = deps.out ?? console.log
   const s = await load(id)
+  assertResumable(s)
   if (s.step === 'closed' || s.step === 'pr-open') {
     out(`Mission ${id} : ${s.step}${s.prUrl ? ` (PR ${s.prUrl})` : ''} ; rien à reprendre.`)
     return

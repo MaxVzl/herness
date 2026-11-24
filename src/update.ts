@@ -4,7 +4,7 @@ import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loadState, type MissionState } from './mission/state.ts'
+import { assertResumable, isFinished, isLegacy, loadState, type MissionState } from './mission/state.ts'
 import { missionsRoot } from './paths.ts'
 
 export const INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/MaxVzl/herness/main/install.sh'
@@ -95,37 +95,69 @@ export interface UpdateDeps {
   out: (line: string) => void
 }
 
+/** Vrai pour une version `0.y.z` avec `y < 9` (préfixe `v` toléré) : herness d'avant le passage à l'anglais. */
+export function isPreEnglish(version: string): boolean {
+  const match = /^(?:v)?0\.(\d+)\.\d+$/.exec(version)
+  return match !== null && Number(match[1]) < 9
+}
+
+export interface ListedMissions {
+  /** Missions non terminées, non bloquées, au format courant. */
+  running: MissionState[]
+  /** Missions héritées non terminées, étape `blocked` comprise. */
+  legacy: MissionState[]
+}
+
 /** Missions dont le moteur, le tableau et les visionneuses tournent encore sur l'ancien code. */
-export async function runningMissions(): Promise<MissionState[]> {
+export async function runningMissions(): Promise<ListedMissions> {
   const ids = (await readdir(missionsRoot()).catch(() => [] as string[])).sort()
-  const out: MissionState[] = []
+  const running: MissionState[] = []
+  const legacy: MissionState[] = []
   for (const id of ids) {
     try {
       const s = await loadState(id)
+      if (isFinished(s)) continue
+      if (isLegacy(s)) {
+        legacy.push(s)
+        continue
+      }
       // Bloquée : rien ne tourne, et `resume` y ouvrirait une porte de reprise.
-      if (s.step !== 'pr-open' && s.step !== 'closed' && s.step !== 'blocked') out.push(s)
+      if (s.step !== 'blocked') running.push(s)
     } catch {
       // état illisible ou dossier étranger : ignoré
     }
   }
-  return out
+  return { running, legacy }
 }
 
 /**
  * `herness update [--version x.y.z]` : installe la version par install.sh, puis
  * propose de redémarrer les missions en cours pour qu'elles passent au nouveau code.
+ * Une version antérieure à l'anglais ne sait pas lire les missions créées après : on ne propose rien.
  */
-export async function update(opts: { version?: string }, deps: UpdateDeps, list: () => Promise<MissionState[]> = runningMissions): Promise<void> {
+export async function update(opts: { version?: string }, deps: UpdateDeps, list: () => Promise<ListedMissions> = runningMissions): Promise<void> {
   await deps.install(opts.version ? ['--version', opts.version] : [])
-  const missions = await list()
+  if (opts.version && isPreEnglish(opts.version)) {
+    deps.out(`herness ${opts.version} cannot read missions created by newer versions.`)
+    deps.out('Missions it started can be restarted with: herness reprendre <id> --redemarrer')
+    return
+  }
+  const { running: missions, legacy } = await list()
+  for (const s of legacy) {
+    try {
+      assertResumable(s)
+    } catch (e) {
+      deps.out(e instanceof Error ? e.message : String(e))
+    }
+  }
   if (missions.length === 0) return
-  deps.out(`Missions en cours, encore sur l'ancien code : ${missions.map((s) => s.id).join(', ')}`)
+  deps.out(`Missions still running on the old code: ${missions.map((s) => s.id).join(', ')}`)
   if (!deps.isTTY) {
     for (const s of missions) deps.out(`  herness resume ${s.id} --restart`)
     return
   }
-  if (!(await deps.confirm('Les redémarrer sur la nouvelle version ?'))) {
-    deps.out(`Plus tard : herness resume <id> --restart`)
+  if (!(await deps.confirm('Restart them on the new version?'))) {
+    deps.out('Later: herness resume <id> --restart')
     return
   }
   const failed: string[] = []

@@ -1,10 +1,11 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { applyDecision, decide, openGate, pendingGate } from '../../src/engine/gates.ts'
 import { drainInbox } from '../../src/mission/inbox.ts'
-import { newState, saveState } from '../../src/mission/state.ts'
+import { LegacyMissionError, newState, saveState } from '../../src/mission/state.ts'
+import { missionDir } from '../../src/paths.ts'
 
 let home: string
 beforeEach(async () => {
@@ -98,6 +99,19 @@ test('decide écrit le résumé de la porte via out', async () => {
   const lines: string[] = []
   await decide('T-1', 'approved', { isTTY: true, confirm: async () => false, out: (l) => lines.push(l) })
   expect(lines[0]).toMatch(/^Porte g1 \(/)
+})
+
+test('decide refuses a legacy running mission', async () => {
+  const s = fresh()
+  openGate(s, 'spec', 'Spec à valider')
+  s.step = 'tasks'
+  await saveState(s)
+  const file = join(missionDir('T-1'), 'state.json')
+  const raw = JSON.parse(await readFile(file, 'utf8')) as { format?: number }
+  delete raw.format
+  await writeFile(file, JSON.stringify(raw))
+  await expect(decide('T-1', 'approved', { isTTY: true, confirm: async () => true })).rejects.toThrow(LegacyMissionError)
+  expect(await drainInbox('T-1')).toEqual([])
 })
 
 test('decide sans out garde l\'affichage console', async () => {

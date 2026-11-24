@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execa } from 'execa'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { newState, saveState, type MissionState } from '../../src/mission/state.ts'
-import { hernessCommand, installDir, installedBin, installedVersion, restartInstalled, runningMissions, runsInstalled, shellLine, staleNotice, update, type UpdateDeps } from '../../src/update.ts'
+import { missionDir } from '../../src/paths.ts'
+import { hernessCommand, installDir, installedBin, installedVersion, isPreEnglish, restartInstalled, runningMissions, runsInstalled, shellLine, staleNotice, update, type UpdateDeps } from '../../src/update.ts'
 
 let home: string
 const saved = { ...process.env }
@@ -41,31 +42,33 @@ function deps(answer = true): UpdateDeps & { calls: string[]; lines: string[] } 
 
 const mission = (id: string, step: MissionState['step']): MissionState => ({ ...newState({ id, source: { kind: 'text', ref: id }, project: 'demo', repoPath: '/depot' }), step })
 
+const listed = (running: MissionState[], legacy: MissionState[] = []) => async () => ({ running, legacy })
+
 test('installe la dernière version ou celle demandée', async () => {
   const d = deps()
-  await update({}, d, async () => [])
-  await update({ version: '0.4.0' }, d, async () => [])
-  expect(d.calls).toEqual(['install', 'install --version 0.4.0'])
+  await update({}, d, listed([]))
+  await update({ version: '1.2.3' }, d, listed([]))
+  expect(d.calls).toEqual(['install', 'install --version 1.2.3'])
   expect(d.lines).toEqual([])
 })
 
 test('propose de redémarrer les missions en cours, avec le nouveau code', async () => {
   const d = deps(true)
-  await update({}, d, async () => [mission('a1', 'tasks'), mission('b2', 'spec')])
-  expect(d.lines[0]).toBe("Missions en cours, encore sur l'ancien code : a1, b2")
-  expect(d.calls).toEqual(['install', 'confirm Les redémarrer sur la nouvelle version ?', 'restart a1', 'restart b2'])
+  await update({}, d, listed([mission('a1', 'tasks'), mission('b2', 'spec')]))
+  expect(d.lines[0]).toBe('Missions still running on the old code: a1, b2')
+  expect(d.calls).toEqual(['install', 'confirm Restart them on the new version?', 'restart a1', 'restart b2'])
 })
 
 test('refusé : rien de redémarré, la commande est rappelée', async () => {
   const d = deps(false)
-  await update({}, d, async () => [mission('a1', 'tasks')])
+  await update({}, d, listed([mission('a1', 'tasks')]))
   expect(d.calls).not.toContain('restart a1')
-  expect(d.lines.at(-1)).toBe('Plus tard : herness resume <id> --restart')
+  expect(d.lines.at(-1)).toBe('Later: herness resume <id> --restart')
 })
 
 test('hors terminal : ne demande rien, liste les commandes', async () => {
   const d = { ...deps(true), isTTY: false }
-  await update({}, d, async () => [mission('a1', 'tasks')])
+  await update({}, d, listed([mission('a1', 'tasks')]))
   expect(d.calls).toEqual(['install'])
   expect(d.lines).toContain('  herness resume a1 --restart')
 })
@@ -76,7 +79,7 @@ test('un redémarrage en échec n’empêche pas les autres, puis erreur récapi
     d.calls.push(`restart ${id}`)
     if (id === 'a1') throw new Error('herdr absent')
   }
-  await expect(update({}, d, async () => [mission('a1', 'tasks'), mission('b2', 'tasks')]))
+  await expect(update({}, d, listed([mission('a1', 'tasks'), mission('b2', 'tasks')])))
     .rejects.toThrow('redémarrage à relancer à la main : herness resume a1 --restart')
   expect(d.calls).toContain('restart b2')
   expect(d.lines).toContain('a1 : redémarrage échoué : herdr absent')
@@ -90,7 +93,7 @@ test('installation en échec : aucune mission touchée', async () => {
   let listed = false
   await expect(update({}, d, async () => {
     listed = true
-    return []
+    return { running: [], legacy: [] }
   })).rejects.toThrow('téléchargement impossible')
   expect(listed).toBe(false)
 })
@@ -99,7 +102,61 @@ test('missions en cours : ni PR ouverte, ni fermée, ni bloquée', async () => {
   for (const [id, step] of [['a1', 'tasks'], ['b2', 'pr-open'], ['c3', 'closed'], ['d4', 'blocked'], ['e5', 'preflight']] as const) {
     await saveState(mission(id, step))
   }
-  expect((await runningMissions()).map((s) => s.id)).toEqual(['a1', 'e5'])
+  const found = await runningMissions()
+  expect(found.running.map((s) => s.id)).toEqual(['a1', 'e5'])
+  expect(found.legacy.map((s) => s.id)).toEqual([])
+})
+
+test('isPreEnglish', () => {
+  expect(isPreEnglish('0.8.1')).toBe(true)
+  expect(isPreEnglish('v0.8.0')).toBe(true)
+  expect(isPreEnglish('0.9.0')).toBe(false)
+  expect(isPreEnglish('1.0.0')).toBe(false)
+})
+
+test('update --version 0.8.1 offers no restart', async () => {
+  const d = deps()
+  let listedCalled = false
+  await update({ version: '0.8.1' }, d, async () => {
+    listedCalled = true
+    return { running: [mission('a1', 'tasks')], legacy: [] }
+  })
+  expect(listedCalled).toBe(false)
+  expect(d.calls).toEqual(['install --version 0.8.1'])
+  expect(d.lines).toEqual([
+    'herness 0.8.1 cannot read missions created by newer versions.',
+    'Missions it started can be restarted with: herness reprendre <id> --redemarrer',
+  ])
+})
+
+test('update lists legacy missions apart and restarts only the others', async () => {
+  const d = deps(true)
+  const legacy = mission('A', 'tasks')
+  delete legacy.format
+  const running = mission('B', 'tasks')
+  await update({}, d, listed([running], [legacy]))
+  expect(d.lines).toContain(
+    'mission A was created by herness 0.8 or earlier and is still running: finish it with that version (herness update --version 0.8.1) or close it (herness close A)',
+  )
+  expect(d.calls).toEqual(['install', 'confirm Restart them on the new version?', 'restart B'])
+  expect(d.calls).not.toContain('restart A')
+})
+
+test('runningMissions sépare les missions héritées non terminées', async () => {
+  await saveState(mission('cur', 'tasks'))
+  await saveState(mission('done', 'closed'))
+  await saveState(mission('wait', 'blocked'))
+  for (const [id, step] of [['old-run', 'tasks'], ['old-block', 'blocked'], ['old-done', 'pr-open']] as const) {
+    const s = mission(id, step)
+    await saveState(s)
+    const file = join(missionDir(id), 'state.json')
+    const raw = JSON.parse(await readFile(file, 'utf8')) as { format?: number }
+    delete raw.format
+    await writeFile(file, JSON.stringify(raw))
+  }
+  const found = await runningMissions()
+  expect(found.running.map((s) => s.id)).toEqual(['cur'])
+  expect(found.legacy.map((s) => s.id)).toEqual(['old-block', 'old-run'])
 })
 
 test('lanceur installé : HERNESS_INSTALL_DIR, sinon XDG_DATA_HOME, sinon ~/.local/share', () => {

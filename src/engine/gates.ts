@@ -1,4 +1,4 @@
-import { loadState, type Gate, type GateKind, type MissionState } from '../mission/state.ts'
+import { assertResumable, loadState, type Gate, type GateKind, type MissionState } from '../mission/state.ts'
 import { postInbox, type InboxMessage } from '../mission/inbox.ts'
 
 type Decision = Extract<InboxMessage, { type: 'decision' }>
@@ -49,6 +49,7 @@ export async function decide(
   const out = opts.out ?? console.log
   if (!opts.isTTY) throw new Error('validation réservée à un terminal interactif')
   const s = await loadState(id)
+  assertResumable(s)
   const gate = opts.gateId ? s.gates.find((g) => g.id === opts.gateId) : pendingGate(s)
   if (!gate) {
     throw new Error(opts.gateId ? `porte ${opts.gateId} introuvable` : 'aucune porte en attente')
