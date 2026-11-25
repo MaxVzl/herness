@@ -8,7 +8,7 @@ import type { ProjectConfig } from '../../src/config/project.ts'
 import { logHernessError } from '../../src/errlog.ts'
 import { closeMission, deleteMission, missionStatus, reportMissionErrors, resumeMission, startMission, type LifecycleDeps } from '../../src/lifecycle.ts'
 import { drainInbox } from '../../src/mission/inbox.ts'
-import { LegacyMissionError, loadState, newState, saveState, type MissionState } from '../../src/mission/state.ts'
+import { isLegacy, LegacyMissionError, loadState, newState, saveState, type MissionState } from '../../src/mission/state.ts'
 import { missionDir } from '../../src/paths.ts'
 import { fakeEffects, type FakeEffects, type FakeOverrides } from '../fakes.ts'
 
@@ -313,6 +313,44 @@ test('close stops when the test database cannot be removed', async () => {
   expect(fx.callsOf('herdr.workspaceClose')).toEqual([])
   expect(fx.callsOf('git.worktreeRemove')).toEqual([])
   expect((await loadState('gh12')).step).toBe('env')
+})
+
+test('closeMission closes a legacy mission at tasks and saves format 2', async () => {
+  const { d } = await started({ git: { unpushedCount: async () => 0 } })
+  await patch({ step: 'tasks' })
+  await dropFormat('gh12')
+  expect(isLegacy(await loadState('gh12'))).toBe(true)
+  expect(await closeMission('gh12', d)).toBe(true)
+  const after = await loadState('gh12')
+  expect(after.step).toBe('closed')
+  expect(isLegacy(after)).toBe(false)
+})
+
+test('close of a legacy mission stops the proof database in the 0.8 worktree', async () => {
+  const { fx, d } = await started({ git: { unpushedCount: async () => 0 } })
+  const legacyProof = join(missionDir('gh12'), 'preuve-main')
+  await mkdir(legacyProof)
+  await patch({ step: 'closed', proofDbUp: true })
+  await dropFormat('gh12')
+  expect(await closeMission('gh12', d)).toBe(true)
+  expect(fx.callsOf('run').map((c) => c[1])).toContainEqual(['down', 'gh12-main', legacyProof])
+})
+
+test('engine refuses a legacy running mission without logging it', async () => {
+  await started()
+  await patch({ step: 'tasks' })
+  await dropFormat('gh12')
+  const r = await execa('node', ['bin/herness.js', 'engine', 'gh12'], {
+    reject: false,
+    stdin: 'ignore',
+    timeout: 8000,
+    env: { HERNESS_HOME: home },
+  })
+  expect(r.exitCode).toBe(1)
+  expect(r.stderr.trim()).toBe(
+    'herness: mission gh12 was created by herness 0.8 or earlier and is still running: finish it with that version (herness update --version 0.8.1) or close it (herness close gh12)',
+  )
+  expect(await exists(join(home, 'errors.log'))).toBe(false)
 })
 
 test('close also removes the proof database on main', async () => {

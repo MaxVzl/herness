@@ -74,6 +74,9 @@ describe('render', () => {
       expect(raw).not.toContain(old)
     }
     expect(raw).toContain('[herness]')
+    expect(raw).not.toContain('`v` key')
+    expect(raw).toContain('the `a` key')
+    expect(raw).toContain('The PR is open on branch …: …. The mission is finished.')
   })
 
   it('correction asks to append the report at the end of the file, without overwriting it', async () => {

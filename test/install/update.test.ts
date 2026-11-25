@@ -110,8 +110,12 @@ test('running missions: not a PR open, not closed, not blocked', async () => {
 test('isPreEnglish', () => {
   expect(isPreEnglish('0.8.1')).toBe(true)
   expect(isPreEnglish('v0.8.0')).toBe(true)
+  expect(isPreEnglish('0.8.1-rc.1')).toBe(true)
+  expect(isPreEnglish('v0.8.0+build.1')).toBe(true)
   expect(isPreEnglish('0.9.0')).toBe(false)
+  expect(isPreEnglish('0.9.0-rc.1')).toBe(false)
   expect(isPreEnglish('1.0.0')).toBe(false)
+  expect(isPreEnglish('1.0.0-rc.1')).toBe(false)
 })
 
 test('update --version 0.8.1 offers no restart', async () => {

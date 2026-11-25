@@ -95,9 +95,9 @@ export interface UpdateDeps {
   out: (line: string) => void
 }
 
-/** True for a `0.y.z` version with `y < 9` (`v` prefix tolerated): herness from before the switch to English. */
+/** True for a `0.y.z` version with `y < 9` (`v` prefix and a `+` or `-` suffix tolerated): herness from before the switch to English. */
 export function isPreEnglish(version: string): boolean {
-  const match = /^(?:v)?0\.(\d+)\.\d+$/.exec(version)
+  const match = /^(?:v)?0\.(\d+)\.\d+(?:[-+].*)?$/.exec(version)
   return match !== null && Number(match[1]) < 9
 }
 

@@ -4,7 +4,7 @@ import { fill, type ProjectConfig } from '../config/project.ts'
 import { errorLogPath, logHernessError, type ErrorContext } from '../errlog.ts'
 import { drainInbox, type InboxMessage } from '../mission/inbox.ts'
 import { parsePlan } from '../mission/plan.ts'
-import { loadState, saveState, type Gate, type GateKind, type MissionState, type Step } from '../mission/state.ts'
+import { isLegacy, loadState, saveState, type Gate, type GateKind, type MissionState, type Step } from '../mission/state.ts'
 import { missionDir, planPath, specPath } from '../paths.ts'
 import { proposedPlanPath } from '../mission/amendment.ts'
 import type { Effects } from './effects.ts'
@@ -84,8 +84,11 @@ export function testDbDown(s: MissionState, e: Effects, cfg: ProjectConfig): Pro
 }
 
 /** Stops the `<id>-main` database of a proof on main that is still up; never throws. */
-export function proofDbDown(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<string | null> {
-  return dbDown(s, e, cfg, 'proofDbUp', `${s.id}-main`, proofWorktree(s.id))
+export async function proofDbDown(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<string | null> {
+  let worktree = proofWorktree(s.id)
+  // 0.8 named that worktree preuve-main. A close must not call down on a folder that was never created.
+  if (isLegacy(s) && !(await fileExists(worktree))) worktree = join(missionDir(s.id), 'preuve-main')
+  return dbDown(s, e, cfg, 'proofDbUp', `${s.id}-main`, worktree)
 }
 
 /** Blocks the mission because a test database could not be removed (`testDbUp`/`proofDbUp` stay true). */

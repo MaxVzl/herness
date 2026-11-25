@@ -25,7 +25,7 @@ program.action(async () => {
 // Cockpit screen: missions of the project in the current directory; outside a TTY, a single frame.
 program
   .command('cockpit')
-  .description('Project mission cockpit (↑/↓ mission, v/r/n gate, p/R/f/o, + new mission, a finished, q quit)')
+  .description('Project mission cockpit (↑/↓ mission, ←/→ gate, a/r/n gate, u/R/c/o/D, + new mission, f finished, q quit)')
   .action(async () => {
     try {
       // No git/ssh prompt while ink is drawing.
@@ -76,16 +76,24 @@ program
     const { installProcessErrorLog, withErrorLog } = await import('./errlog.ts')
     installProcessErrorLog({ mission: id, origin: 'engine: uncaught error' })
     const engine = await withErrorLog({ mission: id, origin: 'engine startup' }, async () => {
-      const { assertResumable, loadState } = await import('./mission/state.ts')
+      const { assertResumable, LegacyMissionError, loadState } = await import('./mission/state.ts')
       const { loadProjectConfig } = await import('./config/project.ts')
       const { Engine } = await import('./engine/engine.ts')
       const { realEffects } = await import('./engine/effects.ts')
       const s = await loadState(id)
-      assertResumable(s)
+      try {
+        assertResumable(s)
+      } catch (e) {
+        if (!(e instanceof LegacyMissionError)) throw e
+        // A 0.8 cockpit relaunches this binary: refusing the mission is not an internal error.
+        console.error(`herness: ${e.message}`)
+        process.exitCode = 1
+        return null
+      }
       const cfg = await loadProjectConfig(s.repoPath)
       return new Engine(id, realEffects(), cfg)
     })
-    await engine.run()
+    if (engine) await engine.run()
   })
 
 async function askYesNo(question: string): Promise<boolean> {
@@ -284,7 +292,7 @@ program
 
 program
   .command('tasks <id>')
-  .description('Mission dashboard: the cockpit actions for this mission (c back to the cockpit, q quit)')
+  .description('Mission dashboard: the cockpit actions for this mission (b back to the cockpit, q quit)')
   .action(async (id: string) => {
     try {
       // No git/ssh prompt while ink is drawing.

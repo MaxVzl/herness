@@ -40,12 +40,14 @@ const WORD_RE = new RegExp(`\\b(?:${WORDS.join('|')})\\b`, 'i')
  * `herness reprendre … --redemarrer`) and fixtures of a legacy state, log or plan.
  */
 const EXCEPTIONS: { file: string; excerpt: string; reason: string }[] = [
+  { file: 'src/engine/engine.ts', excerpt: 'preuve-main', reason: '0.8 proof worktree, used when proof-main is absent' },
   { file: 'src/errreport.ts', excerpt: 'étape', reason: '0.8 error-log header "(étape …)" is still parsed' },
   { file: 'src/mission/plan.ts', excerpt: 'Tâche', reason: '0.8 plan heading "### Tâche <n>:" is still parsed' },
   { file: 'src/mission/state.ts', excerpt: 'fermée', reason: 'migrateLegacy table: 0.8 step fermée' },
   { file: 'src/mission/state.ts', excerpt: 'bloquée', reason: 'migrateLegacy table: 0.8 step bloquée' },
   { file: 'src/ui/model.ts', excerpt: 'mission fermée', reason: '0.8 close log line is still recognized' },
   { file: 'src/update.ts', excerpt: 'herness reprendre', reason: '0.8 command quoted when rolling back with --version' },
+  { file: 'test/cli/lifecycle.test.ts', excerpt: 'preuve-main', reason: 'fixture of a 0.8 proof worktree path' },
   { file: 'test/errreport-send.test.ts', excerpt: '(étape', reason: 'fixture of a legacy error log' },
   { file: 'test/errreport.test.ts', excerpt: '(étape', reason: 'fixture of a legacy error log' },
   { file: 'test/install/update.test.ts', excerpt: 'herness reprendre', reason: 'asserts the 0.8 rollback message' },

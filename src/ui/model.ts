@@ -36,7 +36,7 @@ export function shortId(id: string): string {
 }
 
 function closedAt(s: MissionState): number {
-  // "mission closed" is the English log line. "mission fermée" is the 0.8 line, still written by lifecycle.
+  // "mission closed" is the English log line. "mission fermée" is the 0.8 line, written by 0.8.
   const entry = [...s.log].reverse().find((l) => /mission closed|mission fermée/.test(l.msg))
   return new Date(entry?.at ?? s.createdAt).getTime()
 }

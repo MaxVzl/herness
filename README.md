@@ -39,6 +39,8 @@ Everything herness launches (engine, dashboard, viewers, MCP server, cockpit) st
 
 Finish or close missions that are still running before you install this version. Do not restart a mission created by herness 0.8 or earlier: finish it on that version, or close it (`herness close <id>`). An engine already running on 0.8 keeps its old code until something restarts it, so the mission can still finish after the upgrade if you leave it alone.
 
+Run that upgrade with `herness mise-a-jour` (the 0.8 command). Answer no when it offers to restart missions, or have no mission in progress: the offer runs `current/bin/herness` with a command this version does not know.
+
 Add `language: 'fr'` to the config of francophone projects. A missing value means `'en'`.
 
 To roll back: `herness update --version 0.8.1`. That install offers no restart. It cannot read missions created by this version, and it prints how to restart the missions that older version started.
@@ -185,7 +187,7 @@ To add a project, run `herness init` from its repository. It writes `~/.config/h
 - the package manager (`packageManager` in `package.json`, otherwise the lockfile);
 - `preflight`: the `typecheck`, `lint`, `format:check` and `test` scripts of `package.json` that exist;
 - `commitFormat` from the last 50 commits (with or without a scope, with or without an `[{id}]` suffix);
-- `language: 'en'` (language of this project's specs, plans, commits and pull requests);
+- `language: 'en'` (language of this project's specs, plans, pull requests, and commit messages written by agents; the engine's own commits stay in English);
 - a `prepare-worktree.sh` that copies `.env` and `.env.local` from the main checkout and installs dependencies.
 
 The rest takes the default values of the `projects/example/` template. `init` then asks whether to refine the config with Claude: Claude opens in the terminal, at the repository root, explores CI, scripts and services, adjusts preflight, preparation, the test database and forbidden paths, asks its questions and modifies only the config folder. When it exits, herness validates the config again. Running `herness init` on a project that is already configured only offers that refinement again.
@@ -203,7 +205,7 @@ The file default-exports a plain object, with no import of herness sources: hern
 | `name`, `repoPath`, `mainBranch` | Identity, repository path, main branch |
 | `branchPrefixes` | Commit type to branch prefix |
 | `commitFormat` | Commit format, e.g. `{type}({scope}): {description} [{id}]` |
-| `language` | Language code (`'en'`, `'fr'`…) of specs, plans, commits and pull requests. Default `'en'` |
+| `language` | Language code (`'en'`, `'fr'`…) of specs, plans, pull requests, and commit messages written by agents. The engine's own commits stay in English. Default `'en'` |
 | `forbiddenPaths`, `forbiddenCommands` | Files and commands forbidden to agents |
 | `prepare` | Worktree preparation command (`{worktree}`) |
 | `testDb` | Optional: `up` / `down` of the test database (`{id}`, `{worktree}`) |
