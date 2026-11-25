@@ -71,11 +71,11 @@ export async function findingsOf(path: string | undefined): Promise<string> {
   return raw.split('\n').slice(1).join('\n').trim() || '(none)'
 }
 
-const CONTRADICTS_PLAN = /imposed by the plan|imposé par le plan/i
+const CONTRADICTS_PLAN = /imposed by the plan/i
 
 /**
  * CORRECTIONS verdict (task, global review, preflight re-review): the orchestrator is told in one line; findings
- * that contradict the plan ("imposed by the plan", or "imposé par le plan") open an `arbitration` gate, and fixes
+ * that contradict the plan ("imposed by the plan") open an `arbitration` gate, and fixes
  * wait for the user's decision (`arbitrationPending`), whose note goes into the fix file.
  */
 export async function onCorrections(s: MissionState, e: Effects, what: string, reviewPath: string, round: number): Promise<void> {

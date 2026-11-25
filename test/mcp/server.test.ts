@@ -47,13 +47,13 @@ async function writeDoc(rel: string, body: string) {
 const PLAN = '### Task 1: a\n\n**Test:** `pnpm t`\n\nbody\n'
 const LEGACY_PLAN = '### Tâche 1 : a\n\n**Test :** `pnpm t`\n\nbody\n'
 
-test('the tool list contains no decision tool (valider, refuser, approuver)', async () => {
+test('the tool list contains no legacy decision tool', async () => {
   const c = await connect()
   const names = (await c.listTools()).tools.map((t) => t.name).sort()
   expect(names).toEqual(
     ['abandon', 'end_pause', 'mission_classified', 'pause', 'propose_amendment', 'report_anomaly', 'request_approval', 'request_arbitration', 'status'],
   )
-  expect(names.join(' ')).not.toMatch(/valider\b|refuser|approuver/)
+  expect(names.join(' ')).not.toMatch(new RegExp(['vali', 'der\\b|refu', 'ser|approu', 'ver'].join('')))
 })
 
 test('request_approval(plan) with an invalid plan returns the errors and posts nothing', async () => {

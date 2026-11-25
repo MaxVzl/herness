@@ -23,8 +23,8 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-const SPEC = '# Export CSV des dossiers\n\n## Intention\n\nPermettre l\'export CSV\ndes dossiers du mois.\n\nSecond paragraphe.\n'
-const task = (patch: Partial<TaskState>): TaskState => ({ n: 1, title: 'Modèle', testCommand: 'pnpm test a', phase: 'done', round: 0, ...patch })
+const SPEC = '# Export CSV of the records\n\n## Intention\n\nAllow the CSV export\nof the records for the month.\n\nSecond paragraph.\n'
+const task = (patch: Partial<TaskState>): TaskState => ({ n: 1, title: 'Model', testCommand: 'pnpm test a', phase: 'done', round: 0, ...patch })
 
 async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState> } = {}) {
   const over = opts.over ?? {}
@@ -45,7 +45,7 @@ async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState>
     type: 'feat',
     slug: 'export-csv',
     step: 'pr',
-    tasks: [task({ n: 1, title: 'Modèle', testCommand: 'pnpm test a' }), task({ n: 2, title: 'Export', testCommand: 'pnpm test b' })],
+    tasks: [task({ n: 1, title: 'Model', testCommand: 'pnpm test a' }), task({ n: 2, title: 'Export', testCommand: 'pnpm test b' })],
     loops,
     herdr: { workspace: 'w1', tabs: { agents: 'w1:t2', checks: 'w1:t3', process: 'w1:t4' }, panes: {} },
     orchestrator: { agent: 'oT-1' },
@@ -72,14 +72,14 @@ test('stepPr pushes, creates the PR and moves to pr-open', async () => {
   expect(fx.callsOf('git.rebaseOnto')).toEqual([])
   expect(fx.callsOf('git.push')).toEqual([[wt, 'feature/T-1-export-csv']])
   const bodyFile = join(missionDir('T-1'), 'pr-body.md')
-  expect(fx.callsOf('forge.createPr')).toEqual([[wt, { base: 'main', title: 'feat(export-csv): Export CSV des dossiers', bodyFile }]])
+  expect(fx.callsOf('forge.createPr')).toEqual([[wt, { base: 'main', title: 'feat(export-csv): Export CSV of the records', bodyFile }]])
   const body = await readFile(bodyFile, 'utf8')
   expect(body).toContain('https://github.com/o/r/issues/12')
-  expect(body).toContain("Permettre l'export CSV\ndes dossiers du mois.")
-  expect(body).not.toContain('Second paragraphe')
+  expect(body).toContain('Allow the CSV export\nof the records for the month.')
+  expect(body).not.toContain('Second paragraph')
   expect(body).toContain('## Context')
   expect(body).toContain('## Changes')
-  expect(body).toContain('- Task 1: Modèle')
+  expect(body).toContain('- Task 1: Model')
   expect(body).toContain('- Task 2: Export')
   expect(body).toContain('`pnpm test a`')
   expect(body).toContain('`pnpm test b`')
@@ -236,7 +236,7 @@ test('a conflict resolved by hand then a resume approved: back to preflight, no 
 
 async function blocked(blockedFrom: MissionState['step'], patch: Partial<MissionState> = {}) {
   // Paused: the engine handles the decision without running the resumed step.
-  const r = await setup({ patch: { step: 'blocked', blockedFrom, blockedReason: '3 tours de correction épuisés', paused: true, ...patch } })
+  const r = await setup({ patch: { step: 'blocked', blockedFrom, blockedReason: '3 correction rounds exhausted', paused: true, ...patch } })
   const s = await loadState('T-1')
   const g = openGate(s, 'resume-blocked', s.blockedReason!)
   await saveState(s)
@@ -310,7 +310,7 @@ test('resume-blocked refused: the mission stays blocked', async () => {
   const s = await loadState('T-1')
   expect(s.step).toBe('blocked')
   expect(s.blockedFrom).toBe('tasks')
-  expect(s.blockedReason).toBe('3 tours de correction épuisés')
+  expect(s.blockedReason).toBe('3 correction rounds exhausted')
   expect(s.tasks[0]!.round).toBe(4)
 })
 

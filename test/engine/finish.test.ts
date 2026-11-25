@@ -25,7 +25,7 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-const PLAN1 = '# Plan\n\n### Tâche 1 : Modèle\n\n**Test :** `pnpm test a`\n\nfaire a\n'
+const PLAN1 = '# Plan\n\n### Tâche 1 : Model\n\n**Test :** `pnpm test a`\n\nfaire a\n'
 const PLAN2 = `${PLAN1}\n### Tâche 2 : Export\n\n**Test :** \`pnpm test b\`\n\nfaire b\n`
 const cfg: ProjectConfig = {
   ...demo,
@@ -34,7 +34,7 @@ const cfg: ProjectConfig = {
     { label: 'test', command: ['pnpm', 'test'] },
   ],
 }
-const task = (patch: Partial<TaskState> = {}): TaskState => ({ n: 1, title: 'Modèle', testCommand: 'pnpm test a', phase: 'done', round: 0, ...patch })
+const task = (patch: Partial<TaskState> = {}): TaskState => ({ n: 1, title: 'Model', testCommand: 'pnpm test a', phase: 'done', round: 0, ...patch })
 const gdir = () => join(missionDir('T-1'), 'global')
 const pdir = () => join(missionDir('T-1'), 'preflight')
 const down = () => [demo.testDb!.down[0], ['down', 'T-1', wt], { cwd: wt, reject: false }]
@@ -561,13 +561,13 @@ test('after an amendment, loop directories are archived and the new global revie
 test("a test database not removed after an all-green preflight blocks the mission instead of going to pr", async () => {
   const { eng } = await setup({
     patch: { step: 'preflight' },
-    over: { runInPane: panes(), run: async () => ({ stdout: '', stderr: 'conteneur occupé', exitCode: 1 }) },
+    over: { runInPane: panes(), run: async () => ({ stdout: '', stderr: 'container busy', exitCode: 1 }) },
   })
   const s = await until(eng, (x) => x.step !== 'preflight')
   expect(s.step).toBe('blocked')
   expect(s.blockedFrom).toBe('preflight')
   expect(s.blockedReason).toContain('test database T-1 not removed: ')
-  expect(s.blockedReason).toContain('conteneur occupé')
+  expect(s.blockedReason).toContain('container busy')
   expect(s.testDbUp).toBe(true)
 })
 
@@ -672,11 +672,11 @@ test("global review: fixer stopped without a commit and with a report, agent-sto
   })
   await mkdir(gdir(), { recursive: true })
   await writeFile(join(gdir(), 'review.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 renommer\n')
-  await writeFile(join(gdir(), 'report.md'), 'Je ne peux pas renommer : le nom est imposé par la spec.\n')
+  await writeFile(join(gdir(), 'report.md'), 'I cannot rename: the name is required by the spec.\n')
   let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   const g = s.gates.find((x) => x.kind === 'agent-stopped')!
   expect(g.summary).toMatch(/^global review: the implementer stopped without a commit\n/)
-  expect(g.summary).toContain('imposé par la spec')
+  expect(g.summary).toContain('required by the spec')
   expect(s.loops.globalReview).toMatchObject({ round: 1, phase: 'control', stopGate: g.id })
   expect(await eng.tick()).toBe('wait')
 
@@ -707,21 +707,21 @@ test('preflight: fixer stopped without a commit and with a report; gate approved
     over: {
       git: { controlCommits: async () => noCommit },
       // The round-2 fixer also stops, after appending to the report.
-      agents: { ask: async (_name: string, file: string) => (await appendFile(join(dirname(file), 'report.md'), 'Arrêt encore.\n'), 'done' as const) },
+      agents: { ask: async (_name: string, file: string) => (await appendFile(join(dirname(file), 'report.md'), 'Stopped again.\n'), 'done' as const) },
     },
   })
   await mkdir(pdir(), { recursive: true })
-  await writeFile(join(pdir(), 'report.md'), 'Arrêt : la règle de lint contredit la spec.\n')
+  await writeFile(join(pdir(), 'report.md'), 'Stop: the lint rule contradicts the spec.\n')
   let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   const g1 = s.gates.find((x) => x.kind === 'agent-stopped')!
   expect(g1.summary).toMatch(/^preflight: the implementer stopped without a commit\n/)
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g1.id, decision: 'approved', note: 'désactive la règle localement' })
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g1.id, decision: 'approved', note: 'disable the rule locally' })
   s = await until(eng, (x) => x.gates.filter((g) => g.kind === 'agent-stopped').length === 2)
   expect(s.loops.preflight.round).toBe(2)
   expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cpt-1-2', join(pdir(), 'correctifs-2.md')])
   const fix = await readFile(join(pdir(), 'correctifs-2.md'), 'utf8')
   expect(fix).toContain('src/x.ts:1 lint')
-  expect(fix).toContain('User decision: désactive la règle localement')
+  expect(fix).toContain('User decision: disable the rule locally')
 
   const g2 = s.gates.at(-1)!
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g2.id, decision: 'refused', note: 'stop' })
@@ -737,9 +737,9 @@ test("M1: global review, report unchanged since the fixes were sent: blocked, no
   })
   await mkdir(gdir(), { recursive: true })
   await writeFile(join(gdir(), 'review.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 renommer\n')
-  await writeFile(join(gdir(), 'report.md'), 'compte rendu du tour précédent\n')
+  await writeFile(join(gdir(), 'report.md'), 'report from the previous round\n')
   const s = await until(eng, (x) => x.step === 'blocked')
-  expect(s.loops.globalReview.reportSize).toBe(Buffer.byteLength('compte rendu du tour précédent\n'))
+  expect(s.loops.globalReview.reportSize).toBe(Buffer.byteLength('report from the previous round\n'))
   expect(s.gates).toEqual([])
 })
 
@@ -763,7 +763,7 @@ test("preflight: fixer seen idle without a report, the commit is checked only af
     patch: { step: 'preflight', loops: { ...baseLoops(), globalReview: { round: 0, reviewedSha: 'sha-rev' }, preflight: P } },
     over: {
       sleep: async () => {
-        if (++sleeps === 2) await writeFile(join(pdir(), 'report.md'), 'ancien\ncorrigé, commit c1\n')
+        if (++sleeps === 2) await writeFile(join(pdir(), 'report.md'), 'old\nfixed, commit c1\n')
       },
       git: {
         controlCommits: async () => {

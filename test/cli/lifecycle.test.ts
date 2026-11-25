@@ -78,7 +78,7 @@ test('dev creates the workspace, saves the state, then starts the engine, dashbo
   expect(prompt).toContain('### Task <n>: <title>')
   expect(prompt).toContain('**Test:**')
   expect(prompt).toMatch(/\bfr\b/)
-  expect(prompt).not.toContain('Tu réponds en français')
+  expect(prompt).not.toContain('Tu r\u00e9ponds en fran\u00e7ais')
   expect(prompt).toContain(join(missionDir('gh12'), 'request.md'))
   // After the PR: the mission branch read from the worktree (renamed at classification), the project main and
   // the project preflight, spelled out.

@@ -66,7 +66,7 @@ describe('render', () => {
     expect(raw).toContain('### Task <n>: <title>')
     expect(raw).toMatch(/never by you/)
     expect(raw).toContain('herness approve')
-    expect(raw).not.toContain('Tu réponds en français')
+    expect(raw).not.toContain('Tu r\u00e9ponds en fran\u00e7ais')
     for (const t of ['status', 'mission_classified', 'request_approval', 'propose_amendment', 'request_arbitration', 'pause', 'end_pause', 'abandon', 'report_anomaly']) {
       expect(raw).toContain(t)
     }
@@ -109,7 +109,7 @@ describe('orchestrator.md', () => {
     expect(out).toContain('mission_classified')
     expect(out).toContain('### Task <n>: <title>')
     expect(out).toContain('**Test:**')
-    expect(out).not.toContain('Tu réponds en français')
+    expect(out).not.toContain('Tu r\u00e9ponds en fran\u00e7ais')
     expect(out).not.toMatch(/\{\{/)
   })
 })

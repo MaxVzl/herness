@@ -208,7 +208,7 @@ test('a then a with two gates targets g1 then g2', async () => {
     await waitFor(lastFrame, `Approve g${i + 1}`)
     stdin.write('\r')
     await until(() => calls.length === i + 1)
-    await waitGone(lastFrame, 'Valider g')
+    await waitGone(lastFrame, 'Approve g')
   }
   expect(calls.map((c) => c[2])).toEqual(['g1', 'g2'])
 })

@@ -36,7 +36,7 @@ function item<T>(items: readonly T[], index: number): T {
   return value
 }
 
-test('parseErrorLog reads both (étape X) and (step X) headers', () => {
+test('parseErrorLog reads both a legacy step header and a (step X) header', () => {
   const text = [
     '=== 2026-01-01T00:00:00.000Z · mission m1 · herness 1.0.0 · moteur (étape tasks)',
     'ancien',

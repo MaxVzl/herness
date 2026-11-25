@@ -35,12 +35,12 @@ test('findingsOf without a review body says (none)', async () => {
   expect(await findingsOf(undefined)).toBe('(none)')
 })
 
-const T1 = '### Tâche 1 : Modèle\n\n**Test :** `pnpm test a`\n\nfaire a\n'
+const T1 = '### Tâche 1 : Model\n\n**Test :** `pnpm test a`\n\nfaire a\n'
 const T2 = '### Tâche 2 : Export\n\n**Test :** `pnpm test b`\n\nfaire b\n'
 const PLAN1 = `# Plan\n\n${T1}`
 const PLAN2 = `# Plan\n\n${T1}\n${T2}`
 
-const task = (patch: Partial<TaskState> = {}): TaskState => ({ n: 1, title: 'Modèle', testCommand: 'pnpm test a', phase: 'pending', round: 0, ...patch })
+const task = (patch: Partial<TaskState> = {}): TaskState => ({ n: 1, title: 'Model', testCommand: 'pnpm test a', phase: 'pending', round: 0, ...patch })
 const gate = (patch: Partial<Gate>): Gate => ({ id: 'g1', kind: 'amendment', status: 'approved', summary: 's', createdAt: '2026-10-29T10:00:00.000Z', ...patch })
 const taskDir = (n = 1) => join(missionDir('T-1'), 'tasks', String(n))
 
@@ -234,7 +234,7 @@ test('a re-review uses the same reviewer and the diff since reviewedSha', async 
 })
 
 test('an unreadable verdict blocks the mission', async () => {
-  const { eng } = await setup({ over: { agents: { ask: scriptedAsk(['Je pense que ça va']) } } })
+  const { eng } = await setup({ over: { agents: { ask: scriptedAsk(['I think this is fine']) } } })
   const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedReason).toContain('unreadable review verdict')
 })
@@ -351,7 +351,7 @@ test('a pending arbitration gate suspends the correction and its note goes into 
   const { fx, eng } = await setup({
     patch: {
       tasks: [task({ phase: 'fix', round: 1, fixer: 'same', baseSha: 'b0', reviewedSha: 'h1', implementer: 'ct-1-t1', lastReview: join(taskDir(), 'review.md') })],
-      gates: [gate({ id: 'g1', kind: 'arbitration', status: 'pending', summary: 'colonne à garder ?' })],
+      gates: [gate({ id: 'g1', kind: 'arbitration', status: 'pending', summary: 'keep this column?' })],
     },
   })
   await mkdir(taskDir(), { recursive: true })
@@ -644,7 +644,7 @@ test('a finding "imposed by the plan" opens an arbitration gate and suspends fix
     if (name.startsWith('r')) {
       const fileName = basename(file)
       const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
-      await writeFile(out, 'VERDICT: CORRECTIONS\n\n## Remarques\n- src/a.ts:3 nom de variable\n- src/b.ts:9 colonne supprimée alors que c\'est imposed by the plan (tâche 1)\n')
+      await writeFile(out, 'VERDICT: CORRECTIONS\n\n## Notes\n- src/a.ts:3 variable name\n- src/b.ts:9 column removed although it is imposed by the plan (task 1)\n')
     }
     return 'done' as const
   }
@@ -652,8 +652,8 @@ test('a finding "imposed by the plan" opens an arbitration gate and suspends fix
   let s = await until(eng, (x) => x.tasks[0]!.phase === 'fix')
   const g = s.gates.find((x) => x.kind === 'arbitration')!
   expect(g).toMatchObject({ status: 'pending' })
-  expect(g.summary).toContain('src/b.ts:9 colonne supprimée')
-  expect(g.summary).not.toContain('nom de variable')
+  expect(g.summary).toContain('src/b.ts:9 column removed')
+  expect(g.summary).not.toContain('variable name')
   const prompts = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1]))
   expect(prompts.some((p) => /^\[herness\] task 1: review CORRECTIONS \(round 1\)/.test(p))).toBe(true)
   expect(prompts.some((p) => p.includes(`Gate ${g.id} (arbitration)`))).toBe(true)
@@ -664,20 +664,6 @@ test('a finding "imposed by the plan" opens an arbitration gate and suspends fix
   s = await until(eng, (x) => x.tasks[0]!.phase === 'control')
   const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
   expect(fix).toContain('le plan prime, garder la colonne')
-})
-
-test('a finding "imposé par le plan" still opens an arbitration gate', async () => {
-  const ask = async (name: string, file: string) => {
-    if (name.startsWith('r')) {
-      const fileName = basename(file)
-      const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
-      await writeFile(out, 'VERDICT: CORRECTIONS\n\n- src/b.ts:9 imposé par le plan\n')
-    }
-    return 'done' as const
-  }
-  const { eng } = await setup({ over: { agents: { ask } } })
-  const s = await until(eng, (x) => x.tasks[0]!.phase === 'fix')
-  expect(s.gates.find((x) => x.kind === 'arbitration')?.summary).toContain('imposé par le plan')
 })
 
 test('a CORRECTIONS verdict with no plan contradiction informs the orchestrator and opens no gate', async () => {
@@ -748,11 +734,11 @@ test("stop without a commit approved with no note: the decision passed on is \"c
 test('stop without a commit, agent-stopped gate refused: the mission is blocked', async () => {
   const { eng } = await setup({ over: { agents: { ask: stoppingAsk() }, git: { controlCommits: async () => noCommit } } })
   let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: s.gates[0]!.id, decision: 'refused', note: 'on arrête' })
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: s.gates[0]!.id, decision: 'refused', note: 'we stop' })
   s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedFrom).toBe('tasks')
   expect(s.blockedReason).toContain("stopped without a commit")
-  expect(s.blockedReason).toContain('on arrête')
+  expect(s.blockedReason).toContain('we stop')
   expect(s.tasks[0]!.stopGate).toBeUndefined()
 })
 
@@ -781,7 +767,7 @@ test("stop without a commit approved after a task amendment: the fix file carrie
     },
   })
   await mkdir(taskDir(), { recursive: true })
-  await writeFile(join(taskDir(), 'brief.md'), '# Brief\n\n### Tâche 1 : Modèle\n\n**Test :** `pnpm test a`\n\nfaire a\n')
+  await writeFile(join(taskDir(), 'brief.md'), '# Brief\n\n### Tâche 1 : Model\n\n**Test :** `pnpm test a`\n\nfaire a\n')
   fx.herdr.started.add('ct-1-t1')
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'ok' })
   await until(eng, (x) => x.tasks[0]!.round === 1 && x.tasks[0]!.phase === 'control')
@@ -793,7 +779,7 @@ test("stop without a commit approved after a task amendment: the fix file carrie
 
 // ---------- amendment of the in-progress task (scenario 20261030-5) ----------
 
-const T1_FIXED = '### Tâche 1 : Modèle\n\n**Test :** `pnpm test a`\n\nfaire a, en gardant le placeholder imposé par le composant de base\n'
+const T1_FIXED = '### Tâche 1 : Model\n\n**Test :** `pnpm test a`\n\nfaire a, keeping the placeholder required by the base component\n'
 const PLAN1_FIXED = `# Plan\n\n${T1_FIXED}`
 
 test("20261030-5: stop without a commit, task amendment approved, brief rewritten with a resume, implementer restarted, no block", async () => {
@@ -820,7 +806,7 @@ test("20261030-5: stop without a commit, task amendment approved, brief rewritte
   const brief = await readFile(join(taskDir(), 'brief.md'), 'utf8')
   expect(brief).toContain('## Resume')
   expect(brief).toContain('Work is already present in the tree: keep it, adapt it to the new instructions, then run the tests and commit')
-  expect(brief).toContain('en gardant le placeholder imposé')
+  expect(brief).toContain('keeping the placeholder required')
   expect(await readFile(join(wt, planPath(s)), 'utf8')).toBe(PLAN1_FIXED)
 
   s = await until(eng, (x) => x.step !== 'tasks')
@@ -844,7 +830,7 @@ test("an amendment approved while the mission is blocked in the task loop unbloc
     patch: {
       step: 'blocked',
       blockedFrom: 'tasks',
-      blockedReason: 'task 1: contrôle du commit en échec',
+      blockedReason: 'task 1: commit check failed',
       tasks: [task({ phase: 'control', round: 2, baseSha: 'sha-head', implementer: 'ct-1-t1' })],
       gates: [gate({ id: 'g1', kind: 'amendment', status: 'pending', hash: proposalHash(PLAN1_FIXED) })],
     },
@@ -871,7 +857,7 @@ test("an arbitration decided while no correction is waiting has no effect and th
     patch: {
       step: 'blocked',
       blockedFrom: 'tasks',
-      blockedReason: 'task 1: contrôle du commit en échec',
+      blockedReason: 'task 1: commit check failed',
       tasks: [task({ phase: 'control', baseSha: 'b0' })],
       gates: [gate({ id: 'g1', kind: 'arbitration', status: 'pending', summary: 'continuer ?' })],
     },
@@ -950,7 +936,7 @@ test("I2: an obsolete agent-stopped gate does not hold back a later amendment", 
 })
 
 // Like `writeBrief`: title, then the body as `parsePlan` cuts it (it starts with the title's trailing newline).
-const BRIEF1 = '# Task brief\n\n### Task 1: Modèle\n\n\n\n**Test :** `pnpm test a`\n\nfaire a\n'
+const BRIEF1 = '# Task brief\n\n### Task 1: Model\n\n\n\n**Test :** `pnpm test a`\n\nfaire a\n'
 const blockedOn = (reason: string): Partial<MissionState> => ({
   step: 'blocked',
   blockedFrom: 'tasks',
@@ -970,7 +956,7 @@ async function proposeAndApprove(eng: Engine, plan: string): Promise<MissionStat
 }
 
 test("I3: mission blocked by task 1, amendment that changes it: the gate says so, approval unblocks", async () => {
-  const { eng } = await setup({ patch: blockedOn('task 1: 3 tours de correction épuisés') })
+  const { eng } = await setup({ patch: blockedOn('task 1: 3 correction rounds exhausted') })
   await mkdir(taskDir(), { recursive: true })
   await writeFile(join(taskDir(), 'brief.md'), BRIEF1)
   const s = await proposeAndApprove(eng, PLAN1_FIXED)
@@ -980,7 +966,7 @@ test("I3: mission blocked by task 1, amendment that changes it: the gate says so
 })
 
 test("I3: amendment that does not change the blocking task: applied, the mission stays blocked and the orchestrator knows", async () => {
-  const { fx, eng } = await setup({ patch: blockedOn('task 1: contrôle du commit en échec') })
+  const { fx, eng } = await setup({ patch: blockedOn('task 1: commit check failed') })
   await mkdir(taskDir(), { recursive: true })
   await writeFile(join(taskDir(), 'brief.md'), BRIEF1)
   const s = await proposeAndApprove(eng, PLAN2)
@@ -988,7 +974,7 @@ test("I3: amendment that does not change the blocking task: applied, the mission
   expect(s.appliedAmendments).toHaveLength(1)
   expect(s.tasks.map((t) => t.n)).toEqual([1, 2])
   expect(s.step).toBe('blocked')
-  expect(s.blockedReason).toBe('task 1: contrôle du commit en échec')
+  expect(s.blockedReason).toBe('task 1: commit check failed')
   expect(s.tasks[0]).toMatchObject({ phase: 'control', round: 2 })
   const prompts = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1]))
   expect(prompts.some((p) => p.includes('mission still blocked: herness resume T-1 to restart it'))).toBe(true)
@@ -1055,7 +1041,7 @@ test("M2: engine stop before state was saved (brief already rewritten): resume r
   })
   await mkdir(taskDir(), { recursive: true })
   // Brief rewritten by the interrupted attempt.
-  await writeFile(join(taskDir(), 'brief.md'), `# Task brief\n\n## Resume\n\n<!-- amendment g1 -->\n\n### Task 1: Modèle\n\n\n\n**Test :** \`pnpm test a\`\n\nfaire a, en gardant le placeholder imposé par le composant de base\n`)
+  await writeFile(join(taskDir(), 'brief.md'), `# Task brief\n\n## Resume\n\n<!-- amendment g1 -->\n\n### Task 1: Model\n\n\n\n**Test :** \`pnpm test a\`\n\nfaire a, keeping the placeholder required by the base component\n`)
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.appliedAmendments).toEqual(['g1'])

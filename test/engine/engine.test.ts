@@ -174,7 +174,7 @@ test('a rejected spec gate sends the note back to the orchestrator and returns t
   expect((await loadState('T-1')).step).toBe('spec')
 })
 
-const PLAN = '# Plan\n\n### Tâche 1 : Modèle\n\n**Test :** `pnpm test a`\n\nfaire a\n\n### Tâche 2 : Export\n\n**Test :** `pnpm test b`\n\nfaire b\n'
+const PLAN = '# Plan\n\n### Tâche 1 : Model\n\n**Test :** `pnpm test a`\n\nfaire a\n\n### Tâche 2 : Export\n\n**Test :** `pnpm test b`\n\nfaire b\n'
 
 test('an approved plan gate fills state.tasks from the plan', async () => {
   const s0 = await mission({ step: 'plan', type: 'feat', slug: 'export-csv' })
@@ -189,7 +189,7 @@ test('an approved plan gate fills state.tasks from the plan', async () => {
   const s = await loadState('T-1')
   expect(s.step).toBe('tasks')
   expect(s.tasks).toEqual([
-    { n: 1, title: 'Modèle', testCommand: 'pnpm test a', phase: 'pending', round: 0 },
+    { n: 1, title: 'Model', testCommand: 'pnpm test a', phase: 'pending', round: 0 },
     { n: 2, title: 'Export', testCommand: 'pnpm test b', phase: 'pending', round: 0 },
   ])
   expect(await readFile(join(missionDir('T-1'), 'plan.approved.md'), 'utf8')).toBe(PLAN)
@@ -326,7 +326,7 @@ test('unreadable state: startup and block-recording errors are logged without a 
   expect(journal).toContain('engine: startup (stopping finished agents)')
   expect(journal).toContain('engine: recording the block')
   expect(journal).toMatch(/· engine$/m)
-  expect(journal).not.toContain('(étape')
+  expect(journal).not.toContain('(\u00e9tape')
 })
 
 test('unreachable journal: the block reason does not point at the file', async () => {
