@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/MaxVzl/herness/compare/v0.8.1...v0.8.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **defauts-journal-erreurs:** Trois défauts du journal d'erreurs ([#43](https://github.com/MaxVzl/herness/issues/43)) ([84a31c7](https://github.com/MaxVzl/herness/commit/84a31c7a83ca2986879b4b80ae6a4d9ea682a3a1))
+
 ## [0.8.1](https://github.com/MaxVzl/herness/compare/v0.8.0...v0.8.1) (2026-11-20)
 
 
