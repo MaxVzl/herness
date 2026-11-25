@@ -26,16 +26,21 @@ function runner(fail: Record<string, RunResult> = {}) {
   }
 }
 
-test('tout est OK, node contrôlé seulement si le dépôt a un package.json', async () => {
+test('everything is OK; node is checked only when the repo has a package.json', async () => {
   let res = await checkEnv(repo, fakeEffects({ run: runner() }))
   expect(res.map((x) => x.label)).toEqual(['git', 'docker', 'cursor', 'herdr', 'gh'])
   expect(res.every((x) => x.status === 'OK')).toBe(true)
+  expect(res.find((x) => x.label === 'git')?.detail).toMatch(/^identity: /)
+  expect(res.find((x) => x.label === 'docker')?.detail).toBe('reachable')
+  expect(res.find((x) => x.label === 'cursor')?.detail).toBe('signed in')
+  expect(res.find((x) => x.label === 'herdr')?.detail).toBe('server reachable')
+  expect(res.find((x) => x.label === 'gh')?.detail).toBe('authenticated')
   await writeFile(join(repo, 'package.json'), '{}')
   res = await checkEnv(repo, fakeEffects({ run: runner() }))
   expect(res.at(-1)).toEqual({ label: 'node', status: 'OK', detail: 'node v24.1.0, pnpm 12.16.1' })
 })
 
-test('chaque KO donne la commande à lancer', async () => {
+test('each KO includes the command to run', async () => {
   const fx = fakeEffects({
     git: { identity: async () => null },
     run: runner({
@@ -49,23 +54,24 @@ test('chaque KO donne la commande à lancer', async () => {
   const res = await checkEnv(repo, fx)
   expect(res.every((x) => x.status === 'KO')).toBe(true)
   const by = Object.fromEntries(res.map((x) => [x.label, x.detail]))
-  expect(by.git).toMatch(/! git config --global user.name .*git config --global user.email/)
-  expect(by.docker).toContain('!')
-  expect(by.cursor).toContain('! cursor-agent login')
-  expect(by.herdr).toContain('!')
-  expect(by.gh).toContain('! gh auth login')
+  expect(by.git).toMatch(/no complete git identity — the user runs: ! git config --global user.name .*git config --global user.email/)
+  expect(by.docker).toContain('unreachable — the user runs: ! sudo systemctl start docker')
+  expect(by.cursor).toContain('not signed in — the user runs: ! cursor-agent login')
+  expect(by.herdr).toContain('server unreachable — the user starts herdr')
+  expect(by.gh).toContain('gh missing or not authenticated — the user runs: ! gh auth login')
 })
 
-test('docker accessible via sg docker est OK', async () => {
+test('docker reachable via sg docker is OK', async () => {
   const res = await checkEnv(repo, fakeEffects({ run: runner({ 'docker info': r(1) }) }))
-  expect(res.find((x) => x.label === 'docker')).toMatchObject({ status: 'OK' })
+  expect(res.find((x) => x.label === 'docker')).toMatchObject({ status: 'OK', detail: "reachable via 'sg docker'" })
 })
 
-test('une commande introuvable (exception) est un KO, pas un plantage', async () => {
+test('a missing command (exception) is a KO, not a crash', async () => {
   const run = async (cmd: string, args: string[]) => {
     if (cmd === 'gh') throw new Error('spawn gh ENOENT')
     return runner()(cmd, args)
   }
   const res = await checkEnv(repo, fakeEffects({ run }))
   expect(res.find((x) => x.label === 'gh')).toMatchObject({ status: 'KO' })
+  expect(res.find((x) => x.label === 'gh')?.detail).toContain('gh missing or not authenticated')
 })

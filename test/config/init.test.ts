@@ -18,7 +18,7 @@ async function commit(subject: string): Promise<void> {
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'herness-projects-'))
-  repo = await realpath(await mkdtemp(join(tmpdir(), 'Mon Appli-')))
+  repo = await realpath(await mkdtemp(join(tmpdir(), 'My App-')))
   process.env.HERNESS_PROJECTS_DIR = dir
   await git('init', '-q', '-b', 'main')
   await git('config', 'user.email', 't@t')
@@ -55,13 +55,13 @@ async function nodeRepo(): Promise<void> {
     scripts: { build: 'tsc', test: 'vitest run', lint: 'eslint .', typecheck: 'tsc --noEmit' },
   }))
   await writeFile(join(repo, 'pnpm-lock.yaml'), '')
-  for (const s of ['feat(api): ajout [123]', 'fix(ui): bouton [124]', 'chore: deps [125]']) await commit(s)
+  for (const s of ['feat(api): add [123]', 'fix(ui): button [124]', 'chore: deps [125]']) await commit(s)
 }
 
-test('détecte nom, branche, gestionnaire, preflight et format de commit', async () => {
+test('detects name, branch, package manager, preflight and commit format', async () => {
   await nodeRepo()
   const d = await detectProject(repo)
-  expect(d.name).toMatch(/^mon-appli-/)
+  expect(d.name).toMatch(/^my-app-/)
   expect(d.mainBranch).toBe('main')
   expect(d.packageManager).toBe('pnpm')
   expect(d.preflight).toEqual([
@@ -72,12 +72,12 @@ test('détecte nom, branche, gestionnaire, preflight et format de commit', async
   expect(d.commitFormat).toBe('{type}({scope}): {description} [{id}]')
 })
 
-test('commits sans portée ni identifiant', async () => {
+test('commits with neither scope nor id', async () => {
   for (const s of ['feat: a', 'fix: b', 'docs: c']) await commit(s)
   expect((await detectProject(repo)).commitFormat).toBe('{type}: {description}')
 })
 
-test('crée une config valide et un script de préparation exécutable, sans lancer Claude si refusé', async () => {
+test('creates a valid config and an executable prepare script, and does not launch Claude when refused', async () => {
   await nodeRepo()
   const d = deps(false)
   const found = await initProject(join(repo), d)
@@ -89,19 +89,21 @@ test('crée une config valide et un script de préparation exécutable, sans lan
   expect((await stat(prepare)).mode & 0o111).toBeTruthy()
   expect(await readFile(prepare, 'utf8')).toContain('pnpm install --frozen-lockfile')
   await execa('bash', ['-n', prepare])
-  expect(d.asked).toEqual(['Affiner la config avec Claude ?'])
+  expect(d.asked).toEqual(['Refine the config with Claude?'])
   expect(d.launches).toEqual([])
-  expect(d.lines[0]).toContain('config créée')
+  expect(d.lines[0]).toContain('config created')
+  const src = await readFile(found.file, 'utf8')
+  expect(src).toMatch(/commitFormat: .+\n {2}language: "en",/)
 })
 
-test('dépôt sans package.json : preflight vide, préparation sans installation', async () => {
+test('repo without package.json: empty preflight, prepare script without install', async () => {
   await commit('init')
   const found = await initProject(repo, deps())
   expect(found.config.preflight).toEqual([])
   expect(await readFile(join(dir, found.config.name, 'prepare-worktree.sh'), 'utf8')).not.toContain('install')
 })
 
-test('accepté : lance Claude à la racine du dépôt avec le dossier de config et la consigne', async () => {
+test('accepted: launches Claude at the repo root with the config folder and the instruction', async () => {
   await nodeRepo()
   await mkdir(join(repo, 'src'))
   const d = deps(true)
@@ -109,25 +111,25 @@ test('accepté : lance Claude à la racine du dépôt avec le dossier de config 
   expect(d.launches).toHaveLength(1)
   const { args, cwd } = d.launches[0]!
   expect(cwd).toBe(repo)
-  // La consigne vient après `--` : sinon `--add-dir`, qui prend plusieurs dossiers, l'avalerait.
+  // The instruction comes after `--`: otherwise `--add-dir`, which takes several folders, would swallow it.
   expect(args.slice(0, 5)).toEqual(['--model', 'claude-opus-5-5', '--add-dir', join(dir, found.config.name), '--'])
   expect(args).toHaveLength(6)
   expect(args[5]).toContain(found.file)
-  expect(args[5]).toContain('herness projet')
-  expect(d.lines.at(-1)).toBe(`config valide : ${found.file}`)
+  expect(args[5]).toContain('herness project')
+  expect(d.lines.at(-1)).toBe(`valid config: ${found.file}`)
 })
 
-test('config cassée par Claude : erreur', async () => {
+test('config broken by Claude: error', async () => {
   await nodeRepo()
   const d = deps(true)
   d.claude = async () => {
     const { file } = await findProjectConfig(repo)
     await writeFile(file, (await readFile(file, 'utf8')).replace(/ {2}models: [\s\S]*\},\n\}/, '}'))
   }
-  await expect(initProject(repo, d)).rejects.toThrow(/config à corriger après Claude.*models/s)
+  await expect(initProject(repo, d)).rejects.toThrow(/config to fix after Claude.*models/s)
 })
 
-test('projet déjà configuré : rien de réécrit, propose quand même Claude', async () => {
+test('project already configured: nothing rewritten, still offers Claude', async () => {
   await nodeRepo()
   const first = await initProject(repo, deps())
   const before = await readFile(first.file, 'utf8')
@@ -135,30 +137,30 @@ test('projet déjà configuré : rien de réécrit, propose quand même Claude',
   const again = await initProject(repo, d)
   expect(again.file).toBe(first.file)
   expect(await readFile(first.file, 'utf8')).toBe(before)
-  expect(d.lines[0]).toBe(`projet « ${first.config.name} » déjà configuré : ${first.file}`)
+  expect(d.lines[0]).toBe(`project "${first.config.name}" already configured: ${first.file}`)
   expect(d.asked).toHaveLength(1)
 })
 
-test('hors terminal interactif : ne pose pas la question', async () => {
+test('outside an interactive terminal: does not ask', async () => {
   await nodeRepo()
   const d = { ...deps(true), isTTY: false }
   await initProject(repo, d)
   expect(d.asked).toEqual([])
   expect(d.launches).toEqual([])
-  expect(d.lines.at(-1)).toMatch(/terminal interactif/)
+  expect(d.lines.at(-1)).toMatch(/interactive terminal/)
 })
 
-test("dossier du même nom pour un autre dépôt : refuse d'écraser", async () => {
+test('a folder of the same name for another repo: refuses to overwrite', async () => {
   await nodeRepo()
   const name = (await detectProject(repo)).name
   await mkdir(join(dir, name))
-  await expect(initProject(repo, deps())).rejects.toThrow(/existe déjà/)
+  await expect(initProject(repo, deps())).rejects.toThrow(/already exists/)
 })
 
-test('hors dépôt git : erreur', async () => {
+test('outside a git repo: error', async () => {
   const plain = await mkdtemp(join(tmpdir(), 'herness-plain-'))
   try {
-    await expect(initProject(plain, deps())).rejects.toThrow(/pas un dépôt git/)
+    await expect(initProject(plain, deps())).rejects.toThrow(/not a git repository/)
   } finally {
     await rm(plain, { recursive: true, force: true })
   }

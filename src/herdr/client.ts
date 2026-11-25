@@ -14,9 +14,9 @@ export interface HerdrPane {
   paneId: string;
   tabId: string;
   workspaceId: string;
-  /** Absent tant que le panneau n'a jamais été renommé. */
+  /** Absent until the pane has been renamed. */
   label?: string;
-  /** Agent reconnu dans le panneau (absent pour un simple shell). */
+  /** Agent recognized in the pane (absent for a plain shell). */
   agent?: string;
 }
 export interface PaneLayoutEntry {
@@ -29,7 +29,7 @@ export interface PaneProcessInfo {
 }
 export type PromptOutcome = 'idle' | 'done' | 'blocked' | 'timeout' | 'stalled' | 'sent';
 
-/** Surface de `Herdr` utilisée par la disposition ; une doublure l'implémente dans les tests. */
+/** Slice of `Herdr` used by the layout; a fake implements it in the tests. */
 export interface HerdrApi {
   workspaceList(): Promise<HerdrWorkspace[]>;
   worktreeCreate(a: { cwd: string; branch: string; base: string; path: string; label: string }): Promise<{ workspaceId: string; path: string }>;
@@ -44,12 +44,12 @@ export interface HerdrApi {
   paneSplit(a: { pane: string; direction: 'right' | 'down'; ratio?: number; cwd: string }): Promise<{ paneId: string; tabId: string }>;
   paneRename(pane: string, label: string): Promise<void>;
   paneRun(pane: string, cmd: string): Promise<void>;
-  /** Vrai si le motif est apparu avant le délai, faux sinon. */
+  /** True when the pattern appeared before the timeout, false otherwise. */
   paneWaitOutput(pane: string, match: string, timeoutMs: number): Promise<boolean>;
   paneLayout(pane: string): Promise<PaneLayoutEntry[]>;
   paneProcessInfo(pane: string): Promise<PaneProcessInfo>;
   paneSendKeys(pane: string, ...keys: string[]): Promise<void>;
-  /** Panneau qui exécute la commande (`herdr pane current`). */
+  /** Pane running the command (`herdr pane current`). */
   paneCurrent(): Promise<{ paneId: string; tabId: string; workspaceId: string; cwd: string }>;
 }
 
@@ -58,7 +58,7 @@ export class HerdrError extends Error {
     readonly code: string,
     message: string,
   ) {
-    super(`herdr : ${code} : ${message}`);
+    super(`herdr: ${code}: ${message}`);
   }
 }
 
@@ -70,13 +70,13 @@ function parseError(stderr: string, stdout: string): HerdrError {
       const e = JSON.parse(text).error;
       if (e?.code) return new HerdrError(String(e.code), String(e.message ?? ''));
     } catch {
-      /* pas du JSON */
+      /* not JSON */
     }
   }
   return new HerdrError('cli_error', (stderr || stdout).trim());
 }
 
-/** Cherche récursivement un état d'agent dans la réponse d'une attente. */
+/** Recursively looks for an agent status in a wait response. */
 function findStatus(v: unknown): string | undefined {
   if (v && typeof v === 'object') {
     const o = v as Json;
@@ -89,17 +89,17 @@ function findStatus(v: unknown): string | undefined {
   return undefined;
 }
 
-/** Client typé de la CLI `herdr`. Les formes JSON lues sont celles de `herdr api schema --json`. */
+/** Typed client of the `herdr` CLI. The JSON shapes read are those of `herdr api schema --json`. */
 export class Herdr implements HerdrApi {
   constructor(private readonly log: (message: string) => void = (m) => console.error(m)) {}
 
   /**
-   * État lu après une attente : seuls idle, done et blocked sont une fin. Tout autre état (working, inconnu…) n'est
-   * pas réglé : `timeout`, avec l'état brut journalisé.
+   * Status read after a wait: only idle, done and blocked are a finish. Any other status (working, unknown…)
+   * is not settled: `timeout`, with the raw status logged.
    */
   private settled(name: string, status: string | undefined): PromptOutcome {
     if (status === 'idle' || status === 'done' || status === 'blocked') return status;
-    this.log(`herdr : agent ${name} dans l'état « ${status ?? 'inconnu'} » après l'attente : non réglé, traité comme timeout`);
+    this.log(`herdr: agent ${name} in state "${status ?? 'unknown'}" after the wait: not settled, treated as a timeout`);
     return 'timeout';
   }
 
@@ -107,16 +107,16 @@ export class Herdr implements HerdrApi {
     return run('herdr', args, { reject: false });
   }
 
-  /** Appelle la CLI et rend `result` ; lève HerdrError sur code non nul. */
+  /** Calls the CLI and returns `result`; throws HerdrError on a non-zero code. */
   private async call(args: string[]): Promise<Json> {
     const r = await this.raw(args);
     if (r.exitCode !== 0) throw parseError(r.stderr, r.stdout);
-    // `pane run`, `rename`, `focus`... répondent par une sortie vide en cas de succès
+    // `pane run`, `rename`, `focus`... answer with empty output on success
     if (r.stdout.trim() === '') return {};
     try {
       return (JSON.parse(r.stdout) as Json)['result'] ?? {};
     } catch {
-      throw new HerdrError('bad_json', `réponse illisible pour « herdr ${args.join(' ')} » : ${r.stdout.slice(0, 200)}`);
+      throw new HerdrError('bad_json', `unreadable response for "herdr ${args.join(' ')}": ${r.stdout.slice(0, 200)}`);
     }
   }
 
@@ -135,7 +135,7 @@ export class Herdr implements HerdrApi {
     return (r['workspaces'] as Json[]).map((w) => ({ workspaceId: w['workspace_id'], label: w['label'] ?? '' }));
   }
 
-  /** `worktree_created` : `result.workspace.workspace_id` et `result.worktree.path`. */
+  /** `worktree_created`: `result.workspace.workspace_id` and `result.worktree.path`. */
   async worktreeCreate(a: { cwd: string; branch: string; base: string; path: string; label: string }): Promise<{ workspaceId: string; path: string }> {
     const r = await this.call(['worktree', 'create', '--cwd', a.cwd, '--branch', a.branch, '--base', a.base, '--path', a.path, '--label', a.label, '--no-focus']);
     return { workspaceId: r['workspace']['workspace_id'], path: r['worktree']['path'] };
@@ -199,13 +199,13 @@ export class Herdr implements HerdrApi {
     throw e;
   }
 
-  /** `pane_layout` : `result.layout.panes[] = {pane_id, rect}`. */
+  /** `pane_layout`: `result.layout.panes[] = {pane_id, rect}`. */
   async paneLayout(pane: string): Promise<PaneLayoutEntry[]> {
     const r = await this.call(['pane', 'layout', '--pane', pane]);
     return (r['layout']['panes'] as Json[]).map((p) => ({ paneId: p['pane_id'], rect: p['rect'] }));
   }
 
-  /** `pane_process_info` : `result.process_info.{shell_pid, foreground_processes[].pid}`. */
+  /** `pane_process_info`: `result.process_info.{shell_pid, foreground_processes[].pid}`. */
   async paneProcessInfo(pane: string): Promise<PaneProcessInfo> {
     const r = (await this.call(['pane', 'process-info', '--pane', pane]))['process_info'] as Json;
     return { shellPid: r['shell_pid'] ?? null, foregroundPids: ((r['foreground_processes'] ?? []) as Json[]).map((p) => p['pid']) };
@@ -215,11 +215,11 @@ export class Herdr implements HerdrApi {
     await this.call(['pane', 'send-keys', pane, ...keys]);
   }
 
-  /** `pane_info` : `result.pane.{pane_id, tab_id, workspace_id, cwd}`. */
+  /** `pane_info`: `result.pane.{pane_id, tab_id, workspace_id, cwd}`. */
   async paneCurrent(): Promise<{ paneId: string; tabId: string; workspaceId: string; cwd: string }> {
     const p = (await this.call(['pane', 'current']))['pane'] as Json;
     for (const k of ['pane_id', 'tab_id', 'workspace_id']) {
-      if (typeof p?.[k] !== 'string' || p[k] === '') throw new HerdrError('bad_response', `« herdr pane current » : champ ${k} absent ou vide`);
+      if (typeof p?.[k] !== 'string' || p[k] === '') throw new HerdrError('bad_response', `"herdr pane current": field ${k} missing or empty`);
     }
     return { paneId: p['pane_id'], tabId: p['tab_id'], workspaceId: p['workspace_id'], cwd: typeof p['cwd'] === 'string' ? p['cwd'] : '' };
   }
@@ -228,7 +228,7 @@ export class Herdr implements HerdrApi {
     await this.call(['agent', 'start', name, '--kind', kind, '--pane', pane, '--timeout', String(timeoutMs), ...(args.length ? ['--', ...args] : [])]);
   }
 
-  /** Sans attente : `sent`. Avec attente : l'état réglé, ou `timeout` / `stalled` / `blocked` selon le code d'erreur herdr. */
+  /** Without waiting: `sent`. With waiting: the settled status, or `timeout` / `stalled` / `blocked` according to the herdr error code. */
   async agentPrompt(name: string, text: string, opts: { wait: boolean; timeoutMs?: number }): Promise<PromptOutcome> {
     const args = ['agent', 'prompt', name, text];
     if (opts.wait) args.push('--wait');
@@ -246,15 +246,15 @@ export class Herdr implements HerdrApi {
     try {
       status = findStatus(JSON.parse(r.stdout));
     } catch {
-      /* repli ci-dessous */
+      /* fallback below */
     }
     status ??= (await this.agentGet(name))?.state;
     return this.settled(name, status);
   }
 
   /**
-   * Attend, sans rien envoyer, qu'un agent atteigne idle, done ou blocked (`herdr agent wait`).
-   * Rend l'état atteint, ou `timeout` / `stalled` selon le code d'erreur herdr.
+   * Waits, without sending anything, for an agent to reach idle, done or blocked (`herdr agent wait`).
+   * Returns the status reached, or `timeout` / `stalled` according to the herdr error code.
    */
   async agentWait(name: string, opts: { until: ('idle' | 'done' | 'blocked')[]; timeoutMs: number }): Promise<PromptOutcome> {
     const args = ['agent', 'wait', name, ...opts.until.flatMap((u) => ['--until', u]), '--timeout', String(opts.timeoutMs)];
@@ -270,13 +270,13 @@ export class Herdr implements HerdrApi {
     try {
       status = findStatus(JSON.parse(r.stdout));
     } catch {
-      /* repli ci-dessous */
+      /* fallback below */
     }
     status ??= (await this.agentGet(name))?.state;
     return this.settled(name, status);
   }
 
-  /** `agent_info` : `result.agent.agent_status` ; `null` si l'agent n'existe pas (`agent_not_found`). */
+  /** `agent_info`: `result.agent.agent_status`; `null` when the agent does not exist (`agent_not_found`). */
   async agentGet(name: string): Promise<{ state: string } | null> {
     const r = await this.raw(['agent', 'get', name]);
     if (r.exitCode !== 0) {
@@ -288,7 +288,7 @@ export class Herdr implements HerdrApi {
     return { state: a['agent_status'] };
   }
 
-  /** `agent read` rend du texte brut, pas du JSON. */
+  /** `agent read` returns raw text, not JSON. */
   async agentRead(name: string, lines: number): Promise<string> {
     const r = await this.raw(['agent', 'read', name, '--source', 'recent-unwrapped', '--lines', String(lines)]);
     if (r.exitCode !== 0) throw parseError(r.stderr, r.stdout);

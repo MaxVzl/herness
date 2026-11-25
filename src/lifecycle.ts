@@ -10,30 +10,30 @@ import { checkEnv } from './engine/envcheck.ts'
 import { confirmQuestion, pendingEntries, planReport, previewLines, sendReport } from './errreport.ts'
 import { createMissionSpace, paneIsIdle, type MissionSpace } from './herdr/layout.ts'
 import { missionMcpConfig } from './mcp/server.ts'
-import { nextFreeTextId, parseDemande, type Demande } from './mission/ids.ts'
+import { nextFreeTextId, parseRequest, type Request } from './mission/ids.ts'
 import { postInbox } from './mission/inbox.ts'
-import { loadState, newState, saveState, type MissionState } from './mission/state.ts'
+import { assertResumable, loadState, newState, saveState, type MissionState } from './mission/state.ts'
 import { missionDir, missionsRoot, planPath, specPath } from './paths.ts'
 import { render } from './prompts/render.ts'
 import { hernessCommand, shellLine } from './update.ts'
 
-/** Dépendances des commandes de cycle de vie ; les tests injectent des doublures. */
+/** Dependencies of the lifecycle commands; tests inject fakes. */
 export interface LifecycleDeps {
   e: Effects
-  /** Défaut : `loadProjectConfig`. */
+  /** Default: `loadProjectConfig`. */
   loadConfig?: (cwd: string) => Promise<ProjectConfig>
-  /** Sortie pour l'utilisateur ; défaut : `console.log`. */
+  /** Output for the user; default: `console.log`. */
   out?: (line: string) => void
-  /** Terminal interactif (confirmation de `fermer`). */
+  /** Interactive terminal (`close` confirmation). */
   isTTY?: boolean
   confirm?: (question: string) => Promise<boolean>
 }
 
 const exists = (p: string): Promise<boolean> => access(p).then(() => true, () => false)
 
-/** État d'une mission existante, avec un message clair si elle n'existe pas. */
+/** State of an existing mission, with a clear message when it does not exist. */
 async function load(id: string): Promise<MissionState> {
-  if (!(await exists(join(missionDir(id), 'state.json')))) throw new Error(`mission ${id} introuvable (${missionDir(id)})`)
+  if (!(await exists(join(missionDir(id), 'state.json')))) throw new Error(`mission ${id} not found (${missionDir(id)})`)
   return loadState(id)
 }
 
@@ -41,38 +41,39 @@ function worktreePath(repoPath: string, id: string): string {
   return join(dirname(repoPath), `${basename(repoPath)}-worktrees`, id)
 }
 
-async function demandeText(d: Demande, e: Effects): Promise<string> {
+async function requestText(d: Request, e: Effects): Promise<string> {
   if (d.kind === 'text') return `${d.ref}\n`
   if (d.kind === 'wrike') return `${d.ref}\n`
   const issue = await e.forge.readIssue(d.ref)
-  const comments = issue.comments.length ? issue.comments.join('\n\n---\n\n') : '(aucun)'
-  return `# ${issue.title}\n\n${issue.body}\n\n## Commentaires\n\n${comments}\n`
+  const comments = issue.comments.length ? issue.comments.join('\n\n---\n\n') : '(none)'
+  return `# ${issue.title}\n\n${issue.body}\n\n## Comments\n\n${comments}\n`
 }
 
-/** Prompt système de l'orchestrateur ; le slug (et donc les chemins exacts) n'est connu qu'après classement. */
-async function orchestratorPrompt(s: MissionState, d: Demande, hasNote: boolean, cfg: ProjectConfig): Promise<string> {
-  // Valeur placée entre accents graves par le gabarit : aucun accent grave ici.
+/** Orchestrator system prompt; the slug (and therefore the exact paths) is known only after classification. */
+async function orchestratorPrompt(s: MissionState, d: Request, hasNote: boolean, cfg: ProjectConfig): Promise<string> {
+  // The template places this value between backticks: no backtick here.
   const pattern = (dir: 'specs' | 'plans'): string =>
-    `${(dir === 'specs' ? specPath : planPath)({ ...s, slug: '<slug>' })} — chemin déterminé après classement : ` +
-    `dossier docs/superpowers/${dir}/, nom <AAAA-MM-JJ>-<id>-<slug>.md, où <slug> est celui que tu donnes à mission_identifiee`
+    `${(dir === 'specs' ? specPath : planPath)({ ...s, slug: '<slug>' })} — path determined after classification: ` +
+    `folder docs/superpowers/${dir}/, name <YYYY-MM-DD>-<id>-<slug>.md, where <slug> is the one you give mission_classified`
   return render('orchestrator', {
     id: s.id,
-    demande: d.kind === 'text' ? 'une demande écrite (texte libre)' : d.ref,
-    demandeFile: join(missionDir(s.id), 'demande.md'),
+    request: d.kind === 'text' ? 'a written request (free text)' : d.ref,
+    requestFile: join(missionDir(s.id), 'request.md'),
     note: hasNote
-      ? ` Lis aussi la note de l'utilisateur, \`${join(missionDir(s.id), 'note.md')}\` : elle complète la demande et l'emporte en cas de contradiction.`
+      ? ` Also read the user's note, \`${join(missionDir(s.id), 'note.md')}\`: it complements the request and wins if they contradict.`
       : '',
     specPath: pattern('specs'),
     planPath: pattern('plans'),
     missionDir: missionDir(s.id),
     mainBranch: cfg.mainBranch,
     preflight: cfg.preflight.length
-      ? cfg.preflight.map((p) => `  - ${p.label} : \`${p.command.join(' ')}\``).join('\n')
-      : '  - (aucune étape de preflight dans la config du projet)',
+      ? cfg.preflight.map((p) => `  - ${p.label}: \`${p.command.join(' ')}\``).join('\n')
+      : '  - (no preflight step in the project config)',
+    language: cfg.language,
   })
 }
 
-/** Le panneau n'a que son shell au premier plan (aucun processus lancé dedans). */
+/** The pane has only its shell in the foreground (nothing else was started in it). */
 async function paneIdle(e: Effects, pane: string): Promise<boolean> {
   return paneIsIdle(await e.herdr.paneProcessInfo(pane))
 }
@@ -92,9 +93,9 @@ async function startOrchestrator(s: MissionState, e: Effects, cfg: ProjectConfig
   await e.agents.start(s.orchestrator.agent ?? orchestratorName(s.id), 'orchestrator', pane, launch)
 }
 
-const OPENING = (id: string): string => `Commence la mission ${id}. Lis ton prompt système.`
+const OPENING = (id: string): string => `Start mission ${id}. Read your system prompt.`
 
-/** Prompt d'ouverture de l'orchestrateur ; le moteur (seul écrivain de l'état) enregistre qu'il est parti. */
+/** Opening prompt of the orchestrator; the engine (sole writer of the state) records that it has started. */
 async function openOrchestrator(id: string, e: Effects, agent: string): Promise<void> {
   await e.herdr.agentPrompt(agent, OPENING(id), { wait: false })
   await postInbox(id, { type: 'orchestrator-started' })
@@ -106,25 +107,25 @@ function applySpace(s: MissionState, space: MissionSpace): void {
 }
 
 /**
- * `herness dev <demande> [--note]` : crée la mission (espace herdr, worktree, état) et lance moteur, tableau et
- * orchestrateur. La note complète la demande (précisions en plus d'un lien Wrike, par exemple).
+ * `herness dev <request> [--note]`: creates the mission (herdr workspace, worktree, state) and starts the engine,
+ * dashboard and orchestrator. The note complements the request (extra detail on top of a Wrike link, for example).
  */
 export async function startMission(input: string, cwd: string, deps: LifecycleDeps, opts: { note?: string } = {}): Promise<string> {
   const { e } = deps
   const out = deps.out ?? console.log
   const cfg = await (deps.loadConfig ?? loadProjectConfig)(cwd)
-  const d = parseDemande(input)
+  const d = parseRequest(input)
   const id = d.kind === 'text' ? await nextFreeTextId(e.now()) : d.id
-  if (await exists(missionDir(id))) throw new Error(`mission ${id} déjà existante : utilise herness reprendre ${id}`)
+  if (await exists(missionDir(id))) throw new Error(`mission ${id} already exists: use herness resume ${id}`)
   const s = newState({ id, source: { kind: d.kind, ref: d.ref }, project: cfg.name, repoPath: cfg.repoPath })
   s.createdAt = e.now().toISOString()
 
   const env = await checkEnv(cfg.repoPath, e)
-  for (const r of env) out(`${r.status} ${r.label} : ${r.detail}`)
-  if (env.some((r) => r.status === 'KO')) throw new Error('environnement incomplet : corrige les KO ci-dessus puis relance herness dev')
+  for (const r of env) out(`${r.status} ${r.label}: ${r.detail}`)
+  if (env.some((r) => r.status === 'KO')) throw new Error('incomplete environment: fix the KO lines above, then run herness dev again')
 
-  // Lue avant de rien créer : une issue illisible n'abandonne pas une mission à moitié lancée.
-  const demande = await demandeText(d, e)
+  // Read before creating anything: an unreadable issue must not leave a half-started mission behind.
+  const request = await requestText(d, e)
   await e.git.fetchMain(cfg.repoPath, cfg.mainBranch)
   const branch = `herness/${id}`
   const space = await createMissionSpace(e.herdr, {
@@ -137,48 +138,49 @@ export async function startMission(input: string, cwd: string, deps: LifecycleDe
   applySpace(s, space)
   s.branch = branch
   s.orchestrator = { agent: orchestratorName(id), sessionId: randomUUID() }
-  // Enregistré avant tout lancement : le moteur en est ensuite le seul écrivain.
+  // Saved before any launch: the engine is the sole writer afterwards.
   await saveState(s)
 
   const dir = missionDir(id)
-  await writeFile(join(dir, 'demande.md'), demande)
+  await writeFile(join(dir, 'request.md'), request)
   const note = opts.note?.trim() ?? ''
   if (note) await writeFile(join(dir, 'note.md'), `${note}\n`)
   await writeFile(join(dir, 'orchestrator.md'), await orchestratorPrompt(s, d, note !== '', cfg))
 
   await e.herdr.paneRun(space.panes.engine, shellLine(hernessCommand(), `engine ${id}`))
   await e.herdr.paneRun(space.panes.tasks, shellLine(hernessCommand(), `tasks ${id}`))
-  await e.herdr.paneRun(space.panes.spec, shellLine(hernessCommand(), `voir spec ${id}`))
-  await e.herdr.paneRun(space.panes.plan, shellLine(hernessCommand(), `voir plan ${id}`))
+  await e.herdr.paneRun(space.panes.spec, shellLine(hernessCommand(), `show spec ${id}`))
+  await e.herdr.paneRun(space.panes.plan, shellLine(hernessCommand(), `show plan ${id}`))
   await startOrchestrator(s, e, cfg, space.panes.orchestrator, false)
   await openOrchestrator(id, e, orchestratorName(id))
   await e.herdr.tabFocus(space.tabs.master)
-  out(`Mission ${id} lancée : espace herdr « ${id} », worktree ${space.worktree}`)
+  out(`Mission ${id} started: herdr workspace "${id}", worktree ${space.worktree}`)
   return id
 }
 
 /**
- * `herness reprendre <id>` : rouvre l'espace, relance ce qui ne tourne plus ; une mission bloquée demande une porte
- * de reprise. `restart` (`--redemarrer`, après une mise à jour de herness) : moteur, tableau et visionneuses sont
- * arrêtés puis relancés même s'ils tournent, pour exécuter le nouveau code ; rien n'est envoyé aux agents.
+ * `herness resume <id>`: reopens the workspace and restarts whatever is no longer running; a blocked mission asks
+ * for a resume gate. `restart` (`--restart`, after a herness update): engine, dashboard and viewers are stopped
+ * then started again even if they are running, so they execute the new code; nothing is sent to the agents.
  */
-/** `focus` (vrai par défaut) : finit en focalisant l'onglet master ; le cockpit passe faux pour rester à l'écran. */
+/** `focus` (true by default): ends by focusing the master tab; the cockpit passes false to stay on screen. */
 export async function resumeMission(id: string, deps: LifecycleDeps, opts: { restart?: boolean; focus?: boolean } = {}): Promise<void> {
   const { e } = deps
   const out = deps.out ?? console.log
   const s = await load(id)
-  if (s.step === 'fermée' || s.step === 'pr-ouverte') {
-    out(`Mission ${id} : ${s.step}${s.prUrl ? ` (PR ${s.prUrl})` : ''} ; rien à reprendre.`)
+  assertResumable(s)
+  if (s.step === 'closed' || s.step === 'pr-open') {
+    out(`Mission ${id}: ${s.step}${s.prUrl ? ` (PR ${s.prUrl})` : ''}; nothing to resume.`)
     return
   }
   if (opts.restart) {
-    // Moteur d'abord : seul écrivain de l'état. S'il ne s'arrête pas, rien n'est relancé.
-    await stopEngine(s, e, out, "rien n'a été relancé")
+    // Engine first: sole writer of the state. If it does not stop, nothing is restarted.
+    await stopEngine(s, e, out, 'nothing was restarted')
     for (const kind of ['tasks', 'spec', 'plan'] as const) {
       const pane = s.herdr.panes[kind]
-      if (pane) await stopPane(e, pane, kind, out, `panneau ${kind} toujours actif (${pane})`)
+      if (pane) await stopPane(e, pane, kind, out, `pane ${kind} still busy (${pane})`)
     }
-    out('moteur, tableau et visionneuses arrêtés pour être relancés')
+    out('engine, dashboard and viewers stopped so they can be restarted')
   }
   const cfg = await (deps.loadConfig ?? loadProjectConfig)(s.repoPath)
   const space = await createMissionSpace(e.herdr, {
@@ -193,47 +195,48 @@ export async function resumeMission(id: string, deps: LifecycleDeps, opts: { res
   const same = s.herdr.workspace === space.workspace && Object.entries(space.panes).every(([k, v]) => s.herdr.panes[k] === v)
   if (!same) {
     if (engineStopped) {
-      // Moteur arrêté : herness est seul à écrire l'état, les identifiants herdr recréés y sont enregistrés.
+      // Engine stopped: herness is the only writer of the state, and the recreated herdr ids are saved there.
       applySpace(s, space)
       await saveState(s)
     } else {
-      out(`attention : l'espace herdr de ${id} a changé alors que le moteur tourne ; arrête-le (ctrl+c dans le panneau engine) puis relance herness reprendre ${id}`)
+      out(`warning: the herdr workspace of ${id} changed while the engine is running; stop it (ctrl+c in the engine pane), then run herness resume ${id} again`)
     }
   }
   if (engineStopped) {
     await e.herdr.paneRun(space.panes.engine, shellLine(hernessCommand(), `engine ${id}`))
-    out('moteur relancé')
+    out('engine restarted')
   }
   if (await paneIdle(e, space.panes.tasks)) await e.herdr.paneRun(space.panes.tasks, shellLine(hernessCommand(), `tasks ${id}`))
   for (const kind of ['spec', 'plan'] as const) {
-    if (await paneIdle(e, space.panes[kind])) await e.herdr.paneRun(space.panes[kind], shellLine(hernessCommand(), `voir ${kind} ${id}`))
+    if (await paneIdle(e, space.panes[kind])) await e.herdr.paneRun(space.panes[kind], shellLine(hernessCommand(), `show ${kind} ${id}`))
   }
   const orchestrator = s.orchestrator.agent ?? orchestratorName(id)
   if (!(await e.herdr.agentGet(orchestrator))) {
     await startOrchestrator(s, e, cfg, space.panes.orchestrator, Boolean(s.orchestrator.sessionId))
-    out(`orchestrateur relancé${s.orchestrator.sessionId ? ` (session ${s.orchestrator.sessionId} reprise)` : ''}`)
+    out(`orchestrator restarted${s.orchestrator.sessionId ? ` (session ${s.orchestrator.sessionId} resumed)` : ''}`)
   }
   if (!s.orchestrator.started) {
-    // `dev` interrompu entre le lancement de l'orchestrateur et son prompt d'ouverture.
+    // `dev` interrupted between launching the orchestrator and its opening prompt.
     await openOrchestrator(id, e, orchestrator)
-    out("prompt d'ouverture envoyé à l'orchestrateur")
+    out('opening prompt sent to the orchestrator')
   }
-  if (s.step === 'bloquée') {
-    // Seul le moteur ouvre les portes : la demande passe par l'inbox.
-    await postInbox(id, { type: 'request-gate', kind: 'reprise-bloquee', summary: s.blockedReason ?? 'mission bloquée' })
-    out(`Mission bloquée : ${s.blockedReason ?? '(raison inconnue)'}`)
-    out(`Pour la reprendre à l'étape ${s.blockedFrom ?? '?'}, valide la porte de reprise : herness valider ${id}`)
+  if (s.step === 'blocked') {
+    // Only the engine opens gates: the request goes through the inbox.
+    await postInbox(id, { type: 'request-gate', kind: 'resume-blocked', summary: s.blockedReason ?? 'mission blocked' })
+    out(`Mission blocked: ${s.blockedReason ?? '(unknown reason)'}`)
+    out(`To resume it from step ${s.blockedFrom ?? '?'}, approve the resume gate: herness approve ${id}`)
   }
   if (opts.focus !== false) await e.herdr.tabFocus(space.tabs.master)
 }
 
 /**
- * Interrompt ce qui tourne dans un panneau (double ctrl+c) et attend qu'il revienne au shell. Rend faux si le
- * panneau est injoignable (herdr redémarré, espace déjà fermé : plus rien n'y tourne), lève s'il reste occupé.
+ * Interrupts whatever is running in a pane (double ctrl+c) and waits for it to return to the shell. Returns false
+ * when the pane is unreachable (herdr restarted, workspace already closed: nothing is running there anymore),
+ * throws when it stays busy.
  */
 async function stopPane(e: Effects, pane: string, what: string, out: (l: string) => void, still: string): Promise<boolean> {
   const unreachable = (err: unknown): false => {
-    out(`panneau ${what} ${pane} injoignable : ${err instanceof Error ? err.message : String(err)}`)
+    out(`pane ${what} ${pane} unreachable: ${err instanceof Error ? err.message : String(err)}`)
     return false
   }
   try {
@@ -256,19 +259,20 @@ async function stopPane(e: Effects, pane: string, what: string, out: (l: string)
 }
 
 /**
- * Arrête le moteur (double ctrl+c) et attend que son panneau revienne au shell. Un panneau injoignable (herdr
- * redémarré, espace déjà fermé) n'a plus de moteur. Un moteur toujours actif lève : deux écrivains de l'état sinon.
+ * Stops the engine (double ctrl+c) and waits for its pane to return to the shell. An unreachable pane (herdr
+ * restarted, workspace already closed) no longer has an engine. An engine that is still running throws: two
+ * writers of the state otherwise.
  */
-async function stopEngine(s: MissionState, e: Effects, out: (l: string) => void, after = "rien n'a été fermé"): Promise<void> {
+async function stopEngine(s: MissionState, e: Effects, out: (l: string) => void, after = 'nothing was closed'): Promise<void> {
   const pane = s.herdr.panes['engine']
   if (!pane) return
-  await stopPane(e, pane, 'du moteur', out, `moteur toujours actif, ${after} (panneau ${pane})`)
+  await stopPane(e, pane, 'engine', out, `engine still running, ${after} (pane ${pane})`)
 }
 
 /**
- * Supprime la branche locale de la mission si tout son contenu est déjà sur `origin/<branche>` (jamais la branche
- * principale ni la branche extraite dans le dépôt ; jamais la branche distante ni la PR). Au moindre doute elle est
- * gardée ; une erreur n'empêche pas la fermeture. Rend vrai si la branche a été supprimée.
+ * Deletes the mission's local branch when all of its content is already on `origin/<branch>` (never the main
+ * branch, nor the branch checked out in the repository; never the remote branch or the PR). On any doubt it is
+ * kept; an error does not prevent closing. Returns true when the branch was deleted.
  */
 async function cleanBranch(s: MissionState, e: Effects, cfg: ProjectConfig, out: (l: string) => void): Promise<boolean> {
   const b = s.branch
@@ -278,56 +282,56 @@ async function cleanBranch(s: MissionState, e: Effects, cfg: ProjectConfig, out:
     try {
       await e.git.fetchBranch(s.repoPath, b)
     } catch {
-      out(`branche ${b} gardée : origine injoignable`)
+      out(`branch ${b} kept: origin unreachable`)
       return false
     }
     const n = await e.git.localOnlyCommits(s.repoPath, b)
     if (n === null) {
-      out(`branche ${b} gardée : pas de branche distante`)
+      out(`branch ${b} kept: no remote branch`)
       return false
     }
     if (n > 0) {
-      out(`branche ${b} gardée : ${n} commit(s) absent(s) de origin`)
+      out(`branch ${b} kept: ${n} commit(s) missing from origin`)
       return false
     }
     await e.git.deleteBranch(s.repoPath, b)
-    out(`branche locale ${b} supprimée (toujours sur origin)`)
+    out(`local branch ${b} deleted (still on origin)`)
     return true
   } catch (err) {
-    out(`branche ${b} gardée : ${err instanceof Error ? err.message : String(err)}`)
+    out(`branch ${b} kept: ${err instanceof Error ? err.message : String(err)}`)
     return false
   }
 }
 
-/** Rappel sans contact GitHub. Une erreur de lecture est ignorée : la fermeture continue. */
+/** Reminder without contacting GitHub. A read error is ignored: closing continues. */
 async function remindPendingErrors(id: string, out: (l: string) => void): Promise<void> {
   try {
     const n = (await pendingEntries(id)).length
-    if (n > 0) out(`${n} erreur(s) herness non remontée(s) : herness signaler ${id}`)
+    if (n > 0) out(`${n} herness error(s) not filed: herness report ${id}`)
   } catch {
-    // Journal illisible : pas de rappel, la fermeture suit son cours.
+    // Unreadable log: no reminder, closing continues.
   }
 }
 
 /**
- * `herness fermer <id>`. Commits non poussés ou worktree sale → confirmation dans un terminal interactif. Avec
- * `opts.signaler` (ligne de commande), propose ensuite de remonter les erreurs herness avant d'arrêter le moteur
- * (seul écrivain de l'état ; s'il ne s'arrête pas, rien n'est fermé). Puis bases de test supprimées d'après l'état
- * relu (un échec arrête tout), worktree supprimé, état `fermée` enregistré, et enfin l'espace herdr de la mission
- * fermé (jamais le groupe). Rend faux si l'utilisateur annule.
+ * `herness close <id>`. Unpushed commits or a dirty worktree require confirmation in an interactive terminal. With
+ * `opts.report` (the command line), it then offers to file herness errors before stopping the engine (sole writer
+ * of the state; if it does not stop, nothing is closed). Then the test databases named by the reloaded state are
+ * removed (a failure stops everything), the worktree is removed, state `closed` is saved, and finally the mission's
+ * herdr workspace is closed (never the group). Returns false when the user cancels.
  */
-export async function closeMission(id: string, deps: LifecycleDeps, opts: { signaler?: boolean } = {}): Promise<boolean> {
+export async function closeMission(id: string, deps: LifecycleDeps, opts: { report?: boolean } = {}): Promise<boolean> {
   const { e } = deps
   const out = deps.out ?? console.log
   const first = await load(id)
-  // Une mission fermée par un abandon validé garde son worktree et son espace : `fermer` nettoie ce qui reste.
-  const closed = first.step === 'fermée'
+  // A mission closed by an approved abandon keeps its worktree and workspace: `close` cleans up what remains.
+  const closed = first.step === 'closed'
   const wtLeft = !!first.worktree && (await exists(first.worktree))
   if (closed) {
     const wsLeft = !!first.herdr.workspace && (await e.herdr.workspaceList()).some((w) => w.workspaceId === first.herdr.workspace)
     if (!wtLeft && !wsLeft && !first.testDbUp && !first.proofDbUp) {
       await remindPendingErrors(id, out)
-      out(`Mission ${id} déjà fermée : rien à fermer.`)
+      out(`Mission ${id} already closed: nothing to close.`)
       return true
     }
   }
@@ -336,102 +340,102 @@ export async function closeMission(id: string, deps: LifecycleDeps, opts: { sign
   if (first.worktree && (!closed || wtLeft)) {
     try {
       const n = await e.git.unpushedCount(first.worktree, mainRef(cfg))
-      if (n > 0) risks.push(`${n} commit(s) non poussé(s) sur ${first.branch ?? first.worktree}`)
-      if (!(await e.git.isClean(first.worktree, '.'))) risks.push(`modifications non commitées dans ${first.worktree}`)
+      if (n > 0) risks.push(`${n} unpushed commit(s) on ${first.branch ?? first.worktree}`)
+      if (!(await e.git.isClean(first.worktree, '.'))) risks.push(`uncommitted changes in ${first.worktree}`)
     } catch (err) {
-      out(`worktree non inspecté (${err instanceof Error ? err.message : String(err)})`)
+      out(`worktree not inspected (${err instanceof Error ? err.message : String(err)})`)
     }
   }
   if (risks.length > 0) {
-    const what = risks.join(' ; ')
-    if (!deps.isTTY || !deps.confirm) throw new Error(`${what} : la fermeture demande une confirmation dans un terminal interactif`)
-    if (!(await deps.confirm(`${what} : le worktree sera supprimé (la branche locale n'est supprimée que si tout est déjà sur origin). Fermer quand même ?`))) {
-      out('fermeture annulée')
+    const what = risks.join('; ')
+    if (!deps.isTTY || !deps.confirm) throw new Error(`${what}: closing requires confirmation in an interactive terminal`)
+    if (!(await deps.confirm(`${what}: the worktree will be deleted (the local branch is deleted only if everything is already on origin). Close anyway?`))) {
+      out('close cancelled')
       return false
     }
   }
 
-  if (opts.signaler && deps.isTTY && deps.confirm) {
+  if (opts.report && deps.isTTY && deps.confirm) {
     try {
       if ((await pendingEntries(id)).length > 0) await reportMissionErrors(id, deps)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      out(`erreurs herness non remontées (${message}) : herness signaler ${id}`)
+      out(`herness errors not filed (${message}): herness report ${id}`)
     }
   } else {
     await remindPendingErrors(id, out)
   }
 
   await stopEngine(first, e, out)
-  // Moteur arrêté : herness est seul écrivain, et l'état relu dit quelles bases le moteur a lancées.
+  // Engine stopped: herness is the sole writer, and the reloaded state says which databases the engine started.
   const s = await loadState(id)
   const errors = [await testDbDown(s, e, cfg), await proofDbDown(s, e, cfg)].filter((x): x is string => x !== null)
   if (errors.length > 0) {
     await saveState(s)
-    throw new Error(`base de test non supprimée, rien n'a été fermé : ${errors.join(' ; ')}`)
+    throw new Error(`test database not removed, nothing was closed: ${errors.join('; ')}`)
   }
   if (s.worktree && (!closed || wtLeft)) {
-    // Lancé depuis un panneau du worktree (panneau `tasks`, terminal de la mission) : sans dossier courant,
-    // plus aucun git ni herdr ne pourrait être lancé ensuite.
+    // Started from a pane of the worktree (`tasks` pane, mission terminal): without a current directory,
+    // no git or herdr command could be launched afterwards.
     const rel = relative(s.worktree, process.cwd())
     if (!rel.startsWith('..') && !isAbsolute(rel)) process.chdir(s.repoPath)
     await e.git.worktreeRemove(s.repoPath, s.worktree)
   }
   const branchDeleted = await cleanBranch(s, e, cfg, out)
-  s.step = 'fermée'
-  s.log.push({ at: e.now().toISOString(), msg: 'mission fermée (herness fermer)' })
+  s.step = 'closed'
+  s.log.push({ at: e.now().toISOString(), msg: 'mission closed (herness close)' })
   await saveState(s)
-  // En dernier : `fermer` peut être lancé depuis un panneau de cet espace.
+  // Last: `close` may be launched from a pane of this workspace.
   if (s.herdr.workspace && (!closed || (await e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace))) {
     await e.herdr.workspaceClose(s.herdr.workspace)
   }
-  out(`Mission ${id} fermée (branche ${s.branch ?? '?'} ${branchDeleted ? 'supprimée localement' : 'conservée'}).`)
+  out(`Mission ${id} closed (branch ${s.branch ?? '?'} ${branchDeleted ? 'deleted locally' : 'kept'}).`)
   return true
 }
 
 /**
- * `herness supprimer` : efface le dossier d'une mission complètement fermée (état, spec, plan, journaux).
- * Refuse tant qu'il reste quelque chose à fermer : `fermer` est le seul à arrêter moteur, bases et espace.
+ * `herness delete`: removes the folder of a fully closed mission (state, spec, plan, logs).
+ * Refuses while something is left to close: `close` is the only command that stops the engine, databases and workspace.
  */
 export async function deleteMission(id: string, deps: LifecycleDeps, opts: { force?: boolean } = {}): Promise<boolean> {
   const out = deps.out ?? console.log
   const s = await load(id)
-  if (s.step !== 'fermée') throw new Error(`mission ${id} pas fermée : herness fermer ${id} d'abord`)
+  if (s.step !== 'closed') throw new Error(`mission ${id} is not closed: herness close ${id} first`)
   const left: string[] = []
-  if (s.worktree && (await exists(s.worktree))) left.push(`le worktree ${s.worktree}`)
-  if (s.herdr.workspace && (await deps.e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace)) left.push("l'espace herdr")
-  if (s.testDbUp || s.proofDbUp) left.push('une base de test')
-  if (left.length > 0) throw new Error(`il reste ${left.join(', ')} : relance herness fermer ${id}`)
+  if (s.worktree && (await exists(s.worktree))) left.push(`the worktree ${s.worktree}`)
+  if (s.herdr.workspace && (await deps.e.herdr.workspaceList()).some((w) => w.workspaceId === s.herdr.workspace)) left.push('the herdr workspace')
+  if (s.testDbUp || s.proofDbUp) left.push('a test database')
+  if (left.length > 0) throw new Error(`${left.join(', ')} ${left.length > 1 ? 'are' : 'is'} still there: run herness close ${id} again`)
   if (!opts.force) {
-    if (!deps.isTTY || !deps.confirm) throw new Error('la suppression demande une confirmation dans un terminal interactif (ou --oui)')
-    if (!(await deps.confirm(`Supprimer définitivement la mission ${id} (état, spec, plan, journaux) ?`))) {
-      out('suppression annulée')
+    if (!deps.isTTY || !deps.confirm) throw new Error('deletion requires confirmation in an interactive terminal (or --yes)')
+    if (!(await deps.confirm(`Permanently delete mission ${id} (state, spec, plan, logs)?`))) {
+      out('deletion cancelled')
       return false
     }
   }
   await rm(missionDir(id), { recursive: true, force: true })
-  out(`Mission ${id} supprimée.`)
+  out(`Mission ${id} deleted.`)
   return true
 }
 
 /**
- * `herness signaler` : remonte les erreurs herness d'une mission en issues GitHub.
- * Ne lit ni n'écrit `state.json` au-delà du chargement initial.
+ * `herness report`: files a mission's herness errors as GitHub issues.
+ * Does not read or write `state.json` beyond the initial load.
  */
 export async function reportMissionErrors(id: string, deps: LifecycleDeps, opts: { force?: boolean } = {}): Promise<boolean> {
   const out = deps.out ?? console.log
   await load(id)
   const plan = await planReport(id, deps.e.run)
   if (plan.length === 0) {
-    out(`Aucune erreur herness à remonter pour la mission ${id}.`)
+    out(`No herness error to file for mission ${id}.`)
     return true
   }
   if (!opts.force && !(deps.isTTY && deps.confirm)) {
-    throw new Error("l'envoi demande une confirmation dans un terminal interactif (ou --oui)")
+    throw new Error('sending requires confirmation in an interactive terminal (or --yes)')
   }
   for (const line of previewLines(id, plan)) out(line)
   if (!opts.force && deps.confirm && !(await deps.confirm(confirmQuestion(plan)))) {
-    out(`rien n'a été envoyé (herness signaler ${id} pour le refaire)`)
+    out(`nothing was sent (herness report ${id} to try again)`)
     return false
   }
   for (const line of await sendReport(id, plan, deps.e.run, () => deps.e.now())) out(line)
@@ -443,7 +447,7 @@ function taskSummary(s: MissionState): string {
   return t ? `${t.n}/${s.tasks.length} ${t.phase}` : '-'
 }
 
-/** `herness statut [<id>]` : une ligne par mission, ou le détail d'une mission. */
+/** `herness status [<id>]`: one line per mission, or the detail of one mission. */
 export async function missionStatus(id?: string): Promise<string[]> {
   if (id === undefined) {
     const names = (await readdir(missionsRoot()).catch(() => [] as string[])).sort()
@@ -457,26 +461,26 @@ export async function missionStatus(id?: string): Promise<string[]> {
       }
       const pending = s.gates.filter((g) => g.status === 'pending').map((g) => g.id)
       lines.push(
-        [s.id, s.step, `tâche ${taskSummary(s)}`, `portes ${pending.join(',') || '-'}`, s.prUrl ?? ''].join('  ').trimEnd(),
+        [s.id, s.step, `task ${taskSummary(s)}`, `gates ${pending.join(',') || '-'}`, s.prUrl ?? ''].join('  ').trimEnd(),
       )
     }
-    return lines.length ? lines : ['aucune mission']
+    return lines.length ? lines : ['no missions']
   }
   const s = await load(id)
   const lines = [
-    `Mission ${s.id} (${s.source.kind} : ${s.source.ref})`,
-    `Étape : ${s.step}${s.paused ? ' (en pause)' : ''}`,
+    `Mission ${s.id} (${s.source.kind}: ${s.source.ref})`,
+    `Step: ${s.step}${s.paused ? ' (paused)' : ''}`,
   ]
-  if (s.step === 'bloquée') lines.push(`Bloquée depuis ${s.blockedFrom ?? '?'} : ${s.blockedReason ?? '?'}`)
-  if (s.branch) lines.push(`Branche : ${s.branch}`)
-  if (s.worktree) lines.push(`Worktree : ${s.worktree}`)
-  if (s.prUrl) lines.push(`PR : ${s.prUrl}`)
-  for (const t of s.tasks) lines.push(`Tâche ${t.n} : ${t.title} — ${t.phase}${t.round ? ` (tour ${t.round})` : ''}`)
+  if (s.step === 'blocked') lines.push(`Blocked since ${s.blockedFrom ?? '?'}: ${s.blockedReason ?? '?'}`)
+  if (s.branch) lines.push(`Branch: ${s.branch}`)
+  if (s.worktree) lines.push(`Worktree: ${s.worktree}`)
+  if (s.prUrl) lines.push(`PR: ${s.prUrl}`)
+  for (const t of s.tasks) lines.push(`Task ${t.n}: ${t.title} — ${t.phase}${t.round ? ` (round ${t.round})` : ''}`)
   const pending = s.gates.filter((g) => g.status === 'pending')
-  lines.push(pending.length ? 'Portes en attente :' : 'Aucune porte en attente')
-  for (const g of pending) lines.push(`- ${g.id} (${g.kind}) : ${g.summary}`)
+  lines.push(pending.length ? 'Pending gates:' : 'No pending gate')
+  for (const g of pending) lines.push(`- ${g.id} (${g.kind}): ${g.summary}`)
   const r = s.loops.preflight.results
-  if (r.length) lines.push(`Preflight : ${r.map((x) => `${x.label} ${x.exitCode === 0 ? '✓' : '✗'}`).join(', ')}`)
-  lines.push('Journal :', ...s.log.slice(-10).map((l) => `  ${l.at} ${l.msg}`))
+  if (r.length) lines.push(`Preflight: ${r.map((x) => `${x.label} ${x.exitCode === 0 ? '✓' : '✗'}`).join(', ')}`)
+  lines.push('Log:', ...s.log.slice(-10).map((l) => `  ${l.at} ${l.msg}`))
   return lines
 }

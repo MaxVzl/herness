@@ -1,18 +1,18 @@
 ## Ticket
 {{ticket}}
 
-## Contexte
-{{contexte}}
+## Context
+{{context}}
 
-## Changements
-{{changements}}
+## Changes
+{{changes}}
 
 ## Tests
 {{tests}}
 
-## Preflight local
+## Local preflight
 {{preflight}}
 
 ## Docs
-Spec : {{specFile}}
-Plan : {{planFile}}
+Spec: {{specFile}}
+Plan: {{planFile}}

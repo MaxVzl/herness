@@ -18,66 +18,73 @@ afterEach(async () => {
 
 const version = VERSION.replaceAll('.', '\\.')
 
-test('errorLogPath vaut <HERNESS_HOME>/erreurs.log', () => {
-  expect(errorLogPath()).toBe(join(home, 'erreurs.log'))
+test('errorLogPath is <HERNESS_HOME>/errors.log', () => {
+  expect(errorLogPath()).toBe(join(home, 'errors.log'))
 })
 
-test('une Error donne un en-tête complet et sa pile', async () => {
-  await logHernessError({ mission: 'T-1', origin: 'moteur', step: 'tasks' }, new Error('boum'))
+test('logHernessError writes to errors.log with a (step X) header', async () => {
+  await logHernessError({ mission: 'T-1', origin: 'engine', step: 'tasks' }, new Error('boom'))
+  const text = await readFile(join(home, 'errors.log'), 'utf8')
+  expect(text).toMatch(/· engine \(step tasks\)$/m)
+  expect(text).toContain('Error: boom')
+})
+
+test('an Error gets a full header and its stack', async () => {
+  await logHernessError({ mission: 'T-1', origin: 'engine', step: 'tasks' }, new Error('boom'))
   const text = await readFile(errorLogPath(), 'utf8')
   expect(text).toMatch(
     new RegExp(
-      `^=== \\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z · mission T-1 · herness ${version} · moteur \\(étape tasks\\)$`,
+      `^=== \\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z · mission T-1 · herness ${version} · engine \\(step tasks\\)$`,
       'm',
     ),
   )
-  expect(text).toContain('Error: boum')
+  expect(text).toContain('Error: boom')
   expect(text).toMatch(/^ {4}at /m)
 })
 
-test('sans mission ni étape, les segments sont omis', async () => {
-  await logHernessError({ origin: 'lancement du moteur' }, 'incident')
+test('without a mission or a step, those segments are omitted', async () => {
+  await logHernessError({ origin: 'engine startup' }, 'incident')
   const text = await readFile(errorLogPath(), 'utf8')
-  expect(text).toMatch(new RegExp(`· herness ${version} · lancement du moteur$`, 'm'))
+  expect(text).toMatch(new RegExp(`· herness ${version} · engine startup$`, 'm'))
   expect(text).not.toContain('mission')
-  expect(text).not.toContain('étape')
+  expect(text).not.toContain('step')
 })
 
-test("une valeur qui n'est pas une Error est écrite telle quelle", async () => {
-  await logHernessError({ origin: 'x' }, 'texte libre')
-  expect(await readFile(errorLogPath(), 'utf8')).toContain('texte libre')
+test("a value that is not an Error is written as-is", async () => {
+  await logHernessError({ origin: 'x' }, 'free text')
+  expect(await readFile(errorLogPath(), 'utf8')).toContain('free text')
   await rm(errorLogPath())
   await logHernessError({ origin: 'x' }, 42)
   expect(await readFile(errorLogPath(), 'utf8')).toContain('42')
 })
 
-test("la cause d'une Error est ajoutée", async () => {
-  await logHernessError({ origin: 'x' }, new Error('haut', { cause: new Error('bas') }))
+test("an Error cause is appended", async () => {
+  await logHernessError({ origin: 'x' }, new Error('top', { cause: new Error('bottom') }))
   const text = await readFile(errorLogPath(), 'utf8')
-  expect(text).toContain('cause :')
-  expect(text).toContain('Error: bas')
+  expect(text).toContain('cause:')
+  expect(text).toContain('Error: bottom')
 })
 
-test('une chaîne de causes cyclique est écrite une seule fois', async () => {
-  const haut = new Error('haut')
-  const bas = new Error('bas')
-  haut.cause = bas
-  bas.cause = haut
-  await expect(logHernessError({ origin: 'x' }, haut)).resolves.toBe(true)
+test('a cyclic cause chain is written only once', async () => {
+  const top = new Error('top')
+  const bottom = new Error('bottom')
+  top.cause = bottom
+  bottom.cause = top
+  await expect(logHernessError({ origin: 'x' }, top)).resolves.toBe(true)
   const text = await readFile(errorLogPath(), 'utf8')
-  expect(text.match(/Error: haut/g)).toHaveLength(1)
-  expect(text.match(/Error: bas/g)).toHaveLength(1)
+  expect(text.match(/Error: top/g)).toHaveLength(1)
+  expect(text.match(/Error: bottom/g)).toHaveLength(1)
 })
 
-test("deux entrées s'ajoutent, séparées par une ligne vide", async () => {
-  await logHernessError({ origin: 'a' }, 'un')
-  await logHernessError({ origin: 'b' }, 'deux')
+test("two entries are appended, separated by a blank line", async () => {
+  await logHernessError({ origin: 'a' }, 'one')
+  await logHernessError({ origin: 'b' }, 'two')
   const text = await readFile(errorLogPath(), 'utf8')
   expect(text.match(/^=== /gm)).toHaveLength(2)
   expect(text).toContain('\n\n=== ')
 })
 
-test("n'écrit jamais sur stdout", async () => {
+test("never writes to stdout", async () => {
   const log = vi.spyOn(console, 'log')
   const write = vi.spyOn(process.stdout, 'write')
   await logHernessError({ origin: 'x' }, new Error('e'))
@@ -87,37 +94,37 @@ test("n'écrit jamais sur stdout", async () => {
   write.mockRestore()
 })
 
-test('ne lève jamais quand le journal est inaccessible', async () => {
-  const file = join(home, 'pas-un-dossier')
+test('never throws when the log is unavailable', async () => {
+  const file = join(home, 'not-a-directory')
   await writeFile(file, 'x')
   process.env.HERNESS_HOME = file
   await expect(logHernessError({ origin: 'x' }, new Error('e'))).resolves.toBe(false)
 })
 
-test("indique que l'entrée a été écrite", async () => {
+test("reports that the entry was written", async () => {
   await expect(logHernessError({ origin: 'x' }, 'ok')).resolves.toBe(true)
   expect(await readFile(errorLogPath(), 'utf8')).toContain('ok')
 })
 
-test('withErrorLog rend le résultat sans rien écrire', async () => {
+test('withErrorLog returns the result without writing anything', async () => {
   await expect(withErrorLog({ origin: 'x' }, async () => 7)).resolves.toBe(7)
   expect(existsSync(errorLogPath())).toBe(false)
 })
 
-test('withErrorLog journalise puis relève la même erreur', async () => {
-  const boom = new Error('état illisible')
+test('withErrorLog logs then rethrows the same error', async () => {
+  const boom = new Error('unreadable state')
   await expect(
-    withErrorLog({ mission: 'T-1', origin: 'lancement du moteur' }, async () => {
+    withErrorLog({ mission: 'T-1', origin: 'engine startup' }, async () => {
       throw boom
     }),
   ).rejects.toBe(boom)
   const text = await readFile(errorLogPath(), 'utf8')
   expect(text).toContain('· mission T-1 · herness ')
-  expect(text).toContain('· lancement du moteur')
-  expect(text).toContain('état illisible')
+  expect(text).toContain('· engine startup')
+  expect(text).toContain('unreadable state')
 })
 
-test("l'écouteur de processus n'écrit pas une erreur déjà journalisée par withErrorLog", async () => {
+test("the process listener does not write an error already logged by withErrorLog", async () => {
   const listeners = new Map<'uncaughtException' | 'unhandledRejection', (err: unknown) => Promise<void>>()
   const exit = vi.fn()
   const proc: ErrorProcess = {
@@ -127,28 +134,28 @@ test("l'écouteur de processus n'écrit pas une erreur déjà journalisée par w
     exit,
   }
   const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-  const boom = new Error('état illisible')
-  installProcessErrorLog({ mission: 'T-1', origin: 'moteur : erreur non rattrapée' }, proc)
+  const boom = new Error('unreadable state')
+  installProcessErrorLog({ mission: 'T-1', origin: 'engine: uncaught error' }, proc)
   await expect(
-    withErrorLog({ mission: 'T-1', origin: 'lancement du moteur' }, async () => {
+    withErrorLog({ mission: 'T-1', origin: 'engine startup' }, async () => {
       throw boom
     }),
   ).rejects.toBe(boom)
   await listeners.get('uncaughtException')!(boom)
   const text = await readFile(errorLogPath(), 'utf8')
   expect(text.match(/^=== /gm)).toHaveLength(1)
-  expect(text).toContain('lancement du moteur')
-  expect(text).not.toContain('erreur non rattrapée')
+  expect(text).toContain('engine startup')
+  expect(text).not.toContain('uncaught error')
   expect(exit).toHaveBeenCalledWith(1)
   expect(error).toHaveBeenCalled()
   error.mockRestore()
 })
 
-test('installProcessErrorLog journalise puis sort avec le code 1', async () => {
+test('installProcessErrorLog logs then exits with code 1', async () => {
   const listeners = new Map<'uncaughtException' | 'unhandledRejection', (err: unknown) => Promise<void>>()
-  let écrit = false
+  let wrote = false
   const exit = vi.fn(() => {
-    écrit = existsSync(errorLogPath())
+    wrote = existsSync(errorLogPath())
   })
   const proc: ErrorProcess = {
     on(event, listener) {
@@ -157,14 +164,14 @@ test('installProcessErrorLog journalise puis sort avec le code 1', async () => {
     exit,
   }
   const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-  installProcessErrorLog({ mission: 'T-1', origin: 'serveur MCP : erreur non rattrapée' }, proc)
+  installProcessErrorLog({ mission: 'T-1', origin: 'MCP server: uncaught error' }, proc)
   expect(listeners.has('uncaughtException')).toBe(true)
   expect(listeners.has('unhandledRejection')).toBe(true)
   await listeners.get('unhandledRejection')!(new Error('promesse perdue'))
   const text = await readFile(errorLogPath(), 'utf8')
-  expect(text).toContain('· serveur MCP : erreur non rattrapée')
+  expect(text).toContain('· MCP server: uncaught error')
   expect(text).toContain('promesse perdue')
   expect(exit).toHaveBeenCalledWith(1)
-  expect(écrit).toBe(true)
+  expect(wrote).toBe(true)
   error.mockRestore()
 })

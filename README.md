@@ -1,18 +1,18 @@
 # herness
 
-herness orchestre des agents de code sur un ticket, de la demande à la Pull Request : un orchestrateur Claude Code, des implémenteurs Cursor et des relecteurs Claude. Le déroulé est piloté par une machine à états en code (le moteur, seul écrivain de `state.json`), visible en direct dans un espace herdr par mission. Les décisions humaines passent par des portes (spec, plan, amendements, arbitrages, abandon, reprise d'une mission bloquée, PR malgré un check rouge aussi sur main) que l'on valide ou refuse depuis un terminal. Il n'y a pas de porte finale avant la PR : elle est poussée et ouverte automatiquement après un preflight vert.
+herness orchestrates code agents on a ticket, from the request to the pull request: a Claude Code orchestrator, Cursor implementers and Claude reviewers. The run is driven by a state machine in code (the engine, sole writer of `state.json`), shown live in one herdr workspace per mission. Human decisions go through gates (spec, plan, amendments, arbitration, abandon, resuming a blocked mission, opening a PR when a check is also red on main). You approve or reject them from a terminal. There is no final gate before the PR: it is pushed and opened automatically after a green preflight.
 
-## Prérequis
+## Requirements
 
-- herdr lancé, avec `HERDR_ENV` défini (herness doit tourner dans un panneau herdr)
-- `claude` (Claude Code) connecté
-- `cursor-agent login` effectué
-- `gh auth login` effectué
+- herdr running, with `HERDR_ENV` set (herness must run inside a herdr pane)
+- `claude` (Claude Code) signed in
+- `cursor-agent login` done
+- `gh auth login` done
 - docker
-- node 24 et pnpm
+- node 24 and pnpm
 - lazygit
 
-`herness dev` vérifie l'environnement (identité git, docker, `cursor-agent`, serveur herdr joignable, `gh`, node/pnpm) et s'arrête sur tout `KO`. `HERDR_ENV` et lazygit ne sont pas vérifiés automatiquement : à toi de lancer herness depuis un panneau herdr et d'avoir lazygit dans le `PATH`.
+`herness dev` checks the environment (git identity, docker, `cursor-agent`, reachable herdr server, `gh`, node/pnpm) and stops on any `KO`. `HERDR_ENV` and lazygit are not checked automatically: start herness from a herdr pane, and keep lazygit on `PATH`.
 
 ## Installation
 
@@ -20,180 +20,210 @@ herness orchestre des agents de code sur un ticket, de la demande à la Pull Req
 curl -fsSL https://raw.githubusercontent.com/MaxVzl/herness/main/install.sh | sh
 ```
 
-Le script télécharge l'archive de la dernière release (`herness-<version>.tar.gz`), l'installe dans `~/.local/share/herness/versions/<version>/` (préparation comprise : `pnpm install --prod`), fait pointer `~/.local/share/herness/current` vers elle et crée le lien `~/.local/bin/herness` (`~/.local/bin` doit être dans le `PATH`). Les 3 dernières versions restent sur le disque, ainsi que toute version qu'un processus utilise encore. Variables : `HERNESS_INSTALL_DIR` (à la place de `~/.local/share/herness`), `HERNESS_BIN_DIR` (à la place de `~/.local/bin`).
+The script downloads the latest release archive (`herness-<version>.tar.gz`), installs it under `~/.local/share/herness/versions/<version>/` (preparation included: `pnpm install --prod`), points `~/.local/share/herness/current` at it and creates the link `~/.local/bin/herness` (`~/.local/bin` must be on `PATH`). The 3 latest versions stay on disk, and so does any version a process is still using. Variables: `HERNESS_INSTALL_DIR` (instead of `~/.local/share/herness`), `HERNESS_BIN_DIR` (instead of `~/.local/bin`).
 
-Le contrat entre le script et les releases ne dépend pas du langage de herness : une archive par version, avec un dossier racine qui contient un exécutable `bin/herness` et, au besoin, `bin/post-install`, lancé une fois après l'extraction. La CI la construit (`git archive`) et l'attache à chaque release créée par release-please.
+The contract between the script and the releases does not depend on the language herness is written in: one archive per version, with a root folder that contains an executable `bin/herness` and, when needed, `bin/post-install`, run once after extraction. CI builds it (`git archive`) and attaches it to each release created by release-please.
 
-### Mise à jour
+### Update
 
 ```sh
-herness mise-a-jour                    # dernière version
-herness mise-a-jour --version 0.5.0    # version précise, retour arrière compris
+herness update                         # latest version
+herness update --version 0.5.0         # a specific version, including a rollback
 ```
 
-La commande relance le script d'installation, puis liste les missions en cours (ni `pr-ouverte`, ni `fermée`, ni `bloquée`) et propose de les redémarrer (`herness reprendre <id> --redemarrer`, avec la nouvelle version). Sinon, le moteur, le tableau et les visionneuses de ces missions continuent sur l'ancienne version, intacte dans son dossier. L'orchestrateur n'est pas relancé ; son serveur MCP garde l'ancien code jusqu'à ce que sa session soit relancée.
+The command runs the install script again, then lists running missions (not `pr-open`, not `closed`, not `blocked`) and offers to restart them (`herness resume <id> --restart`, on the new version). Otherwise the engine, the dashboard and the viewers of those missions keep running on the old version, intact in its folder. The orchestrator is not restarted; its MCP server keeps the old code until its session is started again.
 
-Tout ce que herness lance (moteur, tableau, visionneuses, serveur MCP, cockpit) démarre avec la version active au moment du lancement, même depuis un cockpit plus ancien. Le cockpit exécute lui-même la création des missions et les validations : s'il tourne sur une autre version que celle installée, il l'indique en jaune sous son titre. Quitte-le (`q`) et relance `herness`.
+Everything herness launches (engine, dashboard, viewers, MCP server, cockpit) starts on the version that is active at launch time, even from an older cockpit. The cockpit itself creates missions and records approvals: if it runs on a version other than the installed one, it says so in yellow under its title. Quit it (`q`) and start `herness` again.
 
-### Développer herness
+### Upgrading from 0.8
 
-Depuis un clone : `pnpm install`, puis un lien à un autre nom que `herness`, par exemple `ln -s "$PWD/bin/herness" ~/.local/bin/herness-dev`. Le script d'installation remplace un lien `~/.local/bin/herness` existant (en le signalant), mais refuse d'écraser un vrai fichier. Hors installation (racine pas sous `versions/`), moteur, panneaux, cockpit et redémarrage détaché partent avec le `node` du `PATH` et `bin/herness.js`.
+Finish or close missions that are still running before you install this version. Do not restart a mission created by herness 0.8 or earlier: finish it on that version, or close it (`herness close <id>`). An engine already running on 0.8 keeps its old code until something restarts it, so the mission can still finish after the upgrade if you leave it alone.
 
-## Commandes
+When the 0.8 install offers to restart missions, answer no, or have no mission in progress: the offer runs `current/bin/herness` with a command this version does not know.
 
-Toutes se lancent depuis le dépôt du projet (ou un sous-dossier) pour `dev`, `init` et `projet`, de n'importe où pour les autres.
+Add `language: 'fr'` to the config of francophone projects. A missing value means `'en'`.
 
-| Commande | Rôle |
+To roll back: `herness update --version 0.8.1`. That install offers no restart. It cannot read missions created by this version, and it prints how to restart the missions that older version started.
+
+### Developing herness
+
+From a clone: `pnpm install`, then a link under another name than `herness`, for example `ln -s "$PWD/bin/herness" ~/.local/bin/herness-dev`. The install script replaces an existing `~/.local/bin/herness` link (and says so), but refuses to overwrite a real file. Outside an install (root not under `versions/`), the engine, panes, cockpit and detached restart start with the `node` on `PATH` and `bin/herness.js`.
+
+## Commands
+
+`dev`, `init` and `project` run from the project repository (or a subdirectory). The others run from anywhere.
+
+| Command | Role |
 | --- | --- |
-| `herness` | Dans herdr : ouvre (ou crée) l'onglet `herness` du projet, qui affiche le cockpit (voir « Cockpit »). Hors herdr : affiche « hors herdr : lance « herness cockpit » dans un terminal » et ne fait rien d'autre. |
-| `herness init` | Crée la config herness du dépôt courant (voir « Ajouter un projet »), puis demande s'il faut l'affiner avec Claude. Sur un dépôt déjà configuré, ne réécrit rien et pose seulement la question. |
-| `herness projet` | Affiche la config qui s'applique au dépôt courant (nom, fichier, dépôt) et vérifie qu'elle est valide. |
-| `herness cockpit` | Écran du cockpit dans le terminal courant (projet du dossier courant). Hors terminal interactif, affiche une seule image et rend la main. |
-| `herness dev <demande...> [--note <texte>]` | Démarre une mission : lien Wrike, issue GitHub ou texte libre ; `--note` ajoute des précisions qui complètent la demande (écrites dans `note.md`, elles l'emportent en cas de contradiction). Crée l'espace herdr, le worktree et la branche `herness/<id>`, lance moteur, tableau et orchestrateur. |
-| `herness reprendre <id> [--redemarrer]` | Rouvre l'espace d'une mission et relance ce qui ne tourne plus (moteur, tableau, visionneuses spec et plan, orchestrateur). Une mission bloquée ouvre une porte de reprise (`reprise-bloquee`) : validée, elle repart de l'étape bloquée avec un budget de tours neuf. Une mission `pr-ouverte` ou `fermée` : affiche son état, ne relance rien. `--redemarrer` : arrête (double ctrl+c) puis relance moteur, tableau et visionneuses même s'ils tournent, sans rien envoyer aux agents. |
-| `herness mise-a-jour [--version <x.y.z>]` | Installe la dernière version de herness (ou celle demandée), puis propose de redémarrer les missions en cours sur le nouveau code (voir « Mise à jour »). |
-| `herness statut [id]` | État de toutes les missions, ou détail d'une mission. |
-| `herness tasks <id>` | Tableau de bord d'une mission (celui du panneau `tasks`) : tâches, portes, journal, avec les gestes du cockpit sur cette mission (`v`, `r`, `n`, `p`, `R`, `f`, `o`, `←/→` pour choisir la porte), `c` retour au cockpit, `q` quitter. |
-| `herness voir <spec\|plan> <id>` | Visionneuse du panneau `spec` ou `plan` de l'onglet `docs` : affiche le document avec `bat` (à défaut `less -R`) et le recharge dès qu'il change. Une proposition d'amendement en attente (`<spec\|plan>.proposed.md` du dossier de mission) a la priorité, signalée par un en-tête ; sinon le fichier du worktree ; sinon un message d'attente. `q` quitte l'affichage, Entrée le rouvre. Lecture seule : n'écrit jamais `state.json`. |
-| `herness valider <id> [--porte <gateId>] [--note <texte>]` | Valide une porte en attente (par défaut la plus ancienne). |
-| `herness refuser <id> --note <texte> [--porte <gateId>]` | Refuse une porte ; `--note` (motif) est obligatoire. |
-| `herness fermer <id>` | Ferme la mission : base de test, moteur, worktree et espace herdr (confirmation s'il reste du travail). En ligne de commande, propose d'abord de remonter les erreurs herness de la mission. Sur une mission déjà `fermée` (abandon validé), nettoie ce qui reste. La branche locale est supprimée seulement si tout son contenu est déjà sur `origin` (jamais la branche distante ni la PR). |
-| `herness signaler <id> [--oui]` | Aperçu des issues et commentaires à publier sur `MaxVzl/herness` (dépôt public), puis confirmation. `--oui` envoie sans question. |
-| `herness supprimer <id> [--oui]` | Efface le dossier d'une mission `fermée` (état, spec, plan, journaux) après confirmation (`--oui` : sans). Refuse tant qu'il reste un worktree, un espace herdr ou une base : relancer `herness fermer` d'abord. |
+| `herness` | Inside herdr: opens (or creates) the project's `herness` tab, which shows the cockpit (see "Cockpit"). Outside herdr: prints `outside herdr: run "herness cockpit" in a terminal` and does nothing else. |
+| `herness init` | Creates the herness config of the current repository (see "Add a project"), then asks whether to refine it with Claude. On a repository that is already configured, it rewrites nothing and only asks that question. |
+| `herness project` | Prints the config that applies to the current repository (name, file, repository) and checks that it is valid. |
+| `herness cockpit` | Cockpit screen in the current terminal (project of the current directory). Outside an interactive terminal, prints one frame and returns. |
+| `herness dev <request...> [--note <text>]` | Starts a mission: Wrike link, GitHub issue or free text. `--note` adds details that complement the request (written to `note.md`; they win if they contradict the request). Creates the herdr workspace, the worktree and the branch `herness/<id>`, and starts the engine, the dashboard and the orchestrator. |
+| `herness resume <id> [--restart]` | Reopens a mission workspace and restarts whatever is no longer running (engine, dashboard, spec and plan viewers, orchestrator). A blocked mission opens a resume gate (`resume-blocked`): once approved, it continues from the blocked step with a fresh round budget. A mission at `pr-open` or `closed` prints its state and restarts nothing. `--restart` stops (double ctrl+c) then restarts the engine, dashboard and viewers even if they are running, and sends nothing to the agents. |
+| `herness update [--version <x.y.z>]` | Installs the latest herness version (or the one requested), then offers to restart running missions on the new code (see "Update"). |
+| `herness status [id]` | State of every mission, or the detail of one mission. |
+| `herness tasks <id>` | Dashboard of one mission (the `tasks` pane): tasks, gates, log, with the cockpit gestures for that mission (`a`, `r`, `n`, `u`, `R`, `c`, `o`, `←/→` to pick the gate), `b` back to the cockpit, `q` quit. |
+| `herness show <spec\|plan> <id>` | Viewer of the `spec` or `plan` pane on the `docs` tab: shows the document with `bat` (otherwise `less -R`) and reloads it as soon as it changes. A pending amendment proposal (`<spec\|plan>.proposed.md` in the mission folder) takes priority, marked by a header; otherwise the worktree file; otherwise a waiting message. `q` leaves the view, Enter opens it again. Read only: it never writes `state.json`. |
+| `herness approve <id> [--gate <gateId>] [--note <text>]` | Approves a pending gate (by default the oldest one). |
+| `herness reject <id> --note <text> [--gate <gateId>]` | Rejects a gate; `--note` (the reason) is required. |
+| `herness close <id>` | Closes the mission: test database, engine, worktree and herdr workspace (confirmation if work remains). On the command line, it first offers to report the mission's herness errors. On a mission already `closed` (approved abandon), it cleans up what remains. The local branch is deleted only if all of its content is already on `origin` (never the remote branch, never the PR). |
+| `herness report <id> [--yes]` | Preview of the issues and comments to publish on `MaxVzl/herness` (public repository), then a confirmation. `--yes` sends them without asking. |
+| `herness delete <id> [--yes]` | Deletes the folder of a `closed` mission (state, spec, plan, logs) after confirmation (`--yes`: skip it). Refuses while a worktree, a herdr workspace or a database remains: run `herness close` first. |
 
-`valider` et `refuser` exigent un vrai terminal interactif (confirmation `o/N`) : un agent ne peut pas valider à ta place. Dans le cockpit et le panneau `tasks`, `v` (valider) et `r` (refuser, note obligatoire) font la même chose après confirmation en deux touches (voir « Cockpit »). Toutes ces commandes restent disponibles : le cockpit ne les remplace pas.
+`approve` and `reject` require a real interactive terminal (confirmation `y/N`): an agent cannot approve in your place. In the cockpit and the `tasks` pane, `a` (approve) and `r` (reject, note required) do the same thing after a two-key confirmation (see "Cockpit"). All of these commands stay available: the cockpit does not replace them.
 
-## Le cycle d'une mission
+## Mission steps
 
-1. `herness dev` crée l'espace et lance l'orchestrateur, qui lit la demande.
-2. L'orchestrateur propose une spec puis un plan ; chacun passe par une porte.
-3. Les implémenteurs (Cursor) codent en TDD par tâche, les relecteurs (Claude) relisent, avec des tours de correction bornés.
-4. Le preflight local complet tourne dans le worktree, avec une base de test dédiée.
-5. Preflight vert : le moteur rebase si besoin sur la branche principale (un rebase automatique au plus, preflight rejoué), pousse la branche et ouvre la Pull Request automatiquement, sans porte. Seul un check rouge aussi sur la branche principale demande une décision (porte `pr-malgre-main`).
-6. PR ouverte (`pr-ouverte`) : le moteur s'arrête. Sur ta demande explicite, l'orchestrateur peut alors toucher à la branche de la mission : rebaser sur la branche principale en résolvant les conflits (code adapté si besoin), faire une correction ciblée (retour de revue), relancer les tests et le preflight, puis pousser en `--force-with-lease` après t'avoir résumé les changements. Jamais de `git stash`, de `--no-verify` ni de push sur la branche principale. Ces retouches ne passent ni par un implémenteur ni par une revue : pour un changement de fond, lance une nouvelle mission. Ne vaut que pour les missions lancées après cette règle (le prompt de l'orchestrateur est figé au lancement).
-7. `herness fermer` nettoie.
+`env`, `prepare`, `classify`, `brainstorm`, `spec`, `plan`, `tasks`, `global-review`, `preflight`, `pr`, `pr-open`, `closed`, `blocked`.
 
-## Portes
+1. `herness dev` creates the workspace and starts the orchestrator, which reads the request.
+2. The orchestrator proposes a spec, then a plan; each one goes through a gate.
+3. Implementers (Cursor) code in TDD, task by task; reviewers (Claude) review, with a bounded number of correction rounds.
+4. The full local preflight runs in the worktree, on a dedicated test database.
+5. Green preflight: the engine rebases on the main branch if needed (one automatic rebase at most, preflight replayed), pushes the branch and opens the pull request automatically, with no gate. Only a check that is also red on the main branch asks for a decision (gate `pr-despite-main`).
+6. PR open (`pr-open`): the engine stops. On your explicit request, the orchestrator may then touch the mission branch: rebase on the main branch and resolve conflicts (adapting code if needed), make a targeted fix (review feedback), rerun tests and preflight, then push with `--force-with-lease` after summarizing the changes for you. Never `git stash`, never `--no-verify`, never a push to the main branch. These touch-ups go through neither an implementer nor a review: for a substantial change, start a new mission. This applies only to missions started after this rule (the orchestrator prompt is frozen at launch).
+7. `herness close` cleans up.
 
-Chaque décision humaine est une porte, validée (`herness valider`) ou refusée (`herness refuser`) par l'utilisateur seul.
+## Gates
 
-| Porte | Ouverte quand | Validée | Refusée |
+Each human decision is a gate, approved (`herness approve`) or rejected (`herness reject`) by the user alone.
+
+| Gate | Opened when | Approved | Rejected |
 | --- | --- | --- | --- |
-| `spec`, `plan` | L'orchestrateur demande la validation | Le document est commité, l'étape suivante démarre | L'orchestrateur corrige et redemande |
-| `amendement` | L'orchestrateur propose un plan amendé | Appliqué dès qu'aucune consigne n'est en cours chez un agent (voir plus bas) | Rien ne change |
-| `arbitrage` | Une revue contredit le plan, ou l'orchestrateur demande un arbitrage | La note entre dans le prochain fichier de correctifs ; sans correction en attente, la porte est sans effet (l'orchestrateur en est prévenu) | Idem, avec la note du refus |
-| `agent-bloque` | Un agent attend une intervention dans son panneau | Le moteur attend la fin de l'agent, sans renvoyer la consigne | Mission bloquée |
-| `agent-arret` | Un implémenteur s'est arrêté sans commit en laissant un compte rendu (tâche, revue globale ou preflight) ; l'orchestrateur l'explique et propose un amendement si le plan est en cause | Tour de correction (mêmes règles que des tests rouges : tours bornés, modèle fort au 3e) avec « Décision de l'utilisateur : <note ou continue> » | Mission bloquée |
-| `reprise-bloquee` | `herness reprendre` sur une mission bloquée | Retour à l'étape bloquée, budget de tours neuf | La mission reste bloquée |
-| `pr-malgre-main` | Un check du preflight est rouge aussi sur la branche principale | PR ouverte malgré tout | Mission bloquée |
-| `abandon` | L'orchestrateur demande l'abandon | Bases de test supprimées, mission `fermée` | La mission continue |
+| `spec`, `plan` | The orchestrator asks for approval | The document is committed, the next step starts | The orchestrator fixes it and asks again |
+| `amendment` | The orchestrator proposes an amended plan | Applied as soon as no instruction is in progress with an agent (see below) | Nothing changes |
+| `arbitration` | A review contradicts the plan, or the orchestrator asks for a decision | The note goes into the next fixes file; with no correction waiting, the gate has no effect (the orchestrator is told) | Same, with the rejection note |
+| `agent-blocked` | An agent is waiting for help in its pane | The engine waits for the agent to finish, and does not send the instruction again | Mission blocked |
+| `agent-stopped` | An implementer stopped without a commit and left a report (task, global review or preflight); the orchestrator explains it and proposes an amendment if the plan is at fault | A correction round (same rules as red tests: bounded rounds, strong model on the 3rd) with `User decision: <note or continue>` | Mission blocked |
+| `resume-blocked` | `herness resume` on a blocked mission | Back to the blocked step, fresh round budget | The mission stays blocked |
+| `pr-despite-main` | A preflight check is also red on the main branch | PR opened anyway | Mission blocked |
+| `abandon` | The orchestrator asks to abandon | Test databases removed, mission `closed` | The mission continues |
 
-Un amendement validé s'applique dès qu'aucun agent n'a de consigne en cours ni de porte `agent-bloque` en attente ; la porte `agent-arret` de la tâche en cours ne le retient pas (c'est le cas qu'il vient corriger). S'il change le texte de la tâche en cours, son brief est réécrit avec une section « Reprise » (garder le travail présent dans l'arbre, l'adapter, tester, commiter) et l'implémenteur est relancé au même tour ; la porte `agent-arret` qu'elle attendait devient `caduque` : elle n'est plus en attente, ne retient aucun amendement, et une décision sur elle est ignorée. Un amendement validé alors que la mission est bloquée dans la boucle des tâches est appliqué aussitôt. Il ne débloque la mission (comme une reprise validée) que si la tâche en cause bloque elle-même la mission (contrôle, arrêt sans commit, tours épuisés…) et que l'amendement change son texte ; sinon la mission reste bloquée (`herness reprendre <id>`). Le résumé de la porte le dit dès son ouverture : « (mission bloquée : valider cet amendement relancera la tâche <n>) » ou « (mission bloquée : valider n'enlève pas le blocage) ». Un amendement qui modifie une tâche déjà validée reste refusé.
+An approved amendment applies as soon as no agent has an instruction in progress and no `agent-blocked` gate is pending. The current task's `agent-stopped` gate does not hold it back (that is the case the amendment is there to fix). If it changes the text of the current task, its brief is rewritten with a `## Resume` section (keep the work already in the tree, adapt it, test, commit) and the implementer is started again on the same round. The `agent-stopped` gate it was waiting on becomes `obsolete`: it is no longer pending, it holds no amendment, and a decision on it is ignored. An amendment approved while the mission is blocked inside the task loop is applied at once. It unblocks the mission (like an approved resume) only if the task at fault is itself what blocks the mission (a check, a stop without a commit, rounds exhausted…) and the amendment changes its text. Otherwise the mission stays blocked (`herness resume <id>`). The gate summary says so as soon as it opens: `(mission blocked: approving this amendment will restart task <n>)` or `(mission blocked: approving does not clear the block)`. An amendment that changes a task already approved stays refused.
 
-Un arrêt sans commit et sans compte rendu, ou tout autre échec du contrôle des commits (identité, auteur, arbre non propre, fichier interdit), bloque la mission.
+A stop without a commit and without a report, or any other failure of the commit check (identity, author, dirty tree, forbidden file), blocks the mission.
+
+## MCP tools
+
+The orchestrator talks to the engine through the mission MCP server (`herness mcp <id>`). No tool decides a gate: only the user approves or rejects.
+
+| Tool | Role |
+| --- | --- |
+| `status` | Mission summary: step, current task, rounds, pending gates, PR. |
+| `mission_classified` | Declares the work type and the slug once the request is understood. |
+| `request_approval` | Asks the user to approve the spec or the plan, once it is written in the worktree. |
+| `propose_amendment` | Proposes an amendment: full amended plan in `plan.proposed.md` in the mission folder (and `spec.proposed.md` if the spec changes), never in the worktree. |
+| `request_arbitration` | Asks the user to arbitrate a review that contradicts the plan, or any decision they must make. |
+| `pause` | Pauses the engine. Does not block or unblock anything. |
+| `end_pause` | Ends a pause requested with `pause`. Does not resume a blocked mission. |
+| `abandon` | Asks to abandon the mission: opens a gate that only the user approves. |
+| `report_anomaly` | Reports a herness anomaly seen without an error. Never for a normal mission failure. |
 
 ## Cockpit
 
-`herness` (sans argument), lancé dans un panneau herdr depuis le dépôt du projet, ouvre l'onglet `herness` de l'espace courant, ou le remet au premier plan s'il existe déjà. Cet onglet lance `herness cockpit` : toutes les missions du projet, une par ligne, avec leur statut (porte en attente en ambre, mission bloquée en rouge, active normale, terminée grisée), et à côté le détail de la mission sélectionnée (en dessous si le terminal fait moins de 100 colonnes). Les missions les plus urgentes sont en tête : portes en attente, puis bloquées, actives, terminées ; à égalité, la plus récente d'abord. L'écran se rafraîchit chaque seconde ; la sélection reste sur la même mission même si l'ordre change.
+`herness` (no arguments), started in a herdr pane from the project repository, opens the `herness` tab of the current workspace, or brings it to the front if it already exists. That tab runs `herness cockpit`: every mission of the project, one per line, with its status (pending gate in amber, blocked mission in red, active as normal, finished dimmed), and beside it the detail of the selected mission (below it if the terminal is narrower than 100 columns). The most urgent missions come first: pending gates, then blocked, active, finished; ties go to the most recent. The screen refreshes every second; the selection stays on the same mission even if the order changes.
 
-Hors herdr, `herness` n'ouvre rien et indique de lancer `herness cockpit` dans un terminal ; `herness cockpit` marche partout.
+Outside herdr, `herness` opens nothing and tells you to run `herness cockpit` in a terminal. `herness cockpit` works anywhere.
 
-| Touche | Effet |
+| Key | Effect |
 | --- | --- |
-| `↑` / `↓` | Choisir la mission |
-| `←` / `→` (ou `tab`) | Choisir la porte en attente de la mission (si elle en a plusieurs) |
-| `v` | Valider la porte choisie |
-| `r` | Refuser la porte choisie : note obligatoire |
-| `n` | Valider ou refuser avec une note : saisie de la note, puis `v` ou `r` |
-| `p` | Reprendre la mission (`herness reprendre`) ; indisponible sur une mission terminée |
-| `R` | Redémarrer moteur, tableau et visionneuses (`herness reprendre --redemarrer`) |
-| `f` | Fermer la mission (`herness fermer`) ; confirmation, et une seconde s'il reste du travail |
-| `o` | Ouvrir l'espace herdr de la mission |
-| `x` | Supprimer une mission fermée (`herness supprimer`), après confirmation ; absent du panneau `tasks` |
-| `+` | Nouvelle mission : saisir un lien Wrike, une issue GitHub ou du texte, Entrée ; puis une note facultative (plusieurs lignes, `ctrl+e` éditeur), `ctrl+s` démarre, Échap annule |
-| `a` | Afficher ou masquer les missions terminées masquées |
-| `q` | Quitter |
+| `↑` / `↓` | Select the mission |
+| `←` / `→` (or `tab`) | Select the mission's pending gate (if it has several) |
+| `a` | Approve the selected gate |
+| `r` | Reject the selected gate: a note is required |
+| `n` | Approve or reject with a note: type the note, then `a` or `r` |
+| `u` | Resume the mission (`herness resume`); unavailable on a finished mission |
+| `R` | Restart the engine, dashboard and viewers (`herness resume --restart`) |
+| `c` | Close the mission (`herness close`); confirmation, and a second one if work remains |
+| `o` | Open the mission's herdr workspace |
+| `D` | Delete a closed mission (`herness delete`), after confirmation; absent from the `tasks` pane |
+| `+` | New mission: type a Wrike link, a GitHub issue or text, then Enter; then an optional note (several lines, `ctrl+e` opens an editor), `ctrl+s` starts, Esc cancels |
+| `f` | Show or hide finished missions that are hidden |
+| `q` | Quit |
 
-Les touches inutilisables (pas de porte en attente, mission terminée…) sont grisées dans la ligne d'aide en bas d'écran. Depuis le cockpit, `p` et `R` laissent le cockpit à l'écran (`o` ouvre l'espace de la mission). Pendant une fermeture, les autres gestes et `+` sont refusés (« action en cours ») jusqu'à sa fin.
+Keys that do nothing (no pending gate, finished mission…) are dimmed on the help line at the bottom. From the cockpit, `u` and `R` leave the cockpit on screen (`o` opens the mission workspace). During a close, the other gestures and `+` are refused (`action in progress`) until it finishes.
 
-**Messages.** Un succès s'affiche 5 secondes ; un message d'erreur reste jusqu'à la touche suivante. Un échec garde ses lignes `KO` et l'erreur finale (8 lignes au plus).
+**Messages.** A success stays for 5 seconds; an error stays until the next key. A failure keeps its `KO` lines and the final error (8 lines at most).
 
-**Décisions en deux touches.** `v` ne valide pas tout de suite : une confirmation « Valider <porte> (<type>) de <mission> ? » s'affiche, Entrée confirme, Échap annule. `r` demande d'abord la note de refus (vide, elle est refusée), puis la même confirmation. `n` demande la note, puis `v` (valider avec la note) ou `r` (refuser ; la note est alors obligatoire), puis la confirmation. Une décision déjà envoyée pour une porte n'est pas renvoyée tant que l'état la montre en attente.
+**Two-key decisions.** `a` does not approve at once: a confirmation `Approve <gate> (<kind>) of <mission>?` is shown, Enter confirms, Esc cancels. `r` first asks for the rejection note (an empty note is refused), then the same confirmation. `n` asks for the note, then `a` (approve with the note) or `r` (reject; the note is then required), then the confirmation. A decision already sent for a gate is not sent again while the state still shows it pending.
 
-**Saisie d'une note.** Entrée passe à la ligne, `ctrl+s` valide la note, `ctrl+e` l'ouvre dans l'éditeur du terminal (`$VISUAL`, sinon `$EDITOR`, sinon `nano` ou `vi`) et reprend son contenu au retour, Échap annule.
+**Typing a note.** Enter starts a new line, `ctrl+s` submits the note, `ctrl+e` opens it in the terminal editor (`$VISUAL`, otherwise `$EDITOR`, otherwise `nano` or `vi`) and reads it back on return, Esc cancels.
 
-**Panneau `tasks`.** Dans l'onglet `master`, `tasks` est le même écran limité à la mission (`herness tasks <id>`), avec les mêmes touches sauf `↑`/`↓`, `+` et `a`, plus `c` qui ramène au cockpit du projet (onglet `herness`, recréé s'il a été fermé). Ici `R` redémarre en arrière-plan (processus détaché, sortie dans `logs/redemarrage-<horodatage>.log` du dossier de mission) : le redémarrage survit à l'arrêt du panneau, qui est relancé.
+**`tasks` pane.** On the `master` tab, `tasks` is the same screen limited to the mission (`herness tasks <id>`), with the same keys except `↑`/`↓`, `+` and `f`, plus `b`, which returns to the project cockpit (`herness` tab, recreated if it was closed). Here `R` restarts in the background (detached process, output in `logs/restart-<timestamp>.log` in the mission folder): the restart survives the pane stopping, and the pane is started again.
 
-**Missions terminées masquées.** Par défaut, le cockpit cache : une mission `pr-ouverte` dont la PR est fusionnée ; une mission `fermée` avec PR dont la PR est fusionnée ; une mission `fermée` sans PR ou dont la PR est fermée sans fusion, sept jours après sa fermeture (une `pr-ouverte` dont la PR est fermée reste affichée). Une ligne « N missions terminées masquées (a) » le rappelle ; `a` montre tout. L'état des PR vient de `gh`, rafraîchi au plus toutes les 5 minutes par PR, et seulement pour les missions affichées dont la PR n'est ni fusionnée, ni fermée d'une mission masquée ; un `gh` en échec n'est pas rappelé avant 5 minutes.
+**Hidden finished missions.** By default the cockpit hides: a `pr-open` mission whose PR is merged; a `closed` mission with a PR whose PR is merged; a `closed` mission with no PR, or whose PR was closed without a merge, seven days after it was closed (a `pr-open` mission whose PR is closed stays visible). A line `N finished missions hidden (f)` reminds you; `f` shows everything. PR state comes from `gh`, refreshed at most every 5 minutes per PR, and only for visible missions whose PR is neither merged nor closed on a hidden mission. A failing `gh` is not retried before 5 minutes.
 
-## Disposition herdr
+## herdr layout
 
-Un espace par mission, avec les onglets (en plus de l'onglet `herness` du cockpit, créé dans l'espace où tu lances `herness`) :
+One workspace per mission, with these tabs (plus the cockpit `herness` tab, created in the workspace where you start `herness`):
 
-- `master` : orchestrator à gauche ; à droite `tasks` en haut et `lazygit` (sur le worktree) en bas
-- `docs` (créé juste après `master`) : `spec` à gauche, `plan` à droite, chacun lançant `herness voir` ; `herness reprendre` recrée l'onglet s'il manque et relance les visionneuses au repos
-- `agents` : implémenteurs et relecteurs ; un agent est arrêté dès que son travail est fini (tâche validée, tour terminé, PR ouverte), son panneau reste ouvert avec son historique
-- `checks` : tests et preflight
-- `process` : processus longs (conteneurs, base de test, apps)
+- `master`: orchestrator on the left; on the right, `tasks` on top and `lazygit` (on the worktree) below
+- `docs` (created just after `master`): `spec` on the left, `plan` on the right, each running `herness show`; `herness resume` recreates the tab if it is missing and restarts idle viewers
+- `agents`: implementers and reviewers; an agent is stopped as soon as its work is done (task approved, round finished, PR open), and its pane stays open with its history
+- `checks`: tests and preflight
+- `process`: long-running processes (containers, test database, apps)
 
-## Où vivent les missions
+## Where missions live
 
-`~/.local/state/herness/missions/<id>/` (`state.json`, `demande.md`, `orchestrator.md`…). La variable `HERNESS_HOME` remplace `~/.local/state/herness`.
+`~/.local/state/herness/missions/<id>/` (`state.json`, `request.md`, `orchestrator.md`…). `HERNESS_HOME` replaces `~/.local/state/herness`.
 
-Les erreurs de herness sont aussi écrites dans `~/.local/state/herness/erreurs.log`. `herness signaler` (et `herness fermer` en ligne de commande) les remonte en issues sur `MaxVzl/herness` : une issue par erreur distincte, ou un commentaire si une issue ouverte porte déjà la même signature `herness-sig-…`. Le dossier personnel est remplacé par `~` dans ce qui est publié. `missions/<id>/issues.json` retient ce qui est parti.
+herness errors are also written to `~/.local/state/herness/errors.log`. `herness report` (and `herness close` on the command line) files them as issues on `MaxVzl/herness`: one issue per distinct error, or a comment if an open issue already carries the same `herness-sig-…` signature. The home directory is replaced by `~` in what is published. `missions/<id>/issues.json` remembers what was sent.
 
-## Ajouter un projet
+## Add a project
 
-Les configs de projet vivent **hors du dépôt**, une par dossier :
+Project configs live **outside the repository**, one per folder:
 
 ```
-~/.config/herness/projects/<nom>/config.ts      # ou $XDG_CONFIG_HOME/herness/projects
-~/.config/herness/projects/<nom>/*.sh           # scripts du projet (préparation, base de test…)
+~/.config/herness/projects/<name>/config.ts    # or $XDG_CONFIG_HOME/herness/projects
+~/.config/herness/projects/<name>/*.sh         # project scripts (preparation, test database…)
 ```
 
-`HERNESS_PROJECTS_DIR` remplace ce dossier (pratique pour les tests). herness lit aussi le dossier `projects/` du dépôt, qui ne contient que `projects/exemple/` — un modèle commenté, jamais chargé, qui vise un chemin factice.
+`HERNESS_PROJECTS_DIR` replaces that folder (useful for tests). herness also reads the repository's `projects/` folder, which contains only `projects/example/` — a commented template, never loaded, aimed at a fake path.
 
-Pour ajouter un projet, lance `herness init` depuis son dépôt. Il écrit `~/.config/herness/projects/<nom>/` en déduisant du dépôt :
+To add a project, run `herness init` from its repository. It writes `~/.config/herness/projects/<name>/` and infers from the repository:
 
-- `name` (nom du dossier), `repoPath` (racine git) et `mainBranch` (branche par défaut d'`origin`, sinon `main` ou `master`) ;
-- le gestionnaire de paquets (`packageManager` de `package.json`, sinon le lockfile) ;
-- `preflight` : les scripts `typecheck`, `lint`, `format:check` et `test` de `package.json` qui existent ;
-- `commitFormat` d'après les 50 derniers commits (avec ou sans portée, avec ou sans suffixe `[{id}]`) ;
-- un `prepare-worktree.sh` qui copie `.env` et `.env.local` du checkout principal et installe les dépendances.
+- `name` (folder name), `repoPath` (git root) and `mainBranch` (`origin`'s default branch, otherwise `main` or `master`);
+- the package manager (`packageManager` in `package.json`, otherwise the lockfile);
+- `preflight`: the `typecheck`, `lint`, `format:check` and `test` scripts of `package.json` that exist;
+- `commitFormat` from the last 50 commits (with or without a scope, with or without an `[{id}]` suffix);
+- `language: 'en'` (language of this project's specs, plans, pull requests, and commit messages written by agents; the engine's own commits stay in English);
+- a `prepare-worktree.sh` that copies `.env` and `.env.local` from the main checkout and installs dependencies.
 
-Le reste prend les valeurs par défaut du modèle `projects/exemple/`. `init` demande ensuite s'il faut affiner la config avec Claude : Claude s'ouvre dans le terminal, à la racine du dépôt, explore la CI, les scripts et les services, ajuste preflight, préparation, base de test et chemins interdits, te pose ses questions et ne modifie que le dossier de config. À sa sortie, herness revalide la config. Relancer `herness init` sur un projet déjà configuré repropose seulement l'affinage.
+The rest takes the default values of the `projects/example/` template. `init` then asks whether to refine the config with Claude: Claude opens in the terminal, at the repository root, explores CI, scripts and services, adjusts preflight, preparation, the test database and forbidden paths, asks its questions and modifies only the config folder. When it exits, herness validates the config again. Running `herness init` on a project that is already configured only offers that refinement again.
 
-À la main, ça revient à :
+By hand, the same thing is:
 
-1. `mkdir -p ~/.config/herness/projects/mon-projet && cp projects/exemple/* ~/.config/herness/projects/mon-projet/`
-2. Adapter `config.ts` (au minimum `name` et `repoPath`) et les scripts.
-3. Lancer `herness projet` depuis le dépôt : il affiche la config choisie (celle dont `repoPath` contient le dossier courant) ou l'erreur, avec les dossiers cherchés.
+1. `mkdir -p ~/.config/herness/projects/my-project && cp projects/example/* ~/.config/herness/projects/my-project/`
+2. Adapt `config.ts` (at least `name` and `repoPath`) and the scripts.
+3. Run `herness project` from the repository: it prints the chosen config (the one whose `repoPath` contains the current directory) or the error, with the folders it searched.
 
-Le fichier exporte par défaut un objet simple, sans import vers les sources de herness : herness le valide avec son schéma au chargement. Les chemins des scripts se calculent depuis l'emplacement de la config (`import.meta.url`).
+The file default-exports a plain object, with no import of herness sources: herness validates it against its schema on load. Script paths are computed from the config's location (`import.meta.url`).
 
-| Champ | Rôle |
+| Field | Role |
 | --- | --- |
-| `name`, `repoPath`, `mainBranch` | Identité, chemin du dépôt, branche principale |
-| `branchPrefixes` | Type de commit vers préfixe de branche |
-| `commitFormat` | Format de commit, ex. `{type}({scope}): {description} [{id}]` |
-| `forbiddenPaths`, `forbiddenCommands` | Fichiers et commandes interdits aux agents |
-| `prepare` | Commande de préparation du worktree (`{worktree}`) |
-| `testDb` | Optionnel : `up` / `down` de la base de test (`{id}`, `{worktree}`) |
-| `preflight` | Liste ordonnée `{ label, command }` |
-| `falsePositives` | Échecs connus : `pattern`, `action` (`retry`, `ignore`, `cleanup`), `cleanup` (commande, pour `cleanup`), `label` optionnel, `explanation` |
-| `orchestratorPermissionMode` | Optionnel, `auto` par défaut : mode de permissions de l'orchestrateur |
+| `name`, `repoPath`, `mainBranch` | Identity, repository path, main branch |
+| `branchPrefixes` | Commit type to branch prefix |
+| `commitFormat` | Commit format, e.g. `{type}({scope}): {description} [{id}]` |
+| `language` | Language code (`'en'`, `'fr'`…) of specs, plans, pull requests, and commit messages written by agents. The engine's own commits stay in English. Default `'en'` |
+| `forbiddenPaths`, `forbiddenCommands` | Files and commands forbidden to agents |
+| `prepare` | Worktree preparation command (`{worktree}`) |
+| `testDb` | Optional: `up` / `down` of the test database (`{id}`, `{worktree}`) |
+| `preflight` | Ordered list of `{ label, command }` |
+| `falsePositives` | Known failures: `pattern`, `action` (`retry`, `ignore`, `cleanup`), `cleanup` (command, for `cleanup`), optional `label`, `explanation` |
+| `orchestratorPermissionMode` | Optional, `auto` by default: orchestrator permission mode |
 | `models` | `orchestrator`, `reviewer`, `implementer`, `implementerStrong` |
 
-## Publier une version
+## Publishing a version
 
-Les versions sont gérées par [release-please](https://github.com/googleapis/release-please), à partir des titres de PR au format conventionnel (`feat:` → version mineure, `fix:` → correctif ; avant 1.0, un changement cassant ne monte que la mineure).
+Versions are managed by [release-please](https://github.com/googleapis/release-please), from PR titles in the conventional format (`feat:` bumps the minor version, `fix:` a patch; before 1.0, a breaking change only bumps the minor).
 
-1. Fusionner `dev` dans `main` par une PR, avec un commit de fusion (pas de squash).
-2. À chaque arrivée sur `main`, release-please ouvre ou met à jour une PR « chore(main): release x.y.z » qui monte `package.json`, le manifeste et `CHANGELOG.md`.
-3. Fusionner cette PR : release-please crée le tag `vx.y.z` et la release GitHub.
-4. Ramener `main` dans `dev` (`git checkout dev && git pull && git merge origin/main && git push`) pour que `dev` ait la nouvelle version.
+1. Merge `dev` into `main` with a PR, using a merge commit (no squash).
+2. On every push to `main`, release-please opens or updates a PR `chore(main): release x.y.z` that bumps `package.json`, the manifest and `CHANGELOG.md`.
+3. Merge that PR: release-please creates the tag `vx.y.z` and the GitHub release.
+4. Bring `main` back into `dev` (`git checkout dev && git pull && git merge origin/main && git push`) so `dev` has the new version.
 
-## Limites actuelles
+## Current limits
 
-- herdr est indispensable pour mener une mission : seul l'écran `herness cockpit` se lance hors herdr.
-- Le premier jalon (un vrai ticket jusqu'à la PR) n'a pas encore été exécuté.
+- herdr is required to run a mission: only the `herness cockpit` screen starts outside herdr.
+- The first milestone (a real ticket through to the PR) has not been run yet.

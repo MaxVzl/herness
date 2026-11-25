@@ -1,31 +1,37 @@
 # Correction
 
-Tu reprends une tâche dont la livraison doit être corrigée. Ne sors pas du périmètre de la tâche d'origine ; lis le brief de la tâche et les règles du dépôt (`AGENTS.md`, `.cursor/rules/`) si tu ne les as pas déjà en tête.
+You are picking up a task whose delivery must be corrected. Do not leave the scope of the original task; read the task brief and the repository rules (`AGENTS.md`, `.cursor/rules/`) if you do not already have them in mind.
 
-## Ce qu'il faut traiter
+## Language
 
-Remarques de revue à traiter (une par ligne, avec `fichier:ligne`) :
+- Write commit messages in {{language}}.
+- Write comments and test names following the conventions of the surrounding code, and in {{language}} when it has none.
+- Write the report in English.
+
+## What to address
+
+Review remarks to address (one per line, with `file:line`):
 
 {{findings}}
 
-Sortie de test rouge à traiter, le cas échéant :
+Red test output to address, if any:
 
 {{failure}}
 
-Si l'une des deux rubriques est vide, ignore-la. Corrige la cause, pas le symptôme : pas de test affaibli ni supprimé pour faire passer le vert. Suis la discipline TDD : un test qui reproduit le défaut d'abord, vu rouge, puis le correctif minimal, puis le vert.
+If either section is empty, ignore it. Fix the cause, not the symptom: do not weaken or delete a test to get to green. Follow TDD: a test that reproduces the defect first, seen red, then the minimal fix, then green.
 
 ## Tests
 
-Relance les tests qui couvrent le code corrigé (ceux de la tâche, pas la suite complète) et vérifie qu'ils passent. Commite la correction avec le même format de message que la tâche, hooks actifs.
+Re-run the tests that cover the corrected code (those of the task, not the full suite) and check that they pass. Commit the correction with the same message format as the task, with hooks enabled.
 
-## Interdits
+## Forbidden
 
 {{forbidden}}
 
-Identité git : commite avec l'identité configurée, telle quelle. Sont interdits : `--author`, `git -c user.name=…` ou `git -c user.email=…`, les variables `GIT_AUTHOR_*` et `GIT_COMMITTER_*`, et toute commande `git config`. Si le commit échoue faute d'identité, arrête-toi et signale-le. Si quelque chose bloque, arrête-toi et explique plutôt que de contourner.
+Git identity: commit with the configured identity, as it is. Forbidden: `--author`, `git -c user.name=…` or `git -c user.email=…`, the variables `GIT_AUTHOR_*` and `GIT_COMMITTER_*`, and any `git config` command. If the commit fails for lack of an identity, stop and report it. If something blocks you, stop and explain rather than working around it.
 
-## Compte rendu
+## Report
 
-Décris, remarque par remarque, ce que tu as fait ou pourquoi tu ne l'as pas fait, avec les fichiers modifiés, la commande de test lancée et son résultat réel, le hash du commit, et tout point incertain.
+Describe, remark by remark, what you did or why you did not, with the files modified, the test command you ran and its real result, the commit hash, and any uncertain point.
 
-Ajoute ce compte rendu à la fin de `{{reportPath}}`, sans effacer les comptes rendus précédents, puis réponds seulement `TERMINÉ`.
+Append this report to the end of `{{reportPath}}`, without erasing earlier reports, then reply only `DONE`.

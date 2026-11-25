@@ -4,9 +4,9 @@ import { expect, test, vi } from 'vitest'
 import { until, waitFor, waitMatch } from './wait.ts'
 import { Confirm, noteReducer, NoteInput, openInEditor } from '../../src/ui/inputs.tsx'
 
-const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms)) // uniquement pour affirmer une absence
+const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms)) // only to assert an absence
 
-test('noteReducer : saisie, nouvelle ligne, effacement, ctrl+s', () => {
+test('noteReducer: input, new line, backspace, ctrl+s', () => {
   let s = { lines: [''] }
   s = { lines: noteReducer(s, { input: 'ab' }).lines }
   expect(noteReducer(s, { input: 'ab' }).lines).toEqual(['abab'])
@@ -18,13 +18,13 @@ test('noteReducer : saisie, nouvelle ligne, effacement, ctrl+s', () => {
   expect(noteReducer(s, { input: 's', ctrlS: true })).toEqual({ lines: ['ab'], done: true })
 })
 
-test("Confirm n'envoie rien sur une autre touche", async () => {
+test("Confirm sends nothing on another key", async () => {
   const onYes = vi.fn()
   const onNo = vi.fn()
-  const { stdin, lastFrame } = render(<Confirm question="Valider g1 ?" onYes={onYes} onNo={onNo} />)
-  expect(lastFrame()).toContain('Valider g1 ?')
+  const { stdin, lastFrame } = render(<Confirm question="Approve g1 ?" onYes={onYes} onNo={onNo} />)
+  expect(lastFrame()).toContain('Approve g1 ?')
   stdin.write('x')
-  await tick() // absence : une autre touche n'appelle rien
+  await tick() // absence: another key calls nothing
   expect(onYes).not.toHaveBeenCalled()
   expect(onNo).not.toHaveBeenCalled()
   stdin.write('\r')
@@ -32,7 +32,7 @@ test("Confirm n'envoie rien sur une autre touche", async () => {
   expect(onYes).toHaveBeenCalledTimes(1)
 })
 
-test('Confirm : Échap appelle onNo', async () => {
+test('Confirm: Esc calls onNo', async () => {
   const onYes = vi.fn()
   const onNo = vi.fn()
   const { stdin } = render(<Confirm question="?" onYes={onYes} onNo={onNo} />)
@@ -42,7 +42,7 @@ test('Confirm : Échap appelle onNo', async () => {
   expect(onYes).not.toHaveBeenCalled()
 })
 
-test('NoteInput : saisie multi-ligne et ctrl+s', async () => {
+test('NoteInput: multiline input and ctrl+s', async () => {
   const onSubmit = vi.fn()
   const { stdin, lastFrame } = render(<NoteInput onSubmit={onSubmit} onCancel={() => {}} />)
   stdin.write('a')
@@ -56,21 +56,21 @@ test('NoteInput : saisie multi-ligne et ctrl+s', async () => {
   expect(onSubmit).toHaveBeenCalledWith('a\nb')
 })
 
-test('NoteInput garde la note quand léditeur rend null', async () => {
+test('NoteInput keeps the note when the editor returns null', async () => {
   const editor = vi.fn(async () => null)
   const onSubmit = vi.fn()
   const { stdin, lastFrame } = render(<NoteInput initial="garde" onSubmit={onSubmit} onCancel={() => {}} editor={editor} />)
   stdin.write('\x05')
-  await waitFor(lastFrame, 'éditeur indisponible')
+  await waitFor(lastFrame, 'editor unavailable')
   expect(editor).toHaveBeenCalledWith('garde')
   expect(lastFrame()).toContain('garde')
-  expect(lastFrame()).toContain('éditeur indisponible')
+  expect(lastFrame()).toContain('editor unavailable')
   stdin.write('\x13')
   await until(() => onSubmit.mock.calls.length === 1)
   expect(onSubmit).toHaveBeenCalledWith('garde')
 })
 
-test("NoteInput remplace la note par le texte de l'éditeur ; Échap annule", async () => {
+test("NoteInput replaces the note with the editor text; Esc cancels", async () => {
   const onCancel = vi.fn()
   const { stdin, lastFrame } = render(<NoteInput onSubmit={() => {}} onCancel={onCancel} editor={async () => 'x\ny'} />)
   stdin.write('\x05')
@@ -92,7 +92,7 @@ function fakeSpawn(existing: string[]) {
   return { calls, spawn }
 }
 
-test('openInEditor choisit VISUAL puis EDITOR puis nano puis vi', async () => {
+test('openInEditor chooses VISUAL then EDITOR then nano then vi', async () => {
   let f = fakeSpawn(['nano'])
   await openInEditor('t', { VISUAL: 'code --wait', EDITOR: 'ed' }, f.spawn)
   expect(f.calls[0]!.cmd).toBe('code')
@@ -108,16 +108,16 @@ test('openInEditor choisit VISUAL puis EDITOR puis nano puis vi', async () => {
   expect(f.calls[0]!.cmd).toBe('vi')
 })
 
-test("openInEditor rend le texte modifié, supprime le fichier, null en cas d'échec", async () => {
+test("openInEditor returns the edited text, deletes the file, null on failure", async () => {
   const { existsSync, readFileSync, writeFileSync } = await import('node:fs')
   let path = ''
   const ok = ((cmd: string, args: string[]) => {
     path = args[args.length - 1]!
-    expect(readFileSync(path, 'utf8')).toBe('avant')
-    writeFileSync(path, 'après')
+    expect(readFileSync(path, 'utf8')).toBe('before')
+    writeFileSync(path, 'after')
     return { status: 0 }
   }) as never
-  expect(await openInEditor('avant', { EDITOR: 'ed' }, ok)).toBe('après')
+  expect(await openInEditor('before', { EDITOR: 'ed' }, ok)).toBe('after')
   expect(existsSync(path)).toBe(false)
   expect(await openInEditor('a', { EDITOR: 'ed' }, (() => ({ status: 1 })) as never)).toBeNull()
   expect(await openInEditor('a', { EDITOR: 'ed' }, (() => ({ status: null, error: new Error('x') })) as never)).toBeNull()

@@ -13,9 +13,9 @@ describe('nextTaskPhase', () => {
   it('control-ok -> test', () => {
     expect(nextTaskPhase(task('control'), 'control-ok').phase).toBe('test');
   });
-  it('control-ko -> bloqué', () => {
+  it('control-ko -> blocked', () => {
     expect(nextTaskPhase(task('control', 1), 'control-ko')).toEqual({
-      phase: 'control', round: 1, fixer: 'none', blocked: 'contrôle du commit en échec',
+      phase: 'control', round: 1, fixer: 'none', blocked: 'commit check failed',
     });
   });
   it('tests-green -> review', () => {
@@ -30,15 +30,15 @@ describe('nextTaskPhase', () => {
   it('review-changes -> fix, round +1', () => {
     expect(nextTaskPhase(task('review'), 'review-changes')).toEqual({ phase: 'fix', round: 1, fixer: 'same' });
   });
-  it('stopped (arrêt sans commit validé) -> fix, round +1, mêmes règles que tests-red', () => {
+  it('stopped (approved stop without a commit) -> fix, round +1, same rules as tests-red', () => {
     expect(nextTaskPhase(task('control'), 'stopped')).toEqual({ phase: 'fix', round: 1, fixer: 'same' });
     expect(nextTaskPhase(task('control', 2), 'stopped')).toEqual({ phase: 'fix', round: 3, fixer: 'strong' });
-    expect(nextTaskPhase(task('control', 3), 'stopped')).toMatchObject({ round: 4, fixer: 'none', blocked: '3 tours de correction épuisés' });
+    expect(nextTaskPhase(task('control', 3), 'stopped')).toMatchObject({ round: 4, fixer: 'none', blocked: '3 correction rounds exhausted' });
   });
   it('fixed -> control', () => {
     expect(nextTaskPhase(task('fix', 1), 'fixed')).toEqual({ phase: 'control', round: 1, fixer: 'none' });
   });
-  it('trois tests rouges consécutifs donnent same, same, strong puis bloqué', () => {
+  it('three red tests in a row give same, same, strong, then blocked', () => {
     let t = task('test');
     const out = [];
     for (let i = 0; i < 4; i++) {
@@ -47,17 +47,17 @@ describe('nextTaskPhase', () => {
       t = { ...t, phase: r.blocked ? t.phase : 'test', round: r.round };
     }
     expect(out.map((r) => r.fixer)).toEqual(['same', 'same', 'strong', 'none']);
-    expect(out[3]!.blocked).toBe('3 tours de correction épuisés');
+    expect(out[3]!.blocked).toBe('3 correction rounds exhausted');
     expect(out[3]!.phase).toBe('test');
   });
-  it('un tests-red après un review-changes partage le même compteur de tours', () => {
+  it('a tests-red after a review-changes shares the same round counter', () => {
     const a = nextTaskPhase(task('review'), 'review-changes');
     const b = nextTaskPhase(task('test', a.round), 'tests-red');
     expect(b.round).toBe(2);
     expect(b.fixer).toBe('same');
   });
-  it('review-changes au tour 4 est bloqué', () => {
-    expect(nextTaskPhase(task('review', 3), 'review-changes').blocked).toBe('3 tours de correction épuisés');
+  it('review-changes at round 4 is blocked', () => {
+    expect(nextTaskPhase(task('review', 3), 'review-changes').blocked).toBe('3 correction rounds exhausted');
   });
 });
 
@@ -67,8 +67,8 @@ describe('nextLoopRound', () => {
     expect(nextLoopRound(1)).toEqual({ round: 2, fixer: 'new' });
     expect(nextLoopRound(2)).toEqual({ round: 3, fixer: 'strong' });
   });
-  it('nextLoopRound(3) bloque', () => {
-    expect(nextLoopRound(3)).toEqual({ round: 4, fixer: 'none', blocked: '3 tours de correction épuisés' });
+  it('nextLoopRound(3) blocks', () => {
+    expect(nextLoopRound(3)).toEqual({ round: 4, fixer: 'none', blocked: '3 correction rounds exhausted' });
   });
 });
 

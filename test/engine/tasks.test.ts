@@ -4,7 +4,7 @@ import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import demo from '../fixtures/demo/config.ts'
 import { Engine } from '../../src/engine/engine.ts'
-import { stopAgent } from '../../src/engine/tasks.ts'
+import { findingsOf, forbidden, stopAgent } from '../../src/engine/tasks.ts'
 import { postInbox } from '../../src/mission/inbox.ts'
 import { loadState, newState, saveState, type Gate, type MissionState, type TaskState } from '../../src/mission/state.ts'
 import { missionDir, planPath, specPath } from '../../src/paths.ts'
@@ -25,28 +25,39 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-const T1 = '### Tâche 1 : Modèle\n\n**Test :** `pnpm test a`\n\nfaire a\n'
-const T2 = '### Tâche 2 : Export\n\n**Test :** `pnpm test b`\n\nfaire b\n'
+test('forbidden names the generated files from the project config', () => {
+  const text = forbidden(demo)
+  expect(text).toContain('editing generated project files')
+  for (const p of demo.forbiddenPaths) expect(text).toContain(`\`${p}\``)
+})
+
+test('findingsOf without a review body says (none)', async () => {
+  expect(await findingsOf(undefined)).toBe('(none)')
+})
+
+const T1 = '### Task 1: Model\n\n**Test:** `pnpm test a`\n\ndo a\n'
+const T2 = '### Task 2: Export\n\n**Test:** `pnpm test b`\n\ndo b\n'
 const PLAN1 = `# Plan\n\n${T1}`
 const PLAN2 = `# Plan\n\n${T1}\n${T2}`
 
-const task = (patch: Partial<TaskState> = {}): TaskState => ({ n: 1, title: 'Modèle', testCommand: 'pnpm test a', phase: 'pending', round: 0, ...patch })
-const gate = (patch: Partial<Gate>): Gate => ({ id: 'g1', kind: 'amendement', status: 'approved', summary: 's', createdAt: '2026-10-29T10:00:00.000Z', ...patch })
-const taskDir = (n = 1) => join(missionDir('T-1'), 'taches', String(n))
+const task = (patch: Partial<TaskState> = {}): TaskState => ({ n: 1, title: 'Model', testCommand: 'pnpm test a', phase: 'pending', round: 0, ...patch })
+const gate = (patch: Partial<Gate>): Gate => ({ id: 'g1', kind: 'amendment', status: 'approved', summary: 's', createdAt: '2026-10-29T10:00:00.000Z', ...patch })
+const taskDir = (n = 1) => join(missionDir('T-1'), 'tasks', String(n))
 
-/** Le relecteur factice écrit son rapport à côté de sa consigne : `consigne-revue.md` → `revue.md`. */
+/** The fake reviewer writes its report next to its brief: `review-brief.md` → `review.md`. */
 function scriptedAsk(verdicts: string[], impl: () => 'done' | 'blocked' | 'timeout' = () => 'done') {
   let i = 0
   return async (name: string, file: string) => {
     if (!name.startsWith('r')) return impl()
-    const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
+    const fileName = basename(file)
+    const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
     const v = verdicts[Math.min(i++, verdicts.length - 1)]!
-    await writeFile(out, `${v}\n\n## Remarques\n- src/a.ts:3 remarque ${i}\n`)
+    await writeFile(out, `${v}\n\n## Notes\n- src/a.ts:3 note ${i}\n`)
     return 'done' as const
   }
 }
 
-async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState>; plan?: string; approved?: string; proposed?: string } = {}) {
+async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState>; plan?: string; approved?: string; proposed?: string; config?: typeof demo } = {}) {
   const fx: FakeEffects = fakeEffects(opts.over)
   const { ws, tab } = fx.herdr.seedWorkspace('T-1', 'agents')
   const s: MissionState = {
@@ -68,7 +79,7 @@ async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState>
   await writeFile(file, opts.plan ?? PLAN1)
   await writeFile(join(missionDir('T-1'), 'plan.approved.md'), opts.approved ?? opts.plan ?? PLAN1)
   if (opts.proposed !== undefined) await writeFile(join(missionDir('T-1'), 'plan.proposed.md'), opts.proposed)
-  return { fx, eng: new Engine('T-1', fx, demo) }
+  return { fx, eng: new Engine('T-1', fx, opts.config ?? demo) }
 }
 
 async function until(eng: Engine, pred: (s: MissionState) => boolean, max = 40): Promise<MissionState> {
@@ -77,14 +88,50 @@ async function until(eng: Engine, pred: (s: MissionState) => boolean, max = 40):
     const s = await loadState('T-1')
     if (pred(s)) return s
   }
-  throw new Error('condition jamais atteinte')
+  throw new Error('condition never reached')
 }
 
-const red = { exitCode: 1, logPath: '/l/t.log', tail: 'AssertionError: attendu 2', durationMs: 1 }
+const red = { exitCode: 1, logPath: '/l/t.log', tail: 'AssertionError: expected 2', durationMs: 1 }
 const green = { exitCode: 0, logPath: '/l/t.log', tail: 'ok', durationMs: 1 }
 
-test('une tâche verte et approuvée passe par implement, control, test, review puis done', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+test("a task brief is written at tasks/1/brief.md and the expected report is tasks/1/report.md", async () => {
+  const { eng } = await setup({ over: { agents: { ask: async () => 'blocked' as const } } })
+  const dir = join(missionDir('T-1'), 'tasks', '1')
+  let brief = ''
+  for (let i = 0; i < 6; i++) {
+    await eng.tick()
+    try {
+      brief = await readFile(join(dir, 'brief.md'), 'utf8')
+      break
+    } catch {
+      brief = ''
+    }
+  }
+  expect(brief).toContain(join(dir, 'report.md'))
+})
+
+test('brief rendered for language fr names that language and the commit rule', async () => {
+  const { eng } = await setup({
+    config: { ...demo, language: 'fr' },
+    over: { agents: { ask: async () => 'blocked' as const } },
+  })
+  const dir = join(missionDir('T-1'), 'tasks', '1')
+  let brief = ''
+  for (let i = 0; i < 6; i++) {
+    await eng.tick()
+    try {
+      brief = await readFile(join(dir, 'brief.md'), 'utf8')
+      break
+    } catch {
+      brief = ''
+    }
+  }
+  expect(brief).toMatch(/\bfr\b/)
+  expect(brief).toMatch(/commit messages/i)
+})
+
+test('a green approved task goes through implement, control, test, review, then done', async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   const s = await until(eng, (x) => x.step !== 'tasks')
   expect(s.step).toBe('global-review')
   expect(s.tasks[0]).toMatchObject({ phase: 'done', round: 0, baseSha: 'sha-head', reviewedSha: 'sha-head', implementer: 'ct-1-t1', reviewer: 'rt-1-t1' })
@@ -97,18 +144,18 @@ test('une tâche verte et approuvée passe par implement, control, test, review 
   expect((launch as { args: string[] }).args).toContain('grok-4.7-medium')
   expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'brief.md')])
   const brief = await readFile(join(taskDir(), 'brief.md'), 'utf8')
-  expect(brief).toContain('faire a')
+  expect(brief).toContain('do a')
   expect(brief).toContain('pnpm test a')
   expect(brief).toContain('[T-1]')
   expect(brief).toContain('git push')
   expect(brief).toContain('git stash')
-  expect(brief).toContain(join(taskDir(), 'rapport.md'))
+  expect(brief).toContain(join(taskDir(), 'report.md'))
 
   expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths, 'origin/main'])
   const [, tab, cwd, label, cmd] = fx.callsOf('runInPane')[0]!
   expect([tab, cwd, label]).toEqual([s.herdr.tabs['checks'], wt, 'T1 · tests'])
   expect(cmd).toEqual(['bash', '-c', 'pnpm test a'])
-  expect(fx.callsOf('git.diffPackage')[0]).toEqual([wt, 'sha-head', join(taskDir(), 'tache.diff')])
+  expect(fx.callsOf('git.diffPackage')[0]).toEqual([wt, 'sha-head', join(taskDir(), 'task.diff')])
   expect(fx.callsOf('agents.start')[1]!.slice(0, 2)).toEqual(['rt-1-t1', 'reviewer'])
 
   const labels = fx.herdr.panes.map((p) => p.label)
@@ -118,51 +165,51 @@ test('une tâche verte et approuvée passe par implement, control, test, review 
   expect(s.herdr.panes['rt-1-t1']).toBeDefined()
 })
 
-test('des tests rouges renvoient au même implémenteur sans démarrer de relecteur', async () => {
-  const { fx, eng } = await setup({ over: { runInPane: seq(red, green) as never, agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+test('red tests send the same implementer back without starting a reviewer', async () => {
+  const { fx, eng } = await setup({ over: { runInPane: seq(red, green) as never, agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   let s = await until(eng, (x) => x.tasks[0]!.phase === 'fix')
   expect(s.tasks[0]).toMatchObject({ round: 1, fixer: 'same' })
-  expect(s.tasks[0]!.lastFailure).toContain('AssertionError: attendu 2')
+  expect(s.tasks[0]!.lastFailure).toContain('AssertionError: expected 2')
   expect(fx.callsOf('git.diffPackage')).toEqual([])
 
   s = await until(eng, (x) => x.tasks[0]!.phase === 'control')
   const asks = fx.callsOf('agents.ask')
-  expect(asks.at(-1)!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'correctifs-1.md')])
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
-  expect(fix).toContain('AssertionError: attendu 2')
+  expect(asks.at(-1)!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'fixes-1.md')])
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
+  expect(fix).toContain('AssertionError: expected 2')
   expect(fix).toContain('/l/t.log')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['ct-1-t1'])
 })
 
-test('au 3e tour, un nouvel implémenteur grok-4.7-high est démarré', async () => {
-  const { fx, eng } = await setup({ over: { runInPane: seq(red, red, red, green) as never, agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+test('on round 3 a new grok-4.7-high implementer is started', async () => {
+  const { fx, eng } = await setup({ over: { runInPane: seq(red, red, red, green) as never, agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   const s = await until(eng, (x) => x.tasks[0]!.round === 3 && x.tasks[0]!.phase === 'control')
   const starts = fx.callsOf('agents.start')
   expect(starts.map((c) => c[0])).toEqual(['ct-1-t1', 'ct-1-t1b'])
   expect((starts[1]![3] as { args: string[] }).args).toContain('grok-4.7-high')
-  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['ct-1-t1b', join(taskDir(), 'correctifs-3.md')])
-  const fix3 = await readFile(join(taskDir(), 'correctifs-3.md'), 'utf8')
+  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['ct-1-t1b', join(taskDir(), 'fixes-3.md')])
+  const fix3 = await readFile(join(taskDir(), 'fixes-3.md'), 'utf8')
   expect(fix3).toContain(join(taskDir(), 'brief.md'))
   expect(s.tasks[0]!.implementer).toBe('ct-1-t1b')
-  // les tours 1 et 2 sont allés au même implémenteur
+  // rounds 1 and 2 went to the same implementer
   expect(fx.callsOf('agents.ask').map((c) => c[0])).toEqual(['ct-1-t1', 'ct-1-t1', 'ct-1-t1', 'ct-1-t1b'])
 })
 
-test('au 4e tour, la mission est bloquée et une notification est envoyée', async () => {
+test('on round 4 the mission is blocked and a notification is sent', async () => {
   const { fx, eng } = await setup({ over: { runInPane: async () => red } })
-  const s = await until(eng, (x) => x.step === 'bloquée')
+  const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedFrom).toBe('tasks')
-  expect(s.blockedReason).toContain('3 tours de correction épuisés')
+  expect(s.blockedReason).toContain('3 correction rounds exhausted')
   expect(s.tasks[0]!.round).toBe(4)
-  expect(String(fx.callsOf('herdr.notify').at(-1)![1])).toContain('3 tours de correction épuisés')
+  expect(String(fx.callsOf('herdr.notify').at(-1)![1])).toContain('3 correction rounds exhausted')
   expect(fx.callsOf('agents.ask')).toHaveLength(4)
 })
 
-test('une re-revue utilise le même relecteur et le diff depuis reviewedSha', async () => {
+test('a re-review uses the same reviewer and the diff since reviewedSha', async () => {
   const heads = seq('h1', 'h2')
   const { fx, eng } = await setup({
     over: {
-      agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ']) },
+      agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROVED']) },
       git: { diffPackage: async (_wt: string, base: string) => ({ base, head: heads(), commits: 1 }) },
     },
   })
@@ -171,35 +218,35 @@ test('une re-revue utilise le même relecteur et le diff depuis reviewedSha', as
   s = await until(eng, (x) => x.step !== 'tasks')
   expect(s.tasks[0]).toMatchObject({ phase: 'done', reviewedSha: 'h2' })
 
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
-  expect(fix).toContain('src/a.ts:3 remarque 1')
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
+  expect(fix).toContain('src/a.ts:3 note 1')
   const diffs = fx.callsOf('git.diffPackage')
   expect(diffs[1]![1]).toBe('h1')
-  expect(diffs[1]![2]).not.toBe(join(taskDir(), 'tache.diff'))
+  expect(diffs[1]![2]).not.toBe(join(taskDir(), 'task.diff'))
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['ct-1-t1', 'rt-1-t1'])
   const reviewerAsks = fx.callsOf('agents.ask').filter((c) => c[0] === 'rt-1-t1')
-  expect(reviewerAsks.map((c) => basename(String(c[1])))).toEqual(['consigne-revue.md', 'consigne-rerevue-1.md'])
+  expect(reviewerAsks.map((c) => basename(String(c[1])))).toEqual(['review-brief.md', 'consigne-rerevue-1.md'])
   const prompt = await readFile(String(reviewerAsks[1]![1]), 'utf8')
   expect(prompt).toContain('h1')
   expect(prompt).toContain('h2')
-  expect(prompt).toContain('src/a.ts:3 remarque 1')
+  expect(prompt).toContain('src/a.ts:3 note 1')
   expect(prompt).toContain(join(taskDir(), 'rerevue-1.md'))
 })
 
-test('un verdict illisible bloque la mission', async () => {
-  const { eng } = await setup({ over: { agents: { ask: scriptedAsk(['Je pense que ça va']) } } })
-  const s = await until(eng, (x) => x.step === 'bloquée')
-  expect(s.blockedReason).toContain('verdict de revue illisible')
+test('an unreadable verdict blocks the mission', async () => {
+  const { eng } = await setup({ over: { agents: { ask: scriptedAsk(['I think this is fine']) } } })
+  const s = await until(eng, (x) => x.step === 'blocked')
+  expect(s.blockedReason).toContain('unreadable review verdict')
 })
 
-test('un agent blocked ouvre une porte agent-bloque sans rien lui envoyer', async () => {
+test('a blocked agent opens an agent-blocked gate and nothing is sent to it', async () => {
   const outcomes = seq<'blocked' | 'done'>('blocked', 'done')
   const { fx, eng } = await setup({
-    over: { agents: { ask: async () => outcomes() }, herdr: { agentRead: async () => 'Autoriser la commande rm ? (o/n)' } },
+    over: { agents: { ask: async () => outcomes() }, herdr: { agentRead: async () => 'Allow the rm command? (y/n)' } },
   })
   let s = await until(eng, (x) => x.gates.length > 0)
-  expect(s.gates[0]).toMatchObject({ kind: 'agent-bloque', status: 'pending' })
-  expect(s.gates[0]!.summary).toContain('Autoriser la commande rm')
+  expect(s.gates[0]).toMatchObject({ kind: 'agent-blocked', status: 'pending' })
+  expect(s.gates[0]!.summary).toContain('Allow the rm command')
   expect(fx.callsOf('herdr.agentRead')[0]).toEqual(['ct-1-t1', 40])
   expect(fx.callsOf('herdr.notify')).toHaveLength(1)
   expect(fx.callsOf('herdr.agentPrompt').map((c) => c[0])).toEqual(['o-T-1'])
@@ -212,14 +259,14 @@ test('un agent blocked ouvre une porte agent-bloque sans rien lui envoyer', asyn
 
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   s = await until(eng, (x) => x.tasks[0]!.phase === 'control')
-  // débloqué dans son panneau : on attend l'agent, sans renvoyer la consigne
+  // unblocked in its pane: wait for the agent, without resending the brief
   expect(fx.callsOf('agents.ask')).toHaveLength(1)
   expect(fx.callsOf('agents.wait').map((c) => c[0])).toEqual(['ct-1-t1'])
   expect(fx.callsOf('herdr.agentPrompt').every((c) => c[0] === 'o-T-1')).toBe(true)
   expect(s.tasks[0]!.pendingAsk).toBeUndefined()
 })
 
-test('un second blocked pendant l\'attente après déblocage ouvre une nouvelle porte', async () => {
+test('a second blocked while waiting after unblock opens a new gate', async () => {
   const waits = seq<'blocked' | 'done'>('blocked', 'done')
   const { fx, eng } = await setup({
     over: { agents: { ask: async () => 'blocked' as const, wait: async () => waits() } },
@@ -227,34 +274,34 @@ test('un second blocked pendant l\'attente après déblocage ouvre une nouvelle 
   await until(eng, (x) => x.gates.length === 1)
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   let s = await until(eng, (x) => x.gates.length === 2)
-  expect(s.gates[1]).toMatchObject({ id: 'g2', kind: 'agent-bloque', status: 'pending' })
+  expect(s.gates[1]).toMatchObject({ id: 'g2', kind: 'agent-blocked', status: 'pending' })
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g2', decision: 'approved' })
   s = await until(eng, (x) => x.tasks[0]!.phase === 'control')
   expect(fx.callsOf('agents.ask')).toHaveLength(1)
   expect(fx.callsOf('agents.wait')).toHaveLength(2)
 })
 
-test("un agent sans réponse bloque la mission", async () => {
+test("an agent with no reply blocks the mission", async () => {
   const { eng } = await setup({ over: { agents: { ask: async () => 'timeout' as const } } })
-  const s = await until(eng, (x) => x.step === 'bloquée')
-  expect(s.blockedReason).toContain('agent ct-1-t1 sans réponse')
+  const s = await until(eng, (x) => x.step === 'blocked')
+  expect(s.blockedReason).toContain('agent ct-1-t1 timed out')
 })
 
-// herdr voit un cursor-agent au repos pendant une longue commande (vitest…) : seul le compte rendu prouve la fin.
-test("un implémenteur vu au repos sans compte rendu n'est pas contrôlé avant d'avoir écrit son compte rendu", async () => {
+// herdr sees a cursor-agent idle during a long command (vitest…): only the report proves it is finished.
+test("an implementer seen idle without a report is not checked before it has written its report", async () => {
   let sleeps = 0
   const states = seq('working', 'idle', 'idle')
   const { fx, eng } = await setup({
     over: {
-      agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) },
+      agents: { ask: scriptedAsk(['VERDICT: APPROVED']) },
       herdr: { agentGet: async (name: string) => (name.startsWith('c') ? { state: states() } : { state: 'idle' }) },
       sleep: async () => {
-        // L'agent finit pendant la 3e attente : il écrit son compte rendu.
-        if (++sleeps === 3) await writeFile(join(taskDir(), 'rapport.md'), 'fichiers : a.ts\ncommit sha-head\n')
+        // The agent finishes during the 3rd wait: it writes its report.
+        if (++sleeps === 3) await writeFile(join(taskDir(), 'report.md'), 'fichiers : a.ts\ncommit sha-head\n')
       },
       git: {
         controlCommits: async () => {
-          expect(await readFile(join(taskDir(), 'rapport.md'), 'utf8')).toContain('commit sha-head')
+          expect(await readFile(join(taskDir(), 'report.md'), 'utf8')).toContain('commit sha-head')
           return { ok: true, commits: 1 }
         },
       },
@@ -264,25 +311,25 @@ test("un implémenteur vu au repos sans compte rendu n'est pas contrôlé avant 
   expect(sleeps).toBe(3)
   expect(fx.callsOf('sleep')[0]).toEqual([15_000])
   expect(fx.callsOf('git.controlCommits')).toHaveLength(1)
-  expect(s.log.map((l) => l.msg)).toContain('tâche 1 : ct-1-t1 vu au repos sans compte rendu, attente de la fin réelle')
+  expect(s.log.map((l) => l.msg)).toContain('task 1: ct-1-t1 seen idle without a report, waiting for the real end')
 })
 
-test('au repos sans compte rendu pendant 10 min : contrôle comme avant', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+test('idle without a report for 10 min: check as before', async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   const s = await until(eng, () => fx.callsOf('git.controlCommits').length > 0)
-  // Le compte d'attente repart de zéro quand l'agent travaille : ici toujours au repos, 40 × 15 s.
+  // The idle count restarts when the agent is working: here it stays idle, 40 × 15 s.
   expect(fx.callsOf('sleep')).toHaveLength(40)
   expect(fx.callsOf('git.controlCommits')).toHaveLength(1)
-  expect(s.log.map((l) => l.msg)).toContain('tâche 1 : ct-1-t1 au repos depuis 10 min sans compte rendu, contrôle du travail')
+  expect(s.log.map((l) => l.msg)).toContain('task 1: ct-1-t1 idle for 10 min without a report, checking the work')
 })
 
-test("un compte rendu déjà complété à l'issue de la consigne : aucune attente", async () => {
+test("a report already completed when the brief ends: no wait", async () => {
   const { fx, eng } = await setup({
     over: {
       agents: {
         ask: async (name: string, file: string) => {
-          if (name.startsWith('c')) await writeFile(join(taskDir(), 'rapport.md'), 'fait\n')
-          return scriptedAsk(['VERDICT: APPROUVÉ'])(name, file)
+          if (name.startsWith('c')) await writeFile(join(taskDir(), 'report.md'), 'fait\n')
+          return scriptedAsk(['VERDICT: APPROVED'])(name, file)
         },
       },
     },
@@ -291,47 +338,47 @@ test("un compte rendu déjà complété à l'issue de la consigne : aucune atten
   expect(fx.callsOf('sleep')).toEqual([])
 })
 
-test("un agent qui passe en blocked pendant l'attente du compte rendu ouvre une porte agent-bloque", async () => {
+test("an agent that becomes blocked while waiting for the report opens an agent-blocked gate", async () => {
   const { eng } = await setup({
-    over: { herdr: { agentGet: async () => ({ state: 'blocked' }), agentRead: async () => 'Autoriser ? (o/n)' } },
+    over: { herdr: { agentGet: async () => ({ state: 'blocked' }), agentRead: async () => 'Allow? (y/n)' } },
   })
   const s = await until(eng, (x) => x.gates.length > 0)
-  expect(s.gates[0]).toMatchObject({ kind: 'agent-bloque', status: 'pending' })
+  expect(s.gates[0]).toMatchObject({ kind: 'agent-blocked', status: 'pending' })
   expect(s.tasks[0]!.pendingAsk).toMatchObject({ agent: 'ct-1-t1' })
 })
 
-test('une porte arbitrage en attente suspend la correction, sa note entre dans les correctifs', async () => {
+test('a pending arbitration gate suspends the correction and its note goes into the fix file', async () => {
   const { fx, eng } = await setup({
     patch: {
-      tasks: [task({ phase: 'fix', round: 1, fixer: 'same', baseSha: 'b0', reviewedSha: 'h1', implementer: 'ct-1-t1', lastReview: join(taskDir(), 'revue.md') })],
-      gates: [gate({ id: 'g1', kind: 'arbitrage', status: 'pending', summary: 'colonne à garder ?' })],
+      tasks: [task({ phase: 'fix', round: 1, fixer: 'same', baseSha: 'b0', reviewedSha: 'h1', implementer: 'ct-1-t1', lastReview: join(taskDir(), 'review.md') })],
+      gates: [gate({ id: 'g1', kind: 'arbitration', status: 'pending', summary: 'keep this column?' })],
     },
   })
   await mkdir(taskDir(), { recursive: true })
-  await writeFile(join(taskDir(), 'revue.md'), 'VERDICT: CORRECTIONS\n\n- src/b.ts:9 colonne en trop\n')
+  await writeFile(join(taskDir(), 'review.md'), 'VERDICT: CORRECTIONS\n\n- src/b.ts:9 extra column\n')
   fx.herdr.started.add('ct-1-t1')
 
   expect(await eng.tick()).toBe('wait')
   expect(await eng.tick()).toBe('wait')
   expect(fx.callsOf('agents.ask')).toEqual([])
 
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'garder la colonne' })
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'keep the column' })
   const s = await until(eng, (x) => x.tasks[0]!.phase === 'control')
-  expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'correctifs-1.md')])
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
-  expect(fix).toContain('src/b.ts:9 colonne en trop')
-  expect(fix).toContain("Décision de l'utilisateur")
-  expect(fix).toContain('garder la colonne')
+  expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'fixes-1.md')])
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
+  expect(fix).toContain('src/b.ts:9 extra column')
+  expect(fix).toContain('User decision')
+  expect(fix).toContain('keep the column')
   expect(s.consumedArbitrages).toEqual(['g1'])
 })
 
-test("un amendement approuvé pendant une tâche en cours, sans consigne chez un agent, s'applique aussitôt ; la tâche inchangée continue", async () => {
+test("an approved amendment during an in-progress task, with no brief at an agent, applies at once; the unchanged task continues", async () => {
   const { fx, eng } = await setup({
     proposed: PLAN2,
-    over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } },
+    over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } },
     patch: {
       tasks: [task({ phase: 'review', baseSha: 'b0', implementer: 'ct-1-t1' })],
-      gates: [gate({ id: 'g1', kind: 'amendement', status: 'approved', hash: proposalHash(PLAN2) })],
+      gates: [gate({ id: 'g1', kind: 'amendment', status: 'approved', hash: proposalHash(PLAN2) })],
     },
   })
   await eng.tick()
@@ -339,18 +386,18 @@ test("un amendement approuvé pendant une tâche en cours, sans consigne chez un
   expect(s.appliedAmendments).toEqual(['g1'])
   expect(s.tasks.map((t) => [t.n, t.phase])).toEqual([[1, 'review'], [2, 'pending']])
   expect(await readFile(join(missionDir('T-1'), 'plan.approved.md'), 'utf8')).toBe(PLAN2)
-  expect(fx.callsOf('git.commitFiles')).toEqual([[wt, [planPath(s)], 'docs(T-1): amende le plan']])
+  expect(fx.callsOf('git.commitFiles')).toEqual([[wt, [planPath(s)], 'docs(T-1): amend the plan']])
   s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
-  // Tâche 1 inchangée : pas de nouveau brief, pas de nouvel envoi à l'implémenteur.
+  // Task 1 unchanged: no new brief, nothing new sent to the implementer.
   expect(fx.callsOf('agents.ask').map((c) => c[0])).toEqual(['rt-1-t1'])
 })
 
-test("un amendement attend qu'aucune consigne ne soit en cours chez un agent", async () => {
+test("an amendment waits until no brief is in progress with an agent", async () => {
   const { eng } = await setup({
     proposed: PLAN2,
     patch: {
       tasks: [task({ phase: 'implement', baseSha: 'b0', implementer: 'ct-1-t1', pendingAsk: { agent: 'ct-1-t1', file: '/x/brief.md', fromSha: 'b0' } })],
-      gates: [gate({ id: 'g1', kind: 'amendement', status: 'approved', hash: proposalHash(PLAN2) })],
+      gates: [gate({ id: 'g1', kind: 'amendment', status: 'approved', hash: proposalHash(PLAN2) })],
     },
   })
   await eng.tick()
@@ -359,19 +406,19 @@ test("un amendement attend qu'aucune consigne ne soit en cours chez un agent", a
   expect(s.tasks).toHaveLength(1)
 })
 
-test('un amendement attend la décision sur une porte agent-bloque', async () => {
+test('an amendment waits for the decision on an agent-blocked gate', async () => {
   const { eng } = await setup({
     proposed: PLAN2,
     patch: {
       tasks: [task({ phase: 'implement', baseSha: 'b0', implementer: 'ct-1-t1', blockedGate: 'g2' })],
-      gates: [gate({ id: 'g1', kind: 'amendement', status: 'approved', hash: proposalHash(PLAN2) }), gate({ id: 'g2', kind: 'agent-bloque', status: 'pending' })],
+      gates: [gate({ id: 'g1', kind: 'amendment', status: 'approved', hash: proposalHash(PLAN2) }), gate({ id: 'g2', kind: 'agent-blocked', status: 'pending' })],
     },
   })
   expect(await eng.tick()).toBe('wait')
   expect((await loadState('T-1')).appliedAmendments).toEqual([])
 })
 
-test('un amendement approuvé en global-review ajoute la tâche et revient à tasks', async () => {
+test('an approved amendment in global-review adds the task and returns to tasks', async () => {
   const { fx, eng } = await setup({
     proposed: PLAN2,
     patch: { step: 'global-review', tasks: [task({ phase: 'done' })], gates: [gate({ id: 'g1', hash: proposalHash(PLAN2) })] },
@@ -380,10 +427,10 @@ test('un amendement approuvé en global-review ajoute la tâche et revient à ta
   const s = await loadState('T-1')
   expect(s.step).toBe('tasks')
   expect(s.tasks.map((t) => [t.n, t.phase])).toEqual([[1, 'done'], [2, 'pending']])
-  expect(fx.callsOf('git.commitFiles')).toEqual([[wt, [planPath(s)], 'docs(T-1): amende le plan']])
+  expect(fx.callsOf('git.commitFiles')).toEqual([[wt, [planPath(s)], 'docs(T-1): amend the plan']])
 })
 
-test("un amendement appliqué après les tâches arrête les agents de fin de l'ancienne génération", async () => {
+test("an amendment applied after the tasks stops the previous generation's closing agents", async () => {
   const { fx, eng } = await setup({
     proposed: PLAN2,
     patch: { step: 'global-review', tasks: [task({ phase: 'done' })], gates: [gate({ id: 'g1', hash: proposalHash(PLAN2) })] },
@@ -396,11 +443,11 @@ test("un amendement appliqué après les tâches arrête les agents de fin de l'
   const s = await loadState('T-1')
   expect(fx.herdr.pane(pane).busy).toBe(false)
   expect(s.loopGeneration).toBe(2)
-  expect(s.log.map((l) => l.msg)).toContain('nouvelle génération des boucles de fin : agent(s) arrêté(s) dans GR · claude-opus-5-5')
+  expect(s.log.map((l) => l.msg)).toContain('new generation of the closing loops: agent(s) stopped in GR · claude-opus-5-5')
 })
 
-test("un amendement qui modifie une tâche validée est écarté et l'orchestrateur prévenu", async () => {
-  const changed = PLAN2.replace('faire a', 'faire autre chose')
+test("an amendment that changes an already-validated task is rejected and the orchestrator is told", async () => {
+  const changed = PLAN2.replace('do a', 'do something else')
   const { fx, eng } = await setup({
     proposed: changed,
     patch: { step: 'global-review', tasks: [task({ phase: 'done' })], gates: [gate({ id: 'g1', hash: proposalHash(changed) })] },
@@ -411,10 +458,10 @@ test("un amendement qui modifie une tâche validée est écarté et l'orchestrat
   expect(s.tasks).toHaveLength(1)
   expect(s.appliedAmendments).toEqual(['g1'])
   expect(fx.callsOf('git.commitFiles')).toEqual([])
-  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toMatch(/^\[herness\] .*tâche 1 déjà validée a changé/s)
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toMatch(/^\[herness\] .*already-validated task 1 has changed/s)
 })
 
-test('reprise : implement sans agent mais avec commits passe directement au contrôle', async () => {
+test('resume: implement with no agent but with commits goes straight to control', async () => {
   const { fx, eng } = await setup({
     over: { git: { headSha: async () => 'h1' } },
     patch: { tasks: [task({ phase: 'implement', baseSha: 'b0', implementer: 'ct-1-t1' })] },
@@ -427,7 +474,7 @@ test('reprise : implement sans agent mais avec commits passe directement au cont
   expect(fx.callsOf('agents.ask')).toEqual([])
 })
 
-test("reprise : implement sans agent ni commit redémarre l'agent avec le même brief", async () => {
+test("resume: implement with no agent and no commit restarts the agent with the same brief", async () => {
   const { fx, eng } = await setup({
     over: { git: { headSha: async () => 'b0' } },
     patch: { tasks: [task({ phase: 'implement', baseSha: 'b0', implementer: 'ct-1-t1' })] },
@@ -443,7 +490,7 @@ test("reprise : implement sans agent ni commit redémarre l'agent avec le même 
   expect(s.tasks[0]!.baseSha).toBe('b0')
 })
 
-test("la consigne en cours est enregistrée dans l'état avant l'envoi, puis effacée", async () => {
+test("the in-progress brief is saved in state before it is sent, then cleared", async () => {
   let seen: unknown
   const { eng } = await setup({
     patch: { tasks: [task({ phase: 'implement', baseSha: 'b0', implementer: 'ct-1-t1' })] },
@@ -464,7 +511,7 @@ test("la consigne en cours est enregistrée dans l'état avant l'envoi, puis eff
   expect(s.tasks[0]!.phase).toBe('control')
 })
 
-test("reprise : consigne en cours et agent vivant au travail, attente sans renvoi puis issue traitée", async () => {
+test("resume: brief in progress and a live working agent, wait without resending, then the outcome is handled", async () => {
   const { fx, eng } = await setup({
     over: { herdr: { agentGet: async () => ({ state: 'working' }) } },
     patch: {
@@ -480,18 +527,18 @@ test("reprise : consigne en cours et agent vivant au travail, attente sans renvo
   expect(s.tasks[0]!.pendingAsk).toBeUndefined()
 })
 
-test('reprise : revue en cours, relecteur disparu mais verdict déjà écrit, le verdict est utilisé sans renvoi', async () => {
-  const out = join(taskDir(), 'revue.md')
+test('resume: review in progress, reviewer gone but verdict already written, the verdict is used without resending', async () => {
+  const out = join(taskDir(), 'review.md')
   const { fx, eng } = await setup({
     patch: {
       tasks: [task({
         phase: 'review', baseSha: 'b0', implementer: 'ct-1-t1', reviewer: 'rt-1-t1',
-        pendingAsk: { agent: 'rt-1-t1', file: join(taskDir(), 'consigne-revue.md'), out, head: 'h1' },
+        pendingAsk: { agent: 'rt-1-t1', file: join(taskDir(), 'review-brief.md'), out, head: 'h1' },
       })],
     },
   })
   await mkdir(taskDir(), { recursive: true })
-  await writeFile(out, 'VERDICT: APPROUVÉ\n')
+  await writeFile(out, 'VERDICT: APPROVED\n')
   await eng.tick()
   const s = await loadState('T-1')
   expect(fx.callsOf('agents.ask')).toEqual([])
@@ -500,29 +547,29 @@ test('reprise : revue en cours, relecteur disparu mais verdict déjà écrit, le
   expect(s.tasks[0]).toMatchObject({ phase: 'done', reviewedSha: 'h1', lastReview: out })
 })
 
-test('reprise : revue en cours, relecteur disparu sans verdict, relecteur redémarré et consigne renvoyée', async () => {
+test('resume: review in progress, reviewer gone with no verdict, reviewer restarted and the brief resent', async () => {
   const { fx, eng } = await setup({
-    over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } },
+    over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } },
     patch: {
       tasks: [task({
         phase: 'review', baseSha: 'b0', implementer: 'ct-1-t1', reviewer: 'rt-1-t1',
-        pendingAsk: { agent: 'rt-1-t1', file: join(taskDir(), 'consigne-revue.md'), out: join(taskDir(), 'revue.md'), head: 'h1' },
+        pendingAsk: { agent: 'rt-1-t1', file: join(taskDir(), 'review-brief.md'), out: join(taskDir(), 'review.md'), head: 'h1' },
       })],
     },
   })
   await eng.tick()
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rt-1-t1'])
-  expect(fx.callsOf('agents.ask').map((c) => basename(String(c[1])))).toEqual(['consigne-revue.md'])
+  expect(fx.callsOf('agents.ask').map((c) => basename(String(c[1])))).toEqual(['review-brief.md'])
   expect((await loadState('T-1')).tasks[0]!.phase).toBe('done')
 })
 
-test('reprise : correction en cours, implémenteur disparu avec un commit depuis la tête précédente, passage au contrôle', async () => {
+test('resume: correction in progress, implementer gone with a commit since the previous head, move to control', async () => {
   const { fx, eng } = await setup({
     over: { git: { headSha: async () => 'h2' } },
     patch: {
       tasks: [task({
         phase: 'fix', round: 1, fixer: 'same', baseSha: 'b0', implementer: 'ct-1-t1',
-        pendingAsk: { agent: 'ct-1-t1', file: join(taskDir(), 'correctifs-1.md'), fromSha: 'h1' },
+        pendingAsk: { agent: 'ct-1-t1', file: join(taskDir(), 'fixes-1.md'), fromSha: 'h1' },
       })],
     },
   })
@@ -534,7 +581,7 @@ test('reprise : correction en cours, implémenteur disparu avec un commit depuis
   expect(s.tasks[0]!.pendingAsk).toBeUndefined()
 })
 
-test('pending réutilise un implémenteur déjà démarré (arrêt entre le démarrage et l\'enregistrement)', async () => {
+test('pending reuses an implementer already started (stop between start and save)', async () => {
   const { fx, eng } = await setup()
   fx.herdr.started.add('ct-1-t1')
   await eng.tick()
@@ -543,7 +590,7 @@ test('pending réutilise un implémenteur déjà démarré (arrêt entre le dém
   expect(s.tasks[0]).toMatchObject({ phase: 'implement', implementer: 'ct-1-t1' })
 })
 
-test('un amendement sans plan proposé est écarté proprement', async () => {
+test('an amendment with no proposed plan is rejected cleanly', async () => {
   const { fx, eng } = await setup({
     patch: { step: 'global-review', tasks: [task({ phase: 'done' })], gates: [gate({ id: 'g1', hash: proposalHash(PLAN2) })] },
   })
@@ -551,12 +598,12 @@ test('un amendement sans plan proposé est écarté proprement', async () => {
   const s = await loadState('T-1')
   expect(s.step).toBe('global-review')
   expect(s.appliedAmendments).toEqual(['g1'])
-  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toMatch(/^\[herness\] Amendement g1 non appliqué/)
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toMatch(/^\[herness\] Amendment g1 not applied/)
 })
 
-// ---------- amendements proposés hors du worktree (C2) ----------
+// ---------- amendments proposed outside the worktree (C2) ----------
 
-test('amendement approuvé : la proposition est copiée dans le worktree, commitée (plan et spec), puis supprimée', async () => {
+test('approved amendment: the proposal is copied into the worktree, committed (plan and spec), then removed', async () => {
   const SPEC2 = '# Spec v2\n\ncontexte\n'
   const { fx, eng } = await setup({
     proposed: PLAN2,
@@ -569,15 +616,15 @@ test('amendement approuvé : la proposition est copiée dans le worktree, commit
   expect(s.tasks.map((t) => t.n)).toEqual([1, 2])
   expect(await readFile(join(wt, planPath(s)), 'utf8')).toBe(PLAN2)
   expect(await readFile(join(wt, specPath(s)), 'utf8')).toBe(SPEC2)
-  expect(fx.callsOf('git.commitFiles')).toEqual([[wt, [planPath(s), specPath(s)], 'docs(T-1): amende le plan']])
+  expect(fx.callsOf('git.commitFiles')).toEqual([[wt, [planPath(s), specPath(s)], 'docs(T-1): amend the plan']])
   expect(await readFile(join(missionDir('T-1'), 'plan.approved.md'), 'utf8')).toBe(PLAN2)
   await expect(readFile(join(missionDir('T-1'), 'plan.proposed.md'))).rejects.toThrow()
   await expect(readFile(join(missionDir('T-1'), 'spec.proposed.md'))).rejects.toThrow()
 })
 
-test('une proposition modifiée après la demande est rejetée, le worktree reste intact', async () => {
+test('a proposal changed after the request is rejected and the worktree stays intact', async () => {
   const { fx, eng } = await setup({
-    proposed: PLAN2.replace('faire b', 'faire b autrement'),
+    proposed: PLAN2.replace('do b', 'do b differently'),
     patch: { step: 'global-review', tasks: [task({ phase: 'done' })], gates: [gate({ id: 'g1', hash: proposalHash(PLAN2) })] },
   })
   await eng.tick()
@@ -587,165 +634,182 @@ test('une proposition modifiée après la demande est rejetée, le worktree rest
   expect(s.appliedAmendments).toEqual(['g1'])
   expect(fx.callsOf('git.commitFiles')).toEqual([])
   expect(await readFile(join(wt, planPath(s)), 'utf8')).toBe(PLAN1)
-  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain('la proposition a changé après la demande ; redemande')
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain('the proposal changed after the request; ask for validation again')
 })
 
-// ---------- arbitrage des remarques qui contredisent le plan (I4) ----------
+// ---------- arbitration of findings that contradict the plan (I4) ----------
 
-test('une remarque « imposé par le plan » ouvre une porte arbitrage et suspend les correctifs ; chaque CORRECTIONS est signalé', async () => {
+test('a finding "imposed by the plan" opens an arbitration gate and suspends fixes; each CORRECTIONS is reported', async () => {
   const ask = async (name: string, file: string) => {
     if (name.startsWith('r')) {
-      const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
-      await writeFile(out, 'VERDICT: CORRECTIONS\n\n## Remarques\n- src/a.ts:3 nom de variable\n- src/b.ts:9 colonne supprimée alors que c\'est Imposé par le plan (tâche 1)\n')
+      const fileName = basename(file)
+      const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
+      await writeFile(out, 'VERDICT: CORRECTIONS\n\n## Notes\n- src/a.ts:3 variable name\n- src/b.ts:9 column removed although it is imposed by the plan (task 1)\n')
     }
     return 'done' as const
   }
   const { fx, eng } = await setup({ over: { agents: { ask } } })
   let s = await until(eng, (x) => x.tasks[0]!.phase === 'fix')
-  const g = s.gates.find((x) => x.kind === 'arbitrage')!
+  const g = s.gates.find((x) => x.kind === 'arbitration')!
   expect(g).toMatchObject({ status: 'pending' })
-  expect(g.summary).toContain('src/b.ts:9 colonne supprimée')
-  expect(g.summary).not.toContain('nom de variable')
+  expect(g.summary).toContain('src/b.ts:9 column removed')
+  expect(g.summary).not.toContain('variable name')
   const prompts = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1]))
-  expect(prompts.some((p) => /^\[herness\] tâche 1 : revue CORRECTIONS \(tour 1\)/.test(p))).toBe(true)
-  expect(prompts.some((p) => p.includes(`Porte ${g.id} (arbitrage)`))).toBe(true)
+  expect(prompts.some((p) => /^\[herness\] task 1: review CORRECTIONS \(round 1\)/.test(p))).toBe(true)
+  expect(prompts.some((p) => p.includes(`Gate ${g.id} (arbitration)`))).toBe(true)
 
   expect(await eng.tick()).toBe('wait')
-  await expect(readFile(join(taskDir(), 'correctifs-1.md'))).rejects.toThrow()
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved', note: 'le plan prime, garder la colonne' })
+  await expect(readFile(join(taskDir(), 'fixes-1.md'))).rejects.toThrow()
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved', note: 'the plan wins, keep the column' })
   s = await until(eng, (x) => x.tasks[0]!.phase === 'control')
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
-  expect(fix).toContain('le plan prime, garder la colonne')
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
+  expect(fix).toContain('the plan wins, keep the column')
 })
 
-test('un verdict CORRECTIONS sans contradiction du plan informe l\'orchestrateur sans ouvrir de porte', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ']) } } })
+const legacyContradiction = 'impos\u00e9 par le plan'
+
+test('a finding with the 0.8 plan-contradiction wording still opens an arbitration gate', async () => {
+  const ask = async (name: string, file: string) => {
+    if (name.startsWith('r')) {
+      const fileName = basename(file)
+      const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
+      await writeFile(out, `VERDICT: CORRECTIONS\n\n- src/b.ts:9 ${legacyContradiction}\n`)
+    }
+    return 'done' as const
+  }
+  const { eng } = await setup({ over: { agents: { ask } } })
+  const s = await until(eng, (x) => x.tasks[0]!.phase === 'fix')
+  expect(s.gates.find((x) => x.kind === 'arbitration')?.summary).toContain(legacyContradiction)
+})
+
+test('a CORRECTIONS verdict with no plan contradiction informs the orchestrator and opens no gate', async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROVED']) } } })
   const s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
   expect(s.gates).toEqual([])
-  const msgs = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).filter((p) => p.includes('revue CORRECTIONS'))
+  const msgs = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).filter((p) => p.includes('review CORRECTIONS'))
   expect(msgs).toHaveLength(1)
   expect(msgs[0]!.split('\n')).toHaveLength(1)
 })
 
-// ---------- implémenteur arrêté sans commit (agent-arret) ----------
+// ---------- implementer stopped without a commit (agent-stopped) ----------
 
-const noCommit: ControlResult = { ok: false, code: 'no-commit', reason: 'aucun commit depuis sha-head' }
-/** Contrôle « aucun commit », puis contrôle vert. */
+const noCommit: ControlResult = { ok: false, code: 'no-commit', reason: 'no commit since sha-head' }
+/** Control "no commit", then a green control. */
 const stopThenOk = () => {
   const next = seq<ControlResult>(noCommit, { ok: true, commits: 1 })
   return async () => next()
 }
-const REPORT = 'Arrêt : le plan est impossible.\nLe composant de base impose placeholder=" ".\nJe ne commite rien.\n'
+const REPORT = 'Stop: the plan is impossible.\nThe base component requires placeholder=" ".\nI am not committing.\n'
 
-/** L'implémenteur écrit son compte rendu à la consigne initiale (brief), puis le relecteur approuve. */
+/** The implementer writes its report on the initial brief, then the reviewer approves. */
 function stoppingAsk(report = REPORT) {
-  const review = scriptedAsk(['VERDICT: APPROUVÉ'])
+  const review = scriptedAsk(['VERDICT: APPROVED'])
   return async (name: string, file: string) => {
-    if (basename(file) === 'brief.md' && report) await writeFile(join(dirname(file), 'rapport.md'), report)
+    if (basename(file) === 'brief.md' && report) await writeFile(join(dirname(file), 'report.md'), report)
     return review(name, file)
   }
 }
 
-test("arrêt sans commit avec compte rendu : porte agent-arret, l'orchestrateur explique ; validée, un tour de correction porte la décision", async () => {
+test("stop without a commit with a report: agent-stopped gate, the orchestrator explains; once approved, a correction round carries the decision", async () => {
   const { fx, eng } = await setup({ over: { agents: { ask: stoppingAsk() }, git: { controlCommits: stopThenOk() } } })
-  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-arret'))
+  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   expect(s.step).toBe('tasks')
-  const g = s.gates.find((x) => x.kind === 'agent-arret')!
-  expect(g).toMatchObject({ status: 'pending', path: join(taskDir(), 'rapport.md') })
-  expect(g.summary).toMatch(/^tâche 1 : l'implémenteur s'est arrêté sans commit\n/)
+  const g = s.gates.find((x) => x.kind === 'agent-stopped')!
+  expect(g).toMatchObject({ status: 'pending', path: join(taskDir(), 'report.md') })
+  expect(g.summary).toMatch(/^task 1: the implementer stopped without a commit\n/)
   expect(g.summary).toContain('placeholder=" "')
   expect(s.tasks[0]).toMatchObject({ phase: 'control', round: 0, stopGate: g.id })
-  expect(String(fx.callsOf('herdr.notify').at(-1)![1])).toContain("arrêté sans commit")
+  expect(String(fx.callsOf('herdr.notify').at(-1)![1])).toContain("stopped without a commit")
   const msg = String(fx.callsOf('herdr.agentPrompt').at(-1)![1])
-  expect(msg).toContain(`Porte ${g.id} (agent-arret)`)
-  expect(msg).toContain('proposer_amendement')
+  expect(msg).toContain(`Gate ${g.id} (agent-stopped)`)
+  expect(msg).toContain('propose_amendment')
 
   expect(await eng.tick()).toBe('wait')
   expect(await eng.tick()).toBe('wait')
   expect(fx.callsOf('agents.ask')).toHaveLength(1)
 
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved', note: 'garde le placeholder, documente-le' })
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved', note: 'keep the placeholder, document it' })
   s = await until(eng, (x) => x.tasks[0]!.phase === 'control' && x.tasks[0]!.round === 1)
   expect(s.tasks[0]!.stopGate).toBeUndefined()
-  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'correctifs-1.md')])
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
-  expect(fix).toContain("Décision de l'utilisateur : garde le placeholder, documente-le")
-  expect(fix).not.toContain('Consigne amendée')
+  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'fixes-1.md')])
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
+  expect(fix).toContain('User decision: keep the placeholder, document it')
+  expect(fix).not.toContain('Amended task')
   s = await until(eng, (x) => x.step !== 'tasks')
   expect(s.step).toBe('global-review')
 })
 
-test("arrêt sans commit validé sans note : la décision transmise est « continue »", async () => {
+test("stop without a commit approved with no note: the decision passed on is \"continue\"", async () => {
   const { eng } = await setup({ over: { agents: { ask: stoppingAsk() }, git: { controlCommits: stopThenOk() } } })
-  const s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-arret'))
+  const s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: s.gates[0]!.id, decision: 'approved' })
   await until(eng, (x) => x.tasks[0]!.round === 1 && x.tasks[0]!.phase === 'control')
-  expect(await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')).toContain("Décision de l'utilisateur : continue")
+  expect(await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')).toContain('User decision: continue')
 })
 
-test('arrêt sans commit, porte agent-arret refusée : la mission est bloquée', async () => {
+test('stop without a commit, agent-stopped gate refused: the mission is blocked', async () => {
   const { eng } = await setup({ over: { agents: { ask: stoppingAsk() }, git: { controlCommits: async () => noCommit } } })
-  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-arret'))
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: s.gates[0]!.id, decision: 'refused', note: 'on arrête' })
-  s = await until(eng, (x) => x.step === 'bloquée')
+  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: s.gates[0]!.id, decision: 'refused', note: 'we stop' })
+  s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedFrom).toBe('tasks')
-  expect(s.blockedReason).toContain("arrêté sans commit")
-  expect(s.blockedReason).toContain('on arrête')
+  expect(s.blockedReason).toContain("stopped without a commit")
+  expect(s.blockedReason).toContain('we stop')
   expect(s.tasks[0]!.stopGate).toBeUndefined()
 })
 
-test('aucun commit sans compte rendu : la mission est bloquée comme avant, sans porte', async () => {
+test('no commit and no report: the mission is blocked as before, with no gate', async () => {
   const { eng } = await setup({ over: { agents: { ask: stoppingAsk('') }, git: { controlCommits: async () => noCommit } } })
-  const s = await until(eng, (x) => x.step === 'bloquée')
-  expect(s.blockedReason).toContain('contrôle du commit en échec')
+  const s = await until(eng, (x) => x.step === 'blocked')
+  expect(s.blockedReason).toContain('commit check failed')
   expect(s.gates).toEqual([])
 })
 
-test('un autre échec de contrôle (arbre non propre) bloque même avec un compte rendu', async () => {
-  const dirty = { ok: false as const, code: 'dirty' as const, reason: 'arbre non propre :\n?? x' }
+test('another control failure (dirty tree) blocks even with a report', async () => {
+  const dirty = { ok: false as const, code: 'dirty' as const, reason: 'dirty tree:\n?? x' }
   const { eng } = await setup({ over: { agents: { ask: stoppingAsk() }, git: { controlCommits: async () => dirty } } })
-  const s = await until(eng, (x) => x.step === 'bloquée')
-  expect(s.blockedReason).toContain('arbre non propre')
+  const s = await until(eng, (x) => x.step === 'blocked')
+  expect(s.blockedReason).toContain('dirty tree')
   expect(s.gates).toEqual([])
 })
 
-test("arrêt sans commit validé après un amendement de la tâche : les correctifs portent le nouveau texte de la tâche", async () => {
-  const AMENDED = PLAN1.replace('faire a', 'faire a, en gardant le placeholder')
+test("stop without a commit approved after a task amendment: the fix file carries the new task text", async () => {
+  const AMENDED = PLAN1.replace('do a', 'do a, keeping the placeholder')
   const { fx, eng } = await setup({
     approved: AMENDED,
     patch: {
       tasks: [task({ phase: 'control', baseSha: 'b0', implementer: 'ct-1-t1', stopGate: 'g1' })],
-      gates: [gate({ id: 'g1', kind: 'agent-arret', status: 'pending', summary: "tâche 1 : l'implémenteur s'est arrêté sans commit" })],
+      gates: [gate({ id: 'g1', kind: 'agent-stopped', status: 'pending', summary: "task 1: the implementer stopped without a commit" })],
     },
   })
   await mkdir(taskDir(), { recursive: true })
-  await writeFile(join(taskDir(), 'brief.md'), '# Brief\n\n### Tâche 1 : Modèle\n\n**Test :** `pnpm test a`\n\nfaire a\n')
+  await writeFile(join(taskDir(), 'brief.md'), '# Brief\n\n### Task 1: Model\n\n**Test:** `pnpm test a`\n\ndo a\n')
   fx.herdr.started.add('ct-1-t1')
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'ok' })
   await until(eng, (x) => x.tasks[0]!.round === 1 && x.tasks[0]!.phase === 'control')
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
-  expect(fix).toContain("Décision de l'utilisateur : ok")
-  expect(fix).toContain('## Consigne amendée de la tâche')
-  expect(fix).toContain('faire a, en gardant le placeholder')
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
+  expect(fix).toContain('User decision: ok')
+  expect(fix).toContain('## Amended task instructions')
+  expect(fix).toContain('do a, keeping the placeholder')
 })
 
-// ---------- amendement de la tâche en cours (scénario 20261030-5) ----------
+// ---------- amendment of the in-progress task (scenario 20261030-5) ----------
 
-const T1_FIXED = '### Tâche 1 : Modèle\n\n**Test :** `pnpm test a`\n\nfaire a, en gardant le placeholder imposé par le composant de base\n'
+const T1_FIXED = '### Task 1: Model\n\n**Test:** `pnpm test a`\n\ndo a, keeping the placeholder required by the base component\n'
 const PLAN1_FIXED = `# Plan\n\n${T1_FIXED}`
 
-test("20261030-5 : arrêt sans commit, amendement de la tâche validé, brief réécrit avec une reprise, implémenteur relancé, aucun blocage", async () => {
+test("20261030-5: stop without a commit, task amendment approved, brief rewritten with a resume, implementer restarted, no block", async () => {
   const { fx, eng } = await setup({ over: { agents: { ask: stoppingAsk() }, git: { controlCommits: stopThenOk() } } })
-  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-arret'))
-  const stop = s.gates.find((g) => g.kind === 'agent-arret')!
+  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
+  const stop = s.gates.find((g) => g.kind === 'agent-stopped')!
   expect(await eng.tick()).toBe('wait')
 
-  // L'orchestrateur propose l'amendement (hors du worktree), l'utilisateur le valide.
+  // The orchestrator proposes the amendment (outside the worktree), the user approves it.
   await writeFile(join(missionDir('T-1'), 'plan.proposed.md'), PLAN1_FIXED)
-  await postInbox('T-1', { type: 'request-gate', kind: 'amendement', summary: 'garder le placeholder', path: join(missionDir('T-1'), 'plan.proposed.md'), hash: proposalHash(PLAN1_FIXED) })
+  await postInbox('T-1', { type: 'request-gate', kind: 'amendment', summary: 'keep the placeholder', path: join(missionDir('T-1'), 'plan.proposed.md'), hash: proposalHash(PLAN1_FIXED) })
   await eng.tick()
   s = await loadState('T-1')
-  const amend = s.gates.find((g) => g.kind === 'amendement')!
+  const amend = s.gates.find((g) => g.kind === 'amendment')!
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: amend.id, decision: 'approved' })
   await eng.tick()
   s = await loadState('T-1')
@@ -753,42 +817,42 @@ test("20261030-5 : arrêt sans commit, amendement de la tâche validé, brief r�
   expect(s.appliedAmendments).toEqual([amend.id])
   expect(s.tasks[0]).toMatchObject({ phase: 'implement', round: 0 })
   expect(s.tasks[0]!.stopGate).toBeUndefined()
-  expect(s.gates.find((g) => g.id === stop.id)!.status).toBe('caduque')
-  expect(fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).some((p) => p.includes(`porte ${stop.id} (agent-arret) est caduque`))).toBe(true)
+  expect(s.gates.find((g) => g.id === stop.id)!.status).toBe('obsolete')
+  expect(fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).some((p) => p.includes(`Gate ${stop.id} (agent-stopped) is obsolete`))).toBe(true)
   const brief = await readFile(join(taskDir(), 'brief.md'), 'utf8')
-  expect(brief).toContain('## Reprise')
-  expect(brief).toContain("Du travail est déjà présent dans l'arbre : garde-le, adapte-le à la nouvelle consigne, puis lance les tests et commite")
-  expect(brief).toContain('en gardant le placeholder imposé')
+  expect(brief).toContain('## Resume')
+  expect(brief).toContain('Work is already present in the tree: keep it, adapt it to the new instructions, then run the tests and commit')
+  expect(brief).toContain('keeping the placeholder required')
   expect(await readFile(join(wt, planPath(s)), 'utf8')).toBe(PLAN1_FIXED)
 
   s = await until(eng, (x) => x.step !== 'tasks')
   expect(s.step).toBe('global-review')
   const implAsks = fx.callsOf('agents.ask').filter((c) => c[0] === 'ct-1-t1').map((c) => c[1])
   expect(implAsks).toEqual([join(taskDir(), 'brief.md'), join(taskDir(), 'brief.md')])
-  expect(s.log.some((l) => l.msg.startsWith('mission bloquée'))).toBe(false)
+  expect(s.log.some((l) => l.msg.startsWith('mission blocked'))).toBe(false)
 
-  // La porte agent-arret, décidée plus tard (message déjà posté), est ignorée.
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: stop.id, decision: 'refused', note: 'trop tard' })
+  // The agent-stopped gate, decided later (message already posted), is ignored.
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: stop.id, decision: 'refused', note: 'too late' })
   await eng.tick()
   s = await loadState('T-1')
-  expect(s.step).not.toBe('bloquée')
-  expect(s.gates.find((g) => g.id === stop.id)!.status).toBe('caduque')
-  expect(s.log.some((l) => l.msg === `décision ignorée : porte ${stop.id} caduque : plus rien ne l'attend, décision ignorée`)).toBe(true)
+  expect(s.step).not.toBe('blocked')
+  expect(s.gates.find((g) => g.id === stop.id)!.status).toBe('obsolete')
+  expect(s.log.some((l) => l.msg === `decision ignored: gate ${stop.id} obsolete: nothing is waiting for it, decision ignored`)).toBe(true)
 })
 
-test("un amendement validé pendant que la mission est bloquée sur la boucle des tâches la débloque et l'applique", async () => {
+test("an amendment approved while the mission is blocked in the task loop unblocks it and applies", async () => {
   const { fx, eng } = await setup({
     proposed: PLAN1_FIXED,
     patch: {
-      step: 'bloquée',
+      step: 'blocked',
       blockedFrom: 'tasks',
-      blockedReason: 'tâche 1 : contrôle du commit en échec',
+      blockedReason: 'task 1: commit check failed',
       tasks: [task({ phase: 'control', round: 2, baseSha: 'sha-head', implementer: 'ct-1-t1' })],
-      gates: [gate({ id: 'g1', kind: 'amendement', status: 'pending', hash: proposalHash(PLAN1_FIXED) })],
+      gates: [gate({ id: 'g1', kind: 'amendment', status: 'pending', hash: proposalHash(PLAN1_FIXED) })],
     },
   })
   await mkdir(taskDir(), { recursive: true })
-  await writeFile(join(taskDir(), 'brief.md'), '# Brief de tâche\n\nfaire a\n')
+  await writeFile(join(taskDir(), 'brief.md'), '# Task brief\n\ndo a\n')
   fx.herdr.started.add('ct-1-t1')
   expect(await eng.tick()).toBe('wait')
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
@@ -798,49 +862,49 @@ test("un amendement validé pendant que la mission est bloquée sur la boucle de
   expect(s.step).toBe('tasks')
   expect(s.blockedReason).toBeUndefined()
   expect(s.blockedFrom).toBeUndefined()
-  expect(await readFile(join(taskDir(), 'brief.md'), 'utf8')).toContain('## Reprise')
+  expect(await readFile(join(taskDir(), 'brief.md'), 'utf8')).toContain('## Resume')
   expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'brief.md')])
 })
 
-// ---------- arbitrage sans correction en attente ----------
+// ---------- arbitration with no correction waiting ----------
 
-test("un arbitrage décidé alors qu'aucune correction n'attend est sans effet, l'orchestrateur est prévenu", async () => {
+test("an arbitration decided while no correction is waiting has no effect and the orchestrator is told", async () => {
   const { fx, eng } = await setup({
     patch: {
-      step: 'bloquée',
+      step: 'blocked',
       blockedFrom: 'tasks',
-      blockedReason: 'tâche 1 : contrôle du commit en échec',
+      blockedReason: 'task 1: commit check failed',
       tasks: [task({ phase: 'control', baseSha: 'b0' })],
-      gates: [gate({ id: 'g1', kind: 'arbitrage', status: 'pending', summary: 'continuer ?' })],
+      gates: [gate({ id: 'g1', kind: 'arbitration', status: 'pending', summary: 'continue?' })],
     },
   })
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'continue' })
   await eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.consumedArbitrages).toEqual(['g1'])
   const prompts = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1]))
-  expect(prompts.at(-1)).toContain("arbitrage g1 sans effet : aucune correction n'attendait de décision")
+  expect(prompts.at(-1)).toContain('arbitration g1 with no effect: no correction was waiting for a decision')
 })
 
-test("un arbitrage décidé pendant qu'une correction l'attend n'est pas signalé sans effet", async () => {
+test("an arbitration decided while a correction is waiting is not reported as having no effect", async () => {
   const { fx, eng } = await setup({
     patch: {
       tasks: [task({ phase: 'fix', round: 1, fixer: 'same', baseSha: 'b0', implementer: 'ct-1-t1' })],
-      gates: [gate({ id: 'g1', kind: 'arbitrage', status: 'pending', summary: 'colonne ?' })],
+      gates: [gate({ id: 'g1', kind: 'arbitration', status: 'pending', summary: 'column?' })],
     },
   })
   fx.herdr.started.add('ct-1-t1')
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'garder' })
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'keep it' })
   await eng.tick()
   const prompts = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1]))
-  expect(prompts.some((p) => p.includes('sans effet'))).toBe(false)
-  expect(await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')).toContain('garder')
+  expect(prompts.some((p) => p.includes('with no effect'))).toBe(false)
+  expect(await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')).toContain('keep it')
 })
 
-// ---------- revue, tour 1 ----------
+// ---------- review, round 1 ----------
 
-test("I1 : le commit de l'amendement déplace la base de la tâche en cours, le contrôle ne compte pas les documents", async () => {
+test("I1: the amendment commit moves the in-progress task base, control does not count the documents", async () => {
   let head = 'sha-head'
   const controls: string[] = []
   const control = stopThenOk()
@@ -860,12 +924,12 @@ test("I1 : le commit de l'amendement déplace la base de la tâche en cours, le 
       },
     },
   })
-  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-arret'))
+  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   await writeFile(join(missionDir('T-1'), 'plan.proposed.md'), PLAN1_FIXED)
-  await postInbox('T-1', { type: 'request-gate', kind: 'amendement', summary: 's', hash: proposalHash(PLAN1_FIXED) })
+  await postInbox('T-1', { type: 'request-gate', kind: 'amendment', summary: 's', hash: proposalHash(PLAN1_FIXED) })
   await eng.tick()
   s = await loadState('T-1')
-  const amend = s.gates.find((g) => g.kind === 'amendement')!
+  const amend = s.gates.find((g) => g.kind === 'amendment')!
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: amend.id, decision: 'approved' })
   await eng.tick()
   s = await loadState('T-1')
@@ -875,101 +939,101 @@ test("I1 : le commit de l'amendement déplace la base de la tâche en cours, le 
   expect(controls).toEqual(['sha-head', 'sha-docs'])
 })
 
-test("I2 : une porte agent-arret caduque ne retient pas un amendement suivant", async () => {
+test("I2: an obsolete agent-stopped gate does not hold back a later amendment", async () => {
   const { eng } = await setup({
     proposed: PLAN2,
     patch: {
       tasks: [task({ phase: 'implement', baseSha: 'b0', implementer: 'ct-1-t1' })],
-      gates: [gate({ id: 'g1', kind: 'agent-arret', status: 'caduque' }), gate({ id: 'g2', kind: 'amendement', status: 'approved', hash: proposalHash(PLAN2) })],
+      gates: [gate({ id: 'g1', kind: 'agent-stopped', status: 'obsolete' }), gate({ id: 'g2', kind: 'amendment', status: 'approved', hash: proposalHash(PLAN2) })],
     },
   })
   await eng.tick()
   expect((await loadState('T-1')).appliedAmendments).toEqual(['g2'])
 })
 
-// Comme `writeBrief` : titre, puis le corps tel que `parsePlan` le découpe (il commence par la fin de ligne du titre).
-const BRIEF1 = '# Brief de tâche\n\n### Tâche 1 : Modèle\n\n\n\n**Test :** `pnpm test a`\n\nfaire a\n'
+// Like `writeBrief`: title, then the body as `parsePlan` cuts it (it starts with the title's trailing newline).
+const BRIEF1 = '# Task brief\n\n### Task 1: Model\n\n\n\n**Test:** `pnpm test a`\n\ndo a\n'
 const blockedOn = (reason: string): Partial<MissionState> => ({
-  step: 'bloquée',
+  step: 'blocked',
   blockedFrom: 'tasks',
   blockedReason: reason,
   tasks: [task({ phase: 'control', round: 2, baseSha: 'sha-head', implementer: 'ct-1-t1' })],
 })
 
-/** L'orchestrateur propose l'amendement (porte ouverte par le moteur), l'utilisateur le valide. */
+/** The orchestrator proposes the amendment (gate opened by the engine), the user approves it. */
 async function proposeAndApprove(eng: Engine, plan: string): Promise<MissionState> {
   await writeFile(join(missionDir('T-1'), 'plan.proposed.md'), plan)
-  await postInbox('T-1', { type: 'request-gate', kind: 'amendement', summary: 'amende', hash: proposalHash(plan) })
+  await postInbox('T-1', { type: 'request-gate', kind: 'amendment', summary: 'amendment', hash: proposalHash(plan) })
   await eng.tick()
-  const g = (await loadState('T-1')).gates.find((x) => x.kind === 'amendement')!
+  const g = (await loadState('T-1')).gates.find((x) => x.kind === 'amendment')!
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved' })
   await eng.tick()
   return loadState('T-1')
 }
 
-test("I3 : mission bloquée par la tâche 1, amendement qui la change : la porte l'annonce, la validation débloque", async () => {
-  const { eng } = await setup({ patch: blockedOn('tâche 1 : 3 tours de correction épuisés') })
+test("I3: mission blocked by task 1, amendment that changes it: the gate says so, approval unblocks", async () => {
+  const { eng } = await setup({ patch: blockedOn('task 1: 3 correction rounds exhausted') })
   await mkdir(taskDir(), { recursive: true })
   await writeFile(join(taskDir(), 'brief.md'), BRIEF1)
   const s = await proposeAndApprove(eng, PLAN1_FIXED)
-  expect(s.gates.find((g) => g.kind === 'amendement')!.summary).toBe('amende (mission bloquée : valider cet amendement relancera la tâche 1)')
+  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toBe('amendment (mission blocked: approving this amendment will restart task 1)')
   expect(s.step).toBe('tasks')
   expect(s.tasks[0]!.round).toBe(0)
 })
 
-test("I3 : amendement qui ne change pas la tâche bloquée : appliqué, la mission reste bloquée et l'orchestrateur le sait", async () => {
-  const { fx, eng } = await setup({ patch: blockedOn('tâche 1 : contrôle du commit en échec') })
+test("I3: amendment that does not change the blocking task: applied, the mission stays blocked and the orchestrator knows", async () => {
+  const { fx, eng } = await setup({ patch: blockedOn('task 1: commit check failed') })
   await mkdir(taskDir(), { recursive: true })
   await writeFile(join(taskDir(), 'brief.md'), BRIEF1)
   const s = await proposeAndApprove(eng, PLAN2)
-  expect(s.gates.find((g) => g.kind === 'amendement')!.summary).toBe("amende (mission bloquée : valider n'enlève pas le blocage)")
+  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toBe('amendment (mission blocked: approving does not clear the block)')
   expect(s.appliedAmendments).toHaveLength(1)
   expect(s.tasks.map((t) => t.n)).toEqual([1, 2])
-  expect(s.step).toBe('bloquée')
-  expect(s.blockedReason).toBe('tâche 1 : contrôle du commit en échec')
+  expect(s.step).toBe('blocked')
+  expect(s.blockedReason).toBe('task 1: commit check failed')
   expect(s.tasks[0]).toMatchObject({ phase: 'control', round: 2 })
   const prompts = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1]))
-  expect(prompts.some((p) => p.includes('mission toujours bloquée : herness reprendre T-1 pour la relancer'))).toBe(true)
+  expect(prompts.some((p) => p.includes('mission still blocked: herness resume T-1 to restart it'))).toBe(true)
 })
 
-test("I3 : blocage venu d'ailleurs que la tâche (agent sans réponse), amendement de la tâche : appliqué, la mission reste bloquée", async () => {
-  const { eng } = await setup({ patch: blockedOn('agent ct-1-t1 sans réponse (tâche 1)') })
+test("I3: block from something other than the task (agent timed out), task amendment: applied, the mission stays blocked", async () => {
+  const { eng } = await setup({ patch: blockedOn('agent ct-1-t1 timed out (task 1)') })
   await mkdir(taskDir(), { recursive: true })
   await writeFile(join(taskDir(), 'brief.md'), BRIEF1)
   const s = await proposeAndApprove(eng, PLAN1_FIXED)
-  expect(s.gates.find((g) => g.kind === 'amendement')!.summary).toContain("valider n'enlève pas le blocage")
-  expect(s.step).toBe('bloquée')
+  expect(s.gates.find((g) => g.kind === 'amendment')!.summary).toContain('approving does not clear the block')
+  expect(s.step).toBe('blocked')
   expect(s.appliedAmendments).toHaveLength(1)
 })
 
-test("M1 : un compte rendu qui n'a pas grandi depuis l'envoi de la consigne n'ouvre pas de porte agent-arret", async () => {
+test("M1: a report that has not grown since the brief was sent does not open an agent-stopped gate", async () => {
   const { eng } = await setup({ over: { agents: { ask: stoppingAsk('') }, git: { controlCommits: async () => noCommit } } })
   await mkdir(taskDir(), { recursive: true })
-  await writeFile(join(taskDir(), 'rapport.md'), 'ancien compte rendu\n')
-  const s = await until(eng, (x) => x.step === 'bloquée')
-  expect(s.tasks[0]!.reportSize).toBe(Buffer.byteLength('ancien compte rendu\n'))
-  expect(s.blockedReason).toContain('contrôle du commit en échec')
+  await writeFile(join(taskDir(), 'report.md'), 'old report\n')
+  const s = await until(eng, (x) => x.step === 'blocked')
+  expect(s.tasks[0]!.reportSize).toBe(Buffer.byteLength('old report\n'))
+  expect(s.blockedReason).toContain('commit check failed')
   expect(s.gates).toEqual([])
 })
 
-test("M1 : la porte agent-arret ne montre que ce que l'implémenteur a ajouté au compte rendu", async () => {
+test("M1: the agent-stopped gate shows only what the implementer added to the report", async () => {
   const ask = async (name: string, file: string) => {
-    if (basename(file) === 'brief.md') await writeFile(join(dirname(file), 'rapport.md'), 'ancien\nNOUVEAU : arrêt\n')
+    if (basename(file) === 'brief.md') await writeFile(join(dirname(file), 'report.md'), 'old\nNEW: stop\n')
     return 'done' as const
   }
   const { eng } = await setup({ over: { agents: { ask }, git: { controlCommits: async () => noCommit } } })
   await mkdir(taskDir(), { recursive: true })
-  await writeFile(join(taskDir(), 'rapport.md'), 'ancien\n')
-  const s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-arret'))
-  expect(s.gates[0]!.summary).toBe("tâche 1 : l'implémenteur s'est arrêté sans commit\nNOUVEAU : arrêt")
+  await writeFile(join(taskDir(), 'report.md'), 'old\n')
+  const s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
+  expect(s.gates[0]!.summary).toBe("task 1: the implementer stopped without a commit\nNEW: stop")
 })
 
-test("M2 : arrêt du moteur après la suppression de la proposition (ancien ordre) : l'amendement est repris comme appliqué", async () => {
+test("M2: engine stop after the proposal was removed (old order): the amendment is resumed as applied", async () => {
   const { eng } = await setup({
     approved: PLAN1_FIXED,
     patch: {
       tasks: [task({ phase: 'control', baseSha: 'sha-head', implementer: 'ct-1-t1' })],
-      gates: [gate({ id: 'g1', kind: 'amendement', status: 'approved', hash: proposalHash(PLAN1_FIXED) })],
+      gates: [gate({ id: 'g1', kind: 'amendment', status: 'approved', hash: proposalHash(PLAN1_FIXED) })],
     },
   })
   await mkdir(taskDir(), { recursive: true })
@@ -978,50 +1042,50 @@ test("M2 : arrêt du moteur après la suppression de la proposition (ancien ordr
   const s = await loadState('T-1')
   expect(s.appliedAmendments).toEqual(['g1'])
   expect(s.tasks[0]).toMatchObject({ phase: 'implement' })
-  expect(await readFile(join(taskDir(), 'brief.md'), 'utf8')).toContain('## Reprise')
-  expect(s.log.some((l) => l.msg.includes('non appliqué'))).toBe(false)
+  expect(await readFile(join(taskDir(), 'brief.md'), 'utf8')).toContain('## Resume')
+  expect(s.log.some((l) => l.msg.includes('not applied'))).toBe(false)
 })
 
-test("M2 : arrêt du moteur avant l'enregistrement de l'état (brief déjà réécrit) : la reprise refait l'application", async () => {
+test("M2: engine stop before state was saved (brief already rewritten): resume reapplies it", async () => {
   const { eng } = await setup({
     proposed: PLAN1_FIXED,
     approved: PLAN1_FIXED,
     patch: {
       tasks: [task({ phase: 'control', baseSha: 'sha-head', implementer: 'ct-1-t1', stopGate: 'g2' })],
-      gates: [gate({ id: 'g1', kind: 'amendement', status: 'approved', hash: proposalHash(PLAN1_FIXED) }), gate({ id: 'g2', kind: 'agent-arret', status: 'pending' })],
+      gates: [gate({ id: 'g1', kind: 'amendment', status: 'approved', hash: proposalHash(PLAN1_FIXED) }), gate({ id: 'g2', kind: 'agent-stopped', status: 'pending' })],
     },
   })
   await mkdir(taskDir(), { recursive: true })
-  // Brief réécrit par la tentative interrompue.
-  await writeFile(join(taskDir(), 'brief.md'), `# Brief de tâche\n\n## Reprise\n\n<!-- amendement g1 -->\n\n### Tâche 1 : Modèle\n\n\n\n**Test :** \`pnpm test a\`\n\nfaire a, en gardant le placeholder imposé par le composant de base\n`)
+  // Brief rewritten by the interrupted attempt.
+  await writeFile(join(taskDir(), 'brief.md'), `# Task brief\n\n## Resume\n\n<!-- amendment g1 -->\n\n### Task 1: Model\n\n\n\n**Test:** \`pnpm test a\`\n\ndo a, keeping the placeholder required by the base component\n`)
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.appliedAmendments).toEqual(['g1'])
   expect(s.tasks[0]).toMatchObject({ phase: 'implement' })
-  expect(s.gates[1]!.status).toBe('caduque')
+  expect(s.gates[1]!.status).toBe('obsolete')
   await expect(readFile(join(missionDir('T-1'), 'plan.proposed.md'))).rejects.toThrow()
 })
 
-test("M4 : un amendement qui retire la tâche en cours est écarté et l'orchestrateur prévenu", async () => {
+test("M4: an amendment that removes the in-progress task is rejected and the orchestrator is told", async () => {
   const { fx, eng } = await setup({
     proposed: PLAN1,
     plan: PLAN2,
     patch: {
       tasks: [task({ phase: 'done' }), task({ n: 2, title: 'Export', testCommand: 'pnpm test b', phase: 'control', baseSha: 'b0' })],
-      gates: [gate({ id: 'g1', kind: 'amendement', status: 'approved', hash: proposalHash(PLAN1) })],
+      gates: [gate({ id: 'g1', kind: 'amendment', status: 'approved', hash: proposalHash(PLAN1) })],
     },
   })
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.appliedAmendments).toEqual(['g1'])
   expect(s.tasks).toHaveLength(2)
-  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain('la tâche 2 en cours a disparu')
+  expect(String(fx.callsOf('herdr.agentPrompt').at(-1)![1])).toContain('in-progress task 2 has disappeared')
 })
 
 const msgs = (s: MissionState) => s.log.map((l) => l.msg)
 
-test('une tâche validée arrête son implémenteur et son relecteur, panneaux gardés avec ✓', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+test('a validated task stops its implementer and its reviewer, panes kept with ✓', async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   const s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
   const impl = fx.herdr.pane(s.herdr.panes['ct-1-t1']!)
   const rev = fx.herdr.pane(s.herdr.panes['rt-1-t1']!)
@@ -1030,35 +1094,35 @@ test('une tâche validée arrête son implémenteur et son relecteur, panneaux g
   expect(impl.label).toBe('T1 · grok-4.7-medium ✓')
   expect(rev.label).toBe('T1 · claude-opus-5-5 ✓')
   expect(await fx.herdr.agentGet('ct-1-t1')).toBeNull()
-  expect(msgs(s)).toEqual(expect.arrayContaining(['tâche 1 : agent ct-1-t1 arrêté', 'tâche 1 : agent rt-1-t1 arrêté']))
+  expect(msgs(s)).toEqual(expect.arrayContaining(['task 1: agent ct-1-t1 stopped', 'task 1: agent rt-1-t1 stopped']))
 })
 
-test("pendant un tour de correction, l'implémenteur et le relecteur restent vivants", async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ']) } } })
+test("during a correction round the implementer and the reviewer stay alive", async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: CORRECTIONS', 'VERDICT: APPROVED']) } } })
   let s = await until(eng, (x) => x.tasks[0]!.phase === 'fix')
   expect(fx.herdr.pane(s.herdr.panes['ct-1-t1']!).busy).toBe(true)
   expect(fx.herdr.pane(s.herdr.panes['rt-1-t1']!).busy).toBe(true)
-  expect(msgs(s).filter((m) => /agent .+ arrêté/.test(m))).toEqual([])
+  expect(msgs(s).filter((m) => /agent .+ stopped/.test(m))).toEqual([])
   s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
   expect(fx.herdr.pane(s.herdr.panes['ct-1-t1']!).busy).toBe(false)
   expect(fx.herdr.pane(s.herdr.panes['rt-1-t1']!).busy).toBe(false)
-  expect(msgs(s)).toEqual(expect.arrayContaining(['tâche 1 : agent ct-1-t1 arrêté', 'tâche 1 : agent rt-1-t1 arrêté']))
+  expect(msgs(s)).toEqual(expect.arrayContaining(['task 1: agent ct-1-t1 stopped', 'task 1: agent rt-1-t1 stopped']))
 })
 
-test('un arrêt impossible est journalisé, la tâche passe quand même en done', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROUVÉ']) } } })
+test('a stop that fails is logged and the task still moves to done', async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: scriptedAsk(['VERDICT: APPROVED']) } } })
   const born = await until(eng, (x) => x.herdr.panes['ct-1-t1'] !== undefined)
   fx.herdr.pane(born.herdr.panes['ct-1-t1']!).deaf = true
   const s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
-  expect(s.step).not.toBe('bloquée')
-  expect(msgs(s).some((m) => m.startsWith('tâche 1 : agent ct-1-t1 non arrêté ('))).toBe(true)
+  expect(s.step).not.toBe('blocked')
+  expect(msgs(s).some((m) => m.startsWith('task 1: agent ct-1-t1 not stopped ('))).toBe(true)
 })
 
-test('stopAgent sur un agent sans panneau enregistré ne fait rien', async () => {
+test('stopAgent on an agent with no recorded pane does nothing', async () => {
   const { fx } = await setup()
   const s = await loadState('T-1')
   const logLen = s.log.length
-  await stopAgent(s, fx, 'tâche 9', 'inconnu')
+  await stopAgent(s, fx, 'task 9', 'unknown')
   expect(fx.callsOf('herdr.paneSendKeys')).toEqual([])
   expect(s.log).toHaveLength(logLen)
 })

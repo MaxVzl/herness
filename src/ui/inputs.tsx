@@ -78,7 +78,7 @@ export function NoteInput({ initial = '', onSubmit, onCancel, editor = (t) => op
         .then((out) => {
           setRawMode(true)
           editing.current = false
-          if (out === null) setMessage('éditeur indisponible')
+          if (out === null) setMessage('editor unavailable')
           else {
             setMessage(undefined)
             setLines(out.replace(/\n$/, '').split('\n'))
@@ -96,7 +96,7 @@ export function NoteInput({ initial = '', onSubmit, onCancel, editor = (t) => op
       {lines.map((l, i) => (
         <Text key={i}>{i === lines.length - 1 ? `${l}▏` : l}</Text>
       ))}
-      <Text dimColor>ctrl+s valider · ctrl+e éditeur · Échap annuler</Text>
+      <Text dimColor>ctrl+s submit · ctrl+e editor · Esc cancel</Text>
       {message ? <Text color="yellow">{message}</Text> : null}
     </Box>
   )
@@ -110,12 +110,12 @@ export function Confirm({ question, onYes, onNo }: { question: string; onYes: ()
   return (
     <Box flexDirection="column">
       <Text color="yellow">{question}</Text>
-      <Text dimColor>Entrée oui · Échap non</Text>
+      <Text dimColor>Enter yes · Esc no</Text>
     </Box>
   )
 }
 
-/** Champ d'une ligne : Entrée valide, Échap annule ; un collage multi-ligne est mis sur une ligne. */
+/** One-line field: Enter submits, Esc cancels; a multiline paste is flattened onto one line. */
 export function LineInput({ label, onSubmit, onCancel }: {
   label: string
   onSubmit: (text: string) => void
@@ -132,7 +132,7 @@ export function LineInput({ label, onSubmit, onCancel }: {
   return (
     <Box flexDirection="column">
       <Text color="yellow">{`${label} ${text}▏`}</Text>
-      <Text dimColor>Entrée valider · Échap annuler</Text>
+      <Text dimColor>Enter submit · Esc cancel</Text>
     </Box>
   )
 }

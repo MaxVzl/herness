@@ -3,11 +3,11 @@ import type { HerdrApi, HerdrPane, HerdrTab, HerdrWorkspace, PaneLayoutEntry, Pa
 interface FakePane extends HerdrPane {
   rect: { x: number; y: number; width: number; height: number };
   busy: boolean;
-  /** Session qui ignore ctrl+c (Claude Code quand les deux appuis sont trop espacés). */
+  /** Session that ignores ctrl+c (Claude Code when the two presses are too far apart). */
   deaf?: boolean;
 }
 
-/** Doublure de Herdr : un seul espace, des onglets et des panneaux avec leurs `rect`. */
+/** Herdr fake: one workspace, tabs and panes with their `rect`. */
 export class FakeHerdr implements HerdrApi {
   calls: string[] = [];
   workspaces: HerdrWorkspace[] = [];
@@ -19,7 +19,7 @@ export class FakeHerdr implements HerdrApi {
     return ++this.n;
   }
 
-  /** Prépare un espace avec un onglet (au libellé donné) et un panneau racine de 200x60. */
+  /** Prepares a workspace with one tab (the given label) and a 200x60 root pane. */
   seedWorkspace(label: string, firstTabLabel = 'shell'): { ws: string; tab: string; pane: string } {
     const ws = `w${this.nextId()}`;
     this.workspaces.push({ workspaceId: ws, label });
@@ -44,7 +44,7 @@ export class FakeHerdr implements HerdrApi {
 
   pane(id: string): FakePane {
     const p = this.panes.find((x) => x.paneId === id);
-    if (!p) throw new Error(`panneau ${id} inconnu`);
+    if (!p) throw new Error(`unknown pane ${id}`);
     return p;
   }
 

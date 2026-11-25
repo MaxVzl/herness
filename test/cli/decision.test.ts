@@ -22,19 +22,18 @@ const run = (...args: string[]) =>
     reject: false, stdin: 'ignore', env: { HERNESS_HOME: home },
   })
 
-test('refuser sans --note est rejeté par la CLI', async () => {
-  const r = await run('refuser', 'X')
+test('reject without --note is rejected by the CLI', async () => {
+  const r = await run('reject', 'X')
   expect(r.exitCode).not.toBe(0)
-  expect(r.stderr).toMatch(/--note/)
-  expect(r.stderr).toMatch(/option requise/)
+  expect(r.stderr).toContain('herness: required option: --note <text> (reason for rejecting)')
 })
 
-test('valider hors terminal interactif échoue et ne poste rien', async () => {
+test('approve outside an interactive terminal fails and posts nothing', async () => {
   const s = newState({ id: 'T-1', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/r' })
   openGate(s, 'spec', 'Spec')
   await saveState(s)
-  const r = await run('valider', 'T-1')
+  const r = await run('approve', 'T-1')
   expect(r.exitCode).not.toBe(0)
-  expect(r.stderr).toContain('validation réservée à un terminal interactif')
+  expect(r.stderr).toContain('approval requires an interactive terminal')
   expect(await drainInbox('T-1')).toEqual([])
 })

@@ -40,18 +40,18 @@ const errMsg = (err: unknown): string => (err instanceof Error ? err.message : S
 const globalDir = (s: MissionState): string => join(missionDir(s.id), 'global')
 const preflightDir = (s: MissionState): string => join(missionDir(s.id), 'preflight')
 const logsDir = (s: MissionState): string => join(missionDir(s.id), 'logs')
-/** Relecteur global : relit la branche, puis chaque correction de la revue globale et du preflight. */
+/** Global reviewer: re-reads the branch, then each fix from the global review and the preflight. */
 const globalReviewer = (s: MissionState): string => globalReviewerName(s.id, s.loopGeneration)
 
-const constraints = (s: MissionState, cfg: ProjectConfig): string => `Celles de la spec (\`${specPath(s)}\`), et ces interdits :\n${forbidden(cfg)}`
+const constraints = (s: MissionState, cfg: ProjectConfig): string => `Those of the spec (\`${specPath(s)}\`), and these forbidden items:\n${forbidden(cfg)}`
 
 async function firstLine(path: string): Promise<string> {
   return (await readFile(path, 'utf8').catch(() => '')).replace(/^﻿/, '').split('\n')[0]!.trim()
 }
 
-const VERDICTS: Record<string, 'approved' | 'changes'> = { 'VERDICT: APPROUVÉ': 'approved', 'VERDICT: CORRECTIONS': 'changes' }
-const causeOf = (line: string): 'BRANCHE' | 'MAIN' | 'ENVIRONNEMENT' | undefined =>
-  /^CAUSE: (BRANCHE|MAIN|ENVIRONNEMENT)$/.exec(line)?.[1] as 'BRANCHE' | 'MAIN' | 'ENVIRONNEMENT' | undefined
+const VERDICTS: Record<string, 'approved' | 'changes'> = { 'VERDICT: APPROVED': 'approved', 'VERDICT: CORRECTIONS': 'changes' }
+const causeOf = (line: string): 'BRANCH' | 'MAIN' | 'ENVIRONMENT' | undefined =>
+  /^CAUSE: (BRANCH|MAIN|ENVIRONMENT)$/.exec(line)?.[1] as 'BRANCH' | 'MAIN' | 'ENVIRONMENT' | undefined
 
 async function markPane(s: MissionState, e: Effects, name: string): Promise<void> {
   const pane = s.herdr.panes[name]
@@ -59,18 +59,18 @@ async function markPane(s: MissionState, e: Effects, name: string): Promise<void
   try {
     await markDone(e.herdr, pane, '✓')
   } catch (err) {
-    log(s, e, `marque ✓ non posée sur ${pane} : ${errMsg(err)}`)
+    log(s, e, `could not mark ✓ on ${pane}: ${errMsg(err)}`)
   }
-  await stopAgent(s, e, 'fin de mission', name)
+  await stopAgent(s, e, 'end of mission', name)
 }
 
 type Agent = { site: AgentSite; name: string; role: Role; model: string }
 
 /**
- * Une consigne à un agent, reprise comprise (mêmes règles que la boucle des tâches). Une consigne en cours
- * (`h.pendingAsk`) n'est jamais renvoyée à un agent vivant : on attend son issue. Agent disparu : si
- * `delivered` constate son travail, il est pris tel quel ; sinon l'agent est relancé et la même consigne renvoyée.
- * Rend la consigne traitée, ou le résultat de l'étape (attente d'une porte, blocage).
+ * One brief to an agent, including resume (same rules as the task loop). A brief in progress
+ * (`h.pendingAsk`) is never resent to a living agent: its outcome is awaited. If the agent is gone and
+ * `delivered` finds its work, that work is taken as is; otherwise the agent is restarted and the same brief is resent.
+ * Returns the handled brief, or the step result (waiting on a gate, blocked).
  */
 async function converse(
   s: MissionState,
@@ -85,18 +85,18 @@ async function converse(
     const g = s.gates.find((x) => x.id === h.blockedGate)
     if (g?.status === 'pending') return 'wait'
     delete h.blockedGate
-    if (g?.status === 'refused') return block(s, e, `${what} : agent bloqué, porte ${g.id} refusée${g.note ? ` (${g.note})` : ''}`)
-    log(s, e, `${what} : agent débloqué, attente de sa fin sans renvoi`)
+    if (g?.status === 'refused') return block(s, e, `${what}: blocked agent, gate ${g.id} refused${g.note ? ` (${g.note})` : ''}`)
+    log(s, e, `${what}: agent unblocked, waiting for it to finish without resending`)
   }
   let pa = h.pendingAsk
   if (pa) {
     if (await e.herdr.agentGet(pa.agent)) {
-      log(s, e, `${what} : reprise, attente de ${pa.agent} sans renvoi de ${pa.file}`)
+      log(s, e, `${what}: resume, waiting for ${pa.agent} without resending ${pa.file}`)
       const r = await awaitAgent(s, e, h, what, a.role, pa)
       return r === 'done' ? pa : r
     }
     delete h.pendingAsk
-    log(s, e, `${what} : reprise, ${pa.agent} disparu pendant ${pa.file}`)
+    log(s, e, `${what}: resume, ${pa.agent} gone during ${pa.file}`)
     if (await delivered(pa)) return pa
   } else {
     pa = await make()
@@ -112,7 +112,7 @@ const implementerDelivered =
   async (pa: PendingAsk): Promise<boolean> =>
     !!pa.fromSha && (await e.git.headSha(s.worktree as string)) !== pa.fromSha
 
-/** Fichier de correction d'un implémenteur neuf (revue globale ou preflight) : écrit une fois par tour. */
+/** Fix file for a fresh implementer (global review or preflight): written once per round. */
 async function writeFix(
   s: MissionState,
   cfg: ProjectConfig,
@@ -123,17 +123,17 @@ async function writeFix(
   failure: string,
   stopDecision?: string,
 ): Promise<void> {
-  const reportPath = join(dir, 'rapport.md')
+  const reportPath = join(dir, 'report.md')
   const head =
-    `Correction demandée par ${origin}, sur toute la branche. Spec : \`${specPath(s)}\`, plan : \`${planPath(s)}\`. ` +
-    `Il n'y a pas de brief de tâche : ton périmètre est ce qui est décrit ci-dessous.\n` +
-    `Ajoute ton compte rendu à la fin de \`${reportPath}\`, sans effacer les comptes rendus précédents.\n\n`
-  const body = await render('correction', { findings, failure, forbidden: forbidden(cfg), reportPath })
+    `Correction requested by ${origin}, for the whole branch. Spec: \`${specPath(s)}\`, plan: \`${planPath(s)}\`. ` +
+    `There is no task brief: your scope is what is described below.\n` +
+    `Append your report to the end of \`${reportPath}\`, without erasing earlier reports.\n\n`
+  const body = await render('correction', { findings, failure, forbidden: forbidden(cfg), reportPath, language: cfg.language })
   await mkdir(dir, { recursive: true })
   await writeFile(file, head + body + (stopDecision ? stopSection(stopDecision) : '') + consumeArbitrations(s))
 }
 
-/** Re-revue par `rg<id>` du diff depuis sa dernière tête relue. */
+/** Re-review by `rg<id>` of the diff since its last reviewed head. */
 async function rereviewAsk(s: MissionState, e: Effects, cfg: ProjectConfig, dir: string, round: number, findings: string): Promise<PendingAsk> {
   const wt = s.worktree as string
   const base = s.loops.globalReview.reviewedSha ?? (await e.git.mergeBase(wt, mainRef(cfg)))
@@ -145,8 +145,8 @@ async function rereviewAsk(s: MissionState, e: Effects, cfg: ProjectConfig, dir:
   await writeFile(
     file,
     await render('rereview', {
-      briefPath: join(globalDir(s), 'consigne-revue.md'),
-      reportPath: join(dir, 'rapport.md'),
+      briefPath: join(globalDir(s), 'review-brief.md'),
+      reportPath: join(dir, 'report.md'),
       constraints: constraints(s, cfg),
       baseSha: base,
       headSha: head,
@@ -169,21 +169,21 @@ const fixerAgent = (cfg: ProjectConfig, what: string, name: string, pane: string
   return { site: { what, pane }, name, role: 'implementer', model }
 }
 
-// ---------------------------------------------------------------- revue globale (étape 8)
+// ---------------------------------------------------------------- global review (step 8)
 
-const GR = 'revue globale'
+const GR = 'global review'
 
 /**
- * Étape 8 : relecteur neuf `rg<id>` sur `merge-base(origin/main)..HEAD` ; corrections → implémenteur neuf
- * `cg<id>-<r>` → contrôle → tests des tâches touchées → re-revue par `rg<id>`. Approuvée → `preflight`.
+ * Step 8: fresh reviewer `rg<id>` on `merge-base(origin/main)..HEAD`; corrections → fresh implementer
+ * `cg<id>-<r>` → control → tests of the touched tasks → re-review by `rg<id>`. Approved → `preflight`.
  */
 export async function stepGlobalReview(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   const G = s.loops.globalReview
-  // Un amendement attend la fin d'une boucle de correction en cours (R14).
+  // An amendment waits for the end of a correction loop already in progress (R14).
   const busy = G.round > 0 || G.pendingAsk !== undefined || G.blockedGate !== undefined
   if (!busy && (await applyPendingAmendment(s, e, cfg))) return 'continue'
   if (!s.worktree || !s.herdr.tabs['agents'] || !s.herdr.tabs['checks']) {
-    return block(s, e, 'revue globale impossible : worktree ou onglets agents/checks inconnus')
+    return block(s, e, 'global review impossible: worktree or agents/checks tabs unknown')
   }
   if (G.stopGate) {
     const r = await settleStop(s, e, G, GR)
@@ -199,10 +199,10 @@ export async function stepGlobalReview(s: MissionState, e: Effects, cfg: Project
     case 'control': {
       const r = await e.git.controlCommits(s.worktree, G.fixBase ?? '', cfg.forbiddenPaths, mainRef(cfg))
       if (!r.ok && r.code === 'no-commit') {
-        const stop = await stopWithoutCommit(s, e, G, GR, join(globalDir(s), 'rapport.md'))
+        const stop = await stopWithoutCommit(s, e, G, GR, join(globalDir(s), 'report.md'))
         if (stop) return stop
       }
-      if (!r.ok) return block(s, e, `${GR} (tour ${G.round}) : contrôle du commit en échec\n${r.reason}`)
+      if (!r.ok) return block(s, e, `${GR} (round ${G.round}): commit check failed\n${r.reason}`)
       G.phase = 'test'
       return 'continue'
     }
@@ -218,13 +218,13 @@ async function globalReview(s: MissionState, e: Effects, cfg: ProjectConfig): Pr
   const first = async (): Promise<PendingAsk> => {
     await mkdir(dir, { recursive: true })
     const base = await e.git.mergeBase(wt, mainRef(cfg))
-    const diffPath = join(dir, 'branche.diff')
+    const diffPath = join(dir, 'branch.diff')
     const head = (await e.git.diffPackage(wt, base, diffPath)).head
-    const out = join(dir, 'revue.md')
-    const file = join(dir, 'consigne-revue.md')
+    const out = join(dir, 'review.md')
+    const file = join(dir, 'review-brief.md')
     const vars = { baseSha: base, headSha: head, diffPath, specPath: specPath(s), planPath: planPath(s), constraints: constraints(s, cfg), outPath: out }
     await writeFile(file, await render('global-review', vars))
-    log(s, e, `${GR} : branche ${base}..${head}`)
+    log(s, e, `${GR}: branch ${base}..${head}`)
     return { agent: globalReviewer(s), file, out, head }
   }
   const make = G.phase === 'rereview' ? async () => rereviewAsk(s, e, cfg, dir, G.round, await findingsOf(G.lastReview)) : first
@@ -233,11 +233,11 @@ async function globalReview(s: MissionState, e: Effects, cfg: ProjectConfig): Pr
   const out = pa.out as string
   const line = await firstLine(out)
   const v = VERDICTS[line]
-  if (!v) return block(s, e, `${GR} : verdict illisible dans ${out} (« ${line} »)`)
+  if (!v) return block(s, e, `${GR}: unreadable verdict in ${out} ("${line}")`)
   G.reviewedSha = pa.head ?? (await e.git.headSha(wt))
   G.lastReview = out
   if (v === 'approved') {
-    log(s, e, `${GR} approuvée${G.round > 0 ? ` au tour ${G.round}` : ''}`)
+    log(s, e, `${GR} approved${G.round > 0 ? ` at round ${G.round}` : ''}`)
     s.loops.globalReview = { round: 0, reviewedSha: G.reviewedSha, lastReview: out }
     s.loops.preflight = freshLoops().preflight
     return goto(s, e, 'preflight')
@@ -247,37 +247,37 @@ async function globalReview(s: MissionState, e: Effects, cfg: ProjectConfig): Pr
   return r
 }
 
-/** Nouveau tour de la revue globale : remarques de la dernière revue, ou sortie rouge des tests (`failure`). */
+/** New global-review round: findings from the last review, or the red test output (`failure`). */
 async function nextGlobalRound(s: MissionState, e: Effects, failure?: string): Promise<StepResult> {
   const G = s.loops.globalReview
   const d = nextLoopRound(G.round)
   G.round = d.round
-  if (d.blocked) return block(s, e, `${GR} : ${d.blocked}${failure ? `\n${failure}` : ''}`)
+  if (d.blocked) return block(s, e, `${GR}: ${d.blocked}${failure ? `\n${failure}` : ''}`)
   G.fixer = d.fixer === 'strong' ? 'strong' : 'new'
   if (failure) G.lastFailure = failure
   else delete G.lastFailure
   delete G.fixBase
   G.phase = 'fix'
-  log(s, e, `${GR} : tour de correction ${G.round} (${G.fixer}), ${failure ? 'tests rouges' : 'remarques de revue'}`)
+  log(s, e, `${GR}: correction round ${G.round} (${G.fixer}), ${failure ? 'red tests' : 'review findings'}`)
   return 'continue'
 }
 
 async function globalFix(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   const G = s.loops.globalReview
   const dir = globalDir(s)
-  const file = join(dir, `correctifs-${G.round}.md`)
+  const file = join(dir, `fixes-${G.round}.md`)
   if (!(await exists(file))) {
     if (arbitrationPending(s)) return 'wait'
     const failure = G.lastFailure ?? ''
-    await writeFix(s, cfg, dir, file, 'la revue globale', failure ? '' : await findingsOf(G.lastReview), failure, G.stopDecision)
+    await writeFix(s, cfg, dir, file, 'the global review', failure ? '' : await findingsOf(G.lastReview), failure, G.stopDecision)
   }
   delete G.stopDecision
   G.fixBase ??= await e.git.headSha(s.worktree as string)
   const name = globalFixerName(s.id, s.loopGeneration, G.round)
   const fixBase = G.fixBase
   const make = async (): Promise<PendingAsk> => {
-    G.reportSize = await fileSize(join(dir, 'rapport.md'))
-    return { agent: name, file, fromSha: fixBase, report: { path: join(dir, 'rapport.md'), size: G.reportSize } }
+    G.reportSize = await fileSize(join(dir, 'report.md'))
+    return { agent: name, file, fromSha: fixBase, report: { path: join(dir, 'report.md'), size: G.reportSize } }
   }
   const pa = await converse(s, e, G, fixerAgent(cfg, GR, name, `CG${G.round}`, G.fixer), make, implementerDelivered(s, e))
   if (typeof pa === 'string') return pa
@@ -287,8 +287,8 @@ async function globalFix(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
 }
 
 /**
- * Tâches dont les fichiers recoupent ceux de la correction ; aucune → toutes. Une commande n'est lancée qu'une fois.
- * Les commits de main entrés par un rebase du correcteur ne comptent pas dans la correction.
+ * Tasks whose files overlap the fix; none → all of them. Each command is run only once.
+ * Commits from main brought in by the fixer's rebase do not count as part of the fix.
  */
 async function touchedTasks(s: MissionState, e: Effects, cfg: ProjectConfig, fixBase: string): Promise<MissionState['tasks']> {
   const wt = s.worktree as string
@@ -310,23 +310,23 @@ async function globalTests(s: MissionState, e: Effects, cfg: ProjectConfig): Pro
   for (const t of await touchedTasks(s, e, cfg, G.fixBase ?? (await e.git.headSha(wt)))) {
     const r = await e.runInPane(e.herdr, tab, wt, `RG · tests T${t.n}`, ['bash', '-c', t.testCommand], logsDir(s))
     if (r.exitCode !== 0) {
-      return nextGlobalRound(s, e, `Tests de la tâche ${t.n}\nCommande : ${t.testCommand}\nCode de sortie : ${r.exitCode}\nJournal complet : ${r.logPath}\n\n${r.tail}`)
+      return nextGlobalRound(s, e, `Tests for task ${t.n}\nCommand: ${t.testCommand}\nExit code: ${r.exitCode}\nFull log: ${r.logPath}\n\n${r.tail}`)
     }
   }
   G.phase = 'rereview'
   return 'continue'
 }
 
-// ---------------------------------------------------------------- preflight (étape 9)
+// ---------------------------------------------------------------- preflight (step 9)
 
 const PF = 'preflight'
 
 type FalsePositive = ProjectConfig['falsePositives'][number]
 
 /**
- * Premier faux positif connu qui s'applique : `label` égal (ou absent), `pattern` trouvé sur une ligne du journal,
- * pas déjà appliqué à ce check (`used`). Une règle `ignore` ne s'applique que si aucun fichier touché par la branche
- * n'apparaît dans le journal (R5).
+ * First known false positive that applies: `label` equal (or absent), `pattern` found on a log line,
+ * not already applied to this check (`used`). An `ignore` rule applies only when no file touched by the branch
+ * appears in the log (R5).
  */
 export function findFalsePositive(
   result: { label: string; log: string },
@@ -358,7 +358,7 @@ export function triage(
   return fp.rule.action
 }
 
-/** Le passage de preflight reprend du premier check (après une correction, ou pour une reprise après blocage). */
+/** The preflight run restarts from the first check (after a fix, or for a resume after a block). */
 function restartRun(P: PreflightState): void {
   P.results = []
   P.used = []
@@ -369,8 +369,8 @@ function restartRun(P: PreflightState): void {
 }
 
 /**
- * Étape 9. Garantie : toute sortie de l'étape (vers `pr`, `bloquée`, `tasks` après un amendement, ou exception)
- * arrête la base de test de la mission. Pendant une boucle de correction, la base reste en place d'un tour à l'autre.
+ * Step 9. Guarantee: every exit from the step (to `pr`, `blocked`, `tasks` after an amendment, or an exception)
+ * stops the mission test database. During a correction loop, the database stays up from one round to the next.
  */
 export async function stepPreflight(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   let failed = false
@@ -381,7 +381,7 @@ export async function stepPreflight(s: MissionState, e: Effects, cfg: ProjectCon
     throw err
   } finally {
     if (failed) {
-      // Erreurs d'arrêt rapportées par `Engine.fail`, qui réessaie sur l'état enregistré.
+      // Stop errors are reported by `Engine.fail`, which retries on the saved state.
       await testDbDown(s, e, cfg)
       await proofDbDown(s, e, cfg)
     } else if (s.step !== 'preflight') {
@@ -395,13 +395,13 @@ async function preflight(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
   const P = s.loops.preflight
   const busy = P.round > 0 || P.phase !== undefined || P.pendingAsk !== undefined || P.blockedGate !== undefined
   if (!busy && pendingAmendment(s)) {
-    // La base est supprimée AVANT d'appliquer l'amendement : en cas d'échec, la mission reste au preflight (R14).
+    // The database is removed BEFORE the amendment is applied: on failure, the mission stays at preflight (R14).
     const err = await testDbDown(s, e, cfg)
     if (err) return blockDbNotDown(s, e, s.id, err)
     if (await applyPendingAmendment(s, e, cfg)) return 'continue'
   }
   if (!s.worktree || !s.herdr.tabs['agents'] || !s.herdr.tabs['checks'] || !s.herdr.tabs['process']) {
-    return block(s, e, 'preflight impossible : worktree ou onglets agents/checks/process inconnus')
+    return block(s, e, 'preflight impossible: worktree or agents/checks/process tabs unknown')
   }
   if (P.stopGate) {
     const r = await settleStop(s, e, P, PF)
@@ -422,10 +422,10 @@ async function preflight(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
     case 'control': {
       const r = await e.git.controlCommits(s.worktree, P.fixBase ?? '', cfg.forbiddenPaths, mainRef(cfg))
       if (!r.ok && r.code === 'no-commit') {
-        const stop = await stopWithoutCommit(s, e, P, PF, join(preflightDir(s), 'rapport.md'))
+        const stop = await stopWithoutCommit(s, e, P, PF, join(preflightDir(s), 'report.md'))
         if (stop) return stop
       }
-      if (!r.ok) return block(s, e, `${PF} (tour ${P.round}) : contrôle du commit en échec\n${r.reason}`)
+      if (!r.ok) return block(s, e, `${PF} (round ${P.round}): commit check failed\n${r.reason}`)
       P.phase = 'rereview'
       return 'continue'
     }
@@ -439,12 +439,12 @@ async function nextCheck(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
   const wt = s.worktree as string
   const vars = { id: s.id, worktree: wt }
   if (cfg.testDb && !s.testDbUp) {
-    // Enregistré avant le lancement : une base à moitié créée est quand même supprimée après un arrêt du moteur.
+    // Saved before launch: a half-created database is still removed after an engine stop.
     s.testDbUp = true
     await saveState(s)
-    const r = await e.runInPane(e.herdr, s.herdr.tabs['process'] as string, wt, 'base de test', fill(cfg.testDb.up, vars), logsDir(s))
-    if (r.exitCode !== 0) return block(s, e, `${PF} : base de test non créée (code ${r.exitCode}), journal : ${r.logPath}\n${r.tail}`)
-    log(s, e, `${PF} : base de test ${s.id} créée`)
+    const r = await e.runInPane(e.herdr, s.herdr.tabs['process'] as string, wt, 'test database', fill(cfg.testDb.up, vars), logsDir(s))
+    if (r.exitCode !== 0) return block(s, e, `${PF}: test database not created (code ${r.exitCode}), log: ${r.logPath}\n${r.tail}`)
+    log(s, e, `${PF}: test database ${s.id} created`)
     return 'continue'
   }
   const check = cfg.preflight[P.results.length]
@@ -454,11 +454,11 @@ async function nextCheck(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
     await markPane(s, e, globalReviewer(s))
     P.validatedSha = await e.git.headSha(wt)
     const red = P.results.filter((r) => r.exitCode !== 0).map((r) => r.label)
-    log(s, e, `${PF} terminé : ${P.results.length} checks${red.length ? `, rouges acceptés : ${red.join(', ')}` : ', tout vert'}`)
+    log(s, e, `${PF} finished: ${P.results.length} checks${red.length ? `, accepted red: ${red.join(', ')}` : ', all green'}`)
     return goto(s, e, 'pr')
   }
   if (!P.fetched) {
-    // Le build filtre sur `...[origin/main]` (R6) : origin/main à jour avant le premier check du passage.
+    // The build filters on `...[origin/main]` (R6): origin/main is up to date before the first check of the run.
     await e.git.fetchMain(wt, cfg.mainBranch)
     P.fetched = true
   }
@@ -470,9 +470,9 @@ async function nextCheck(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
     return 'continue'
   }
   if (P.acceptedRed.includes(check.label)) {
-    P.results.push({ ...result, note: `rouge aussi sur ${mainRef(cfg)}, PR validée malgré tout` })
+    P.results.push({ ...result, note: `also red on ${mainRef(cfg)}, PR accepted anyway` })
     P.used = []
-    log(s, e, `${PF} : ${check.label} rouge, déjà accepté (rouge aussi sur main)`)
+    log(s, e, `${PF}: ${check.label} red, already accepted (also red on main)`)
     return 'continue'
   }
   const text = await readFile(r.logPath, 'utf8').catch(() => r.tail)
@@ -480,28 +480,28 @@ async function nextCheck(s: MissionState, e: Effects, cfg: ProjectConfig): Promi
   const fp = findFalsePositive({ label: check.label, log: text }, cfg, touched, P.used)
   if (fp) {
     P.used.push(fp.index)
-    log(s, e, `${PF} : ${check.label} rouge, faux positif connu (${fp.rule.action}) : ${fp.rule.explanation}`)
+    log(s, e, `${PF}: ${check.label} red, known false positive (${fp.rule.action}): ${fp.rule.explanation}`)
     if (fp.rule.action === 'ignore') {
-      P.results.push({ ...result, note: `faux positif ignoré : ${fp.rule.explanation}` })
+      P.results.push({ ...result, note: `false positive ignored: ${fp.rule.explanation}` })
       P.used = []
     } else if (fp.rule.action === 'cleanup' && fp.rule.cleanup?.length) {
-      const c = await e.runInPane(e.herdr, s.herdr.tabs['process'] as string, wt, 'nettoyage', fill(fp.rule.cleanup, vars), logsDir(s))
-      log(s, e, `${PF} : nettoyage terminé (code ${c.exitCode}), ${check.label} relancé`)
+      const c = await e.runInPane(e.herdr, s.herdr.tabs['process'] as string, wt, 'cleanup', fill(fp.rule.cleanup, vars), logsDir(s))
+      log(s, e, `${PF}: cleanup finished (code ${c.exitCode}), ${check.label} rerun`)
     }
-    // retry et cleanup : le même check est relancé au prochain tour.
+    // retry and cleanup: the same check is rerun on the next turn.
     return 'continue'
   }
   P.failing = { ...result, tail: r.tail }
   P.diag += 1
   P.phase = 'diagnose'
-  log(s, e, `${PF} : ${check.label} rouge (code ${r.exitCode}), diagnostic ${P.diag}`)
+  log(s, e, `${PF}: ${check.label} red (code ${r.exitCode}), diagnosis ${P.diag}`)
   return 'continue'
 }
 
 async function diagnose(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   const P = s.loops.preflight
   const f = P.failing
-  if (!f) return block(s, e, `${PF} : diagnostic demandé sans check rouge connu`)
+  if (!f) return block(s, e, `${PF}: diagnosis requested with no known red check`)
   const dir = preflightDir(s)
   const n = P.diag
   const name = diagnosticName(s.id, s.loopGeneration, n)
@@ -513,7 +513,7 @@ async function diagnose(s: MissionState, e: Effects, cfg: ProjectConfig): Promis
     const body = await render('diagnostic', { logPath: f.logPath, outPath: out })
     await writeFile(
       file,
-      `${body}\n## Check concerné\n\n- Libellé : \`${f.label}\`\n- Commande : \`${command}\`\n- Code de sortie : ${f.exitCode}\n- Branche comparée à : \`${mainRef(cfg)}\`\n`,
+      `${body}\n## Check\n\n- Label: \`${f.label}\`\n- Command: \`${command}\`\n- Exit code: ${f.exitCode}\n- Branch compared with: \`${mainRef(cfg)}\`\n`,
     )
     return { agent: name, file, out }
   }
@@ -524,29 +524,29 @@ async function diagnose(s: MissionState, e: Effects, cfg: ProjectConfig): Promis
   const out = pa.out as string
   const line = await firstLine(out)
   const cause = causeOf(line)
-  if (!cause) return block(s, e, `${PF} : cause illisible dans ${out} (« ${line} »)`)
+  if (!cause) return block(s, e, `${PF}: unreadable cause in ${out} ("${line}")`)
   P.diagnosis = out
-  log(s, e, `${PF} : ${f.label} rouge, cause ${cause} (${out})`)
+  log(s, e, `${PF}: ${f.label} red, cause ${cause} (${out})`)
   switch (cause) {
-    case 'BRANCHE':
+    case 'BRANCH':
       return startFix(s, e, '', await diagnosisBrief(s, cfg, false))
     case 'MAIN':
       P.phase = 'proof'
       return 'continue'
-    case 'ENVIRONNEMENT':
+    case 'ENVIRONMENT':
       restartRun(P)
-      return block(s, e, `${PF} : check « ${f.label} » rouge, cause ENVIRONNEMENT (diagnostic : ${out})\n${await findingsOf(out)}`)
+      return block(s, e, `${PF}: check "${f.label}" red, cause ${cause} (diagnosis: ${out})\n${await findingsOf(out)}`)
   }
 }
 
-/** Le diagnostic devient le brief de l'implémenteur correcteur. */
+/** The diagnosis becomes the fixing implementer's brief. */
 async function diagnosisBrief(s: MissionState, cfg: ProjectConfig, greenOnMain: boolean): Promise<string> {
   const P = s.loops.preflight
   const f = P.failing!
   return (
-    `Check du preflight rouge : « ${f.label} » (code ${f.exitCode}), journal complet : ${f.logPath}\n` +
-    (greenOnMain ? `Le même check est vert sur ${mainRef(cfg)} : la cause est dans la branche.\n` : '') +
-    `\nDiagnostic (${P.diagnosis}) :\n\n${await findingsOf(P.diagnosis)}`
+    `Red preflight check: "${f.label}" (exit code ${f.exitCode}), full log: ${f.logPath}\n` +
+    (greenOnMain ? `The same check is green on ${mainRef(cfg)}: the cause is in the branch.\n` : '') +
+    `\nDiagnosis (${P.diagnosis}):\n\n${await findingsOf(P.diagnosis)}`
   )
 }
 
@@ -554,25 +554,25 @@ async function startFix(s: MissionState, e: Effects, findings: string, failure: 
   const P = s.loops.preflight
   const d = nextLoopRound(P.round)
   P.round = d.round
-  if (d.blocked) return block(s, e, `${PF} : ${d.blocked}${P.failing ? ` (check « ${P.failing.label} »)` : ''}`)
+  if (d.blocked) return block(s, e, `${PF}: ${d.blocked}${P.failing ? ` (check "${P.failing.label}")` : ''}`)
   P.fixer = d.fixer === 'strong' ? 'strong' : 'new'
   P.fixFindings = findings
   P.fixFailure = failure
   delete P.fixBase
   P.phase = 'fix'
-  log(s, e, `${PF} : tour de correction ${P.round} (${P.fixer})`)
+  log(s, e, `${PF}: correction round ${P.round} (${P.fixer})`)
   return 'continue'
 }
 
 /**
- * Preuve qu'un rouge existe déjà sur main : worktree détaché temporaire sur `origin/<main>`, préparation, base de
- * test `<id>-main`, puis la même commande. Worktree et base supprimés quoi qu'il arrive.
+ * Proof that a red already exists on main: a temporary detached worktree on `origin/<main>`, prepare, test
+ * database `<id>-main`, then the same command. Worktree and database are removed whatever happens.
  */
 async function proveOnMain(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   const P = s.loops.preflight
   const f = P.failing
   const check = f && cfg.preflight.find((c) => c.label === f.label)
-  if (!f || !check) return block(s, e, `${PF} : preuve sur main impossible, check rouge inconnu`)
+  if (!f || !check) return block(s, e, `${PF}: cannot prove on main, red check unknown`)
   const wt = s.worktree as string
   const tab = s.herdr.tabs['process'] as string
   const path = proofWorktree(s.id)
@@ -582,65 +582,65 @@ async function proveOnMain(s: MissionState, e: Effects, cfg: ProjectConfig): Pro
   const cleanup = async (): Promise<void> => {
     if (cfg.testDb && s.proofDbUp) {
       try {
-        const r = await e.runInPane(e.herdr, tab, wt, 'preuve main · arrêt de la base', fill(cfg.testDb.down, vars), logs)
+        const r = await e.runInPane(e.herdr, tab, wt, 'proof on main · stop database', fill(cfg.testDb.down, vars), logs)
         if (r.exitCode === 0) s.proofDbUp = false
-        else downError = `code ${r.exitCode}, journal : ${r.logPath}`
+        else downError = `code ${r.exitCode}, log: ${r.logPath}`
       } catch (err) {
         downError = errMsg(err)
       }
-      if (downError) log(s, e, `${PF} : arrêt de la base ${vars.id} en échec (${downError})`)
+      if (downError) log(s, e, `${PF}: failed to stop database ${vars.id} (${downError})`)
     }
     try {
       await e.git.worktreeRemove(s.repoPath, path)
     } catch (err) {
-      log(s, e, `${PF} : suppression du worktree ${path} en échec : ${errMsg(err)}`)
+      log(s, e, `${PF}: failed to remove worktree ${path}: ${errMsg(err)}`)
     }
   }
   if (s.proofDbUp || (await exists(path))) {
-    log(s, e, `${PF} : restes d'une preuve interrompue dans ${path}, nettoyage`)
+    log(s, e, `${PF}: leftovers from an interrupted proof in ${path}, cleanup`)
     await cleanup()
   }
   let failure: string | undefined
   let proof: Awaited<ReturnType<Effects['runInPane']>> | undefined
   try {
     await e.git.worktreeAddDetached(s.repoPath, path, mainRef(cfg))
-    const prep = await e.runInPane(e.herdr, tab, path, 'preuve main · préparation', fill(cfg.prepare, vars), logs)
-    if (prep.exitCode !== 0) failure = `préparation en échec (code ${prep.exitCode}), journal : ${prep.logPath}`
+    const prep = await e.runInPane(e.herdr, tab, path, 'proof on main · prepare', fill(cfg.prepare, vars), logs)
+    if (prep.exitCode !== 0) failure = `prepare failed (code ${prep.exitCode}), log: ${prep.logPath}`
     if (!failure && cfg.testDb) {
-      // Enregistré avant le lancement : `fermée` et `Engine.fail` la suppriment aussi.
+      // Saved before launch: `closed` and `Engine.fail` remove it too.
       s.proofDbUp = true
       await saveState(s)
-      const up = await e.runInPane(e.herdr, tab, path, 'preuve main · base de test', fill(cfg.testDb.up, vars), logs)
-      if (up.exitCode !== 0) failure = `base de test ${vars.id} non créée (code ${up.exitCode}), journal : ${up.logPath}`
+      const up = await e.runInPane(e.herdr, tab, path, 'proof on main · test database', fill(cfg.testDb.up, vars), logs)
+      if (up.exitCode !== 0) failure = `test database ${vars.id} not created (code ${up.exitCode}), log: ${up.logPath}`
     }
-    if (!failure) proof = await e.runInPane(e.herdr, tab, path, `preuve main · ${f.label}`, fill(check.command, vars), logs)
+    if (!failure) proof = await e.runInPane(e.herdr, tab, path, `proof on main · ${f.label}`, fill(check.command, vars), logs)
   } finally {
     await cleanup()
   }
-  if (s.proofDbUp) return blockDbNotDown(s, e, vars.id, downError ?? 'arrêt non confirmé')
+  if (s.proofDbUp) return blockDbNotDown(s, e, vars.id, downError ?? 'stop not confirmed')
   if (failure || !proof) {
     restartRun(P)
-    return block(s, e, `${PF} : preuve sur ${mainRef(cfg)} impossible pour « ${f.label} » : ${failure ?? 'aucun résultat'}`)
+    return block(s, e, `${PF}: cannot prove on ${mainRef(cfg)} for "${f.label}": ${failure ?? 'no result'}`)
   }
   if (proof.exitCode === 0) {
-    log(s, e, `${PF} : ${f.label} vert sur ${mainRef(cfg)}, rouge dû à la branche`)
+    log(s, e, `${PF}: ${f.label} green on ${mainRef(cfg)}, red caused by the branch`)
     return startFix(s, e, '', await diagnosisBrief(s, cfg, true))
   }
   const g = openGate(
     s,
-    'pr-malgre-main',
-    `Le check « ${f.label} » est rouge sur la branche et aussi sur ${mainRef(cfg)} (preuve : ${proof.logPath} ; branche : ${f.logPath}). ` +
-      `Ouvrir la PR malgré tout ?`,
+    'pr-despite-main',
+    `Check "${f.label}" is red on the branch and also on ${mainRef(cfg)} (proof: ${proof.logPath}; branch: ${f.logPath}). ` +
+      `Open the PR anyway?`,
     P.diagnosis,
   )
   P.gate = g.id
   P.phase = 'gate'
-  log(s, e, `${PF} : ${f.label} rouge aussi sur ${mainRef(cfg)}, porte ${g.id} (pr-malgre-main) ouverte`)
-  await notify(s, e, `Porte pr-malgre-main à valider : « ${f.label} » rouge aussi sur main`)
+  log(s, e, `${PF}: ${f.label} also red on ${mainRef(cfg)}, gate ${g.id} (pr-despite-main) open`)
+  await notify(s, e, `Gate pr-despite-main to approve: "${f.label}" is also red on main`)
   await informOrchestrator(
     s,
     e,
-    `Le check « ${f.label} » est rouge aussi sur ${mainRef(cfg)} (diagnostic : ${P.diagnosis}). Porte ${g.id} (pr-malgre-main) ouverte : l'utilisateur décide s'il ouvre la PR malgré tout (herness valider|refuser ${s.id} --porte ${g.id}).`,
+    `Check "${f.label}" is also red on ${mainRef(cfg)} (diagnosis: ${P.diagnosis}). Gate ${g.id} (pr-despite-main) is open: the user decides whether to open the PR anyway (herness approve|reject ${s.id} --gate ${g.id}).`,
   )
   return 'continue'
 }
@@ -649,40 +649,40 @@ async function mainGate(s: MissionState, e: Effects): Promise<StepResult> {
   const P = s.loops.preflight
   const f = P.failing
   const g = s.gates.find((x) => x.id === P.gate)
-  if (!f || !g) return block(s, e, `${PF} : porte pr-malgre-main introuvable`)
+  if (!f || !g) return block(s, e, `${PF}: pr-despite-main gate not found`)
   if (g.status === 'pending') return 'wait'
   if (g.status === 'refused') {
     restartRun(P)
-    return block(s, e, `${PF} : check « ${f.label} » rouge aussi sur main, PR refusée par l'utilisateur${g.note ? ` (${g.note})` : ''}`)
+    return block(s, e, `${PF}: check "${f.label}" also red on main, PR refused by the user${g.note ? ` (${g.note})` : ''}`)
   }
   P.acceptedRed.push(f.label)
-  P.results.push({ label: f.label, exitCode: f.exitCode, durationMs: f.durationMs, logPath: f.logPath, note: `rouge aussi sur origin/main, PR ouverte malgré tout (porte ${g.id})` })
+  P.results.push({ label: f.label, exitCode: f.exitCode, durationMs: f.durationMs, logPath: f.logPath, note: `also red on origin/main, PR opened anyway (gate ${g.id})` })
   P.used = []
   delete P.failing
   delete P.gate
   delete P.phase
-  log(s, e, `${PF} : ${f.label} accepté rouge (porte ${g.id}), checks suivants`)
+  log(s, e, `${PF}: ${f.label} accepted red (gate ${g.id}), next checks`)
   return 'continue'
 }
 
 async function preflightFix(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   const P = s.loops.preflight
   const dir = preflightDir(s)
-  const file = join(dir, `correctifs-${P.round}.md`)
+  const file = join(dir, `fixes-${P.round}.md`)
   if (!(await exists(file)) && arbitrationPending(s)) return 'wait'
-  if (!(await exists(file))) await writeFix(s, cfg, dir, file, 'le preflight', P.fixFindings ?? '', P.fixFailure ?? '', P.stopDecision)
+  if (!(await exists(file))) await writeFix(s, cfg, dir, file, 'the preflight', P.fixFindings ?? '', P.fixFailure ?? '', P.stopDecision)
   delete P.stopDecision
   P.fixBase ??= await e.git.headSha(s.worktree as string)
   const name = preflightFixerName(s.id, s.loopGeneration, P.round)
   const fixBase = P.fixBase
   const make = async (): Promise<PendingAsk> => {
-    P.reportSize = await fileSize(join(dir, 'rapport.md'))
-    return { agent: name, file, fromSha: fixBase, report: { path: join(dir, 'rapport.md'), size: P.reportSize } }
+    P.reportSize = await fileSize(join(dir, 'report.md'))
+    return { agent: name, file, fromSha: fixBase, report: { path: join(dir, 'report.md'), size: P.reportSize } }
   }
   const pa = await converse(s, e, P, fixerAgent(cfg, PF, name, `CP${P.round}`, P.fixer), make, implementerDelivered(s, e))
   if (typeof pa === 'string') return pa
   await markPane(s, e, name)
-  // La branche a changé : un rouge accepté avant (rouge aussi sur main) repasse par le tri et la preuve.
+  // The branch changed: a red accepted earlier (also red on main) goes through triage and the proof again.
   P.acceptedRed = []
   P.phase = 'control'
   return 'continue'
@@ -690,13 +690,13 @@ async function preflightFix(s: MissionState, e: Effects, cfg: ProjectConfig): Pr
 
 async function preflightRereview(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   const P = s.loops.preflight
-  const findings = P.fixFindings || P.fixFailure || '(aucune)'
+  const findings = P.fixFindings || P.fixFailure || '(none)'
   const pa = await converse(s, e, P, reviewerAgent(s, cfg, PF), () => rereviewAsk(s, e, cfg, preflightDir(s), P.round, findings), reviewerDelivered)
   if (typeof pa === 'string') return pa
   const out = pa.out as string
   const line = await firstLine(out)
   const v = VERDICTS[line]
-  if (!v) return block(s, e, `${PF} : verdict de re-revue illisible dans ${out} (« ${line} »)`)
+  if (!v) return block(s, e, `${PF}: unreadable re-review verdict in ${out} ("${line}")`)
   s.loops.globalReview.reviewedSha = pa.head ?? (await e.git.headSha(s.worktree as string))
   P.lastReview = out
   if (v === 'changes') {
@@ -705,20 +705,20 @@ async function preflightRereview(s: MissionState, e: Effects, cfg: ProjectConfig
     return r
   }
   restartRun(P)
-  log(s, e, `${PF} : correction ${P.round} approuvée, preflight rejoué en entier`)
+  log(s, e, `${PF}: correction ${P.round} approved, preflight replayed in full`)
   return 'continue'
 }
 
-// ---------------------------------------------------------------- PR (étape 10)
+// ---------------------------------------------------------------- PR (step 10)
 
-/** `4 s`, `2 min 05 s`. */
+/** Formats a duration as `4 s` or `2 min 05 s`. */
 export function formatDuration(ms: number): string {
   const total = Math.round(ms / 1000)
   if (total < 60) return `${total} s`
   return `${Math.floor(total / 60)} min ${String(total % 60).padStart(2, '0')} s`
 }
 
-/** Titre (premier `# `) et premier paragraphe hors titres de la spec. */
+/** Title (first `# `) and first non-heading paragraph of the spec. */
 export function specSummary(md: string): { title: string | undefined; context: string } {
   const lines = md.replace(/^﻿/, '').split('\n')
   const title = lines.find((l) => /^# /.test(l))?.slice(2).trim()
@@ -730,66 +730,66 @@ export function specSummary(md: string): { title: string | undefined; context: s
 async function prBody(s: MissionState, cfg: ProjectConfig, context: string): Promise<string> {
   const P = s.loops.preflight
   const preflight = P.results.map((r) => {
-    const accepted = P.acceptedRed.includes(r.label) ? ' — rouge déjà sur main, accepté' : r.note && r.exitCode !== 0 ? ` — ${r.note}` : ''
+    const accepted = P.acceptedRed.includes(r.label) ? ' — already red on main, accepted' : r.note && r.exitCode !== 0 ? ` — ${r.note}` : ''
     return `- ${r.label} ${r.exitCode === 0 ? '✓' : '✗'} (${formatDuration(r.durationMs)})${accepted}`
   })
   return render('pr-body', {
-    ticket: s.source.kind === 'text' ? 'demande écrite' : s.source.ref,
-    contexte: context || '(voir la spec)',
-    changements: s.tasks.map((t) => `- Tâche ${t.n} : ${t.title}`).join('\n') || '(aucune tâche)',
-    tests: s.tasks.map((t) => `- Tâche ${t.n} : \`${t.testCommand}\``).join('\n') || '(aucun)',
-    preflight: preflight.join('\n') || `(aucun check configuré pour ${cfg.name})`,
+    ticket: s.source.kind === 'text' ? 'written request' : s.source.ref,
+    context: context || '(see the spec)',
+    changes: s.tasks.map((t) => `- Task ${t.n}: ${t.title}`).join('\n') || '(no task)',
+    tests: s.tasks.map((t) => `- Task ${t.n}: \`${t.testCommand}\``).join('\n') || '(none)',
+    preflight: preflight.join('\n') || `(no check configured for ${cfg.name})`,
     specFile: specPath(s),
     planFile: planPath(s),
   })
 }
 
 /**
- * Étape 10. Refusée hors de la branche de la mission. Le moteur rebase lui-même la branche sur `origin/<main>` si
- * main a avancé (conflit → rebase annulé et mission bloquée) ; une tête autre que celle validée par le dernier
- * preflight complet (rebase, résolution à la main) → preflight rejoué. Puis push et ouverture de la PR. Idempotente : PR déjà
- * enregistrée ou déjà ouverte sur GitHub réutilisée, branche déjà poussée non repoussée.
+ * Step 10. Refused off the mission branch. The engine rebases the branch onto `origin/<main>` itself if
+ * main has moved (conflict → rebase aborted and mission blocked); a head other than the one validated by the last
+ * full preflight (rebase, resolved by hand) → preflight replayed. Then push and open the PR. Idempotent: a PR already
+ * recorded or already open on GitHub is reused, an already pushed branch is not pushed again.
  */
 export async function stepPr(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   if (s.prUrl) {
-    await stopAgentsTab(s, e, 'all', 'PR ouverte')
-    return goto(s, e, 'pr-ouverte')
+    await stopAgentsTab(s, e, 'all', 'PR open')
+    return goto(s, e, 'pr-open')
   }
   const wt = s.worktree
   const branch = s.branch
-  if (!wt || !branch || !s.type || !s.slug) return block(s, e, 'PR impossible : worktree, branche, type ou slug inconnu')
-  if (branch === cfg.mainBranch) return block(s, e, `PR refusée : la branche de la mission est la branche principale (${branch})`)
+  if (!wt || !branch || !s.type || !s.slug) return block(s, e, 'PR impossible: worktree, branch, type or slug unknown')
+  if (branch === cfg.mainBranch) return block(s, e, `PR refused: the mission branch is the main branch (${branch})`)
   const current = await e.git.currentBranch(wt)
-  if (current !== branch) return block(s, e, `PR refusée : le worktree est sur ${current}, pas sur la branche de la mission ${branch}`)
+  if (current !== branch) return block(s, e, `PR refused: the worktree is on ${current}, not on the mission branch ${branch}`)
   const main = mainRef(cfg)
   await e.git.fetchMain(wt, cfg.mainBranch)
   if (!(await e.git.isAncestor(wt, main, 'HEAD'))) {
     if (s.loops.prRebases >= 1) {
-      return block(s, e, `PR : main a encore bougé pendant le preflight ; reprends la mission pour relancer (${main} n'est pas ancêtre de la branche après un rebase automatique et son preflight)`)
+      return block(s, e, `PR: main moved again during preflight; resume the mission to retry (${main} is not an ancestor of the branch after an automatic rebase and its preflight)`)
     }
     const r = await e.git.rebaseOnto(wt, main)
-    if (!r.ok) return block(s, e, `PR : conflit en rebasant la branche sur ${main} ; rebase annulé, la branche est inchangée. Résous le conflit puis reprends la mission.`)
+    if (!r.ok) return block(s, e, `PR: conflict while rebasing the branch onto ${main}; rebase aborted, the branch is unchanged. Resolve the conflict, then resume the mission.`)
     s.loops.prRebases += 1
-    if (r.changedCode) log(s, e, `PR : branche rebasée sur ${main}`)
+    if (r.changedCode) log(s, e, `PR: branch rebased onto ${main}`)
   }
-  // Rebase (automatique ou résolu à la main) ou tout autre commit : seule la tête validée par le preflight part en PR.
+  // Rebase (automatic or resolved by hand) or any other commit: only the head validated by preflight goes to the PR.
   const head = await e.git.headSha(wt)
   if (head !== s.loops.preflight.validatedSha) {
-    log(s, e, `PR : tête ${head} non validée par le preflight (${s.loops.preflight.validatedSha ?? 'aucune'}), preflight complet rejoué`)
+    log(s, e, `PR: head ${head} not validated by preflight (${s.loops.preflight.validatedSha ?? 'none'}), full preflight replayed`)
     s.loops.preflight = freshLoops().preflight
-    // La branche relue est la même, rejouée sur une nouvelle base : les re-revues partent de la nouvelle tête.
+    // The reviewed branch is the same, replayed on a new base: re-reviews start from the new head.
     s.loops.globalReview.reviewedSha = head
     return goto(s, e, 'preflight')
   }
   if ((await e.git.unpushedCount(wt, main)) > 0) {
     await e.git.push(wt, branch)
-    log(s, e, `PR : branche ${branch} poussée`)
+    log(s, e, `PR: branch ${branch} pushed`)
   } else {
-    log(s, e, `PR : branche ${branch} déjà poussée`)
+    log(s, e, `PR: branch ${branch} already pushed`)
   }
   let url = await e.forge.findPr(wt, branch)
   if (url) {
-    log(s, e, `PR : PR déjà ouverte pour ${branch}, réutilisée`)
+    log(s, e, `PR: PR already open for ${branch}, reused`)
   } else {
     const spec = specSummary(await readFile(join(wt, specPath(s)), 'utf8').catch(() => ''))
     const bodyFile = join(missionDir(s.id), 'pr-body.md')
@@ -798,9 +798,9 @@ export async function stepPr(s: MissionState, e: Effects, cfg: ProjectConfig): P
     url = await e.forge.createPr(wt, { base: cfg.mainBranch, title: `${s.type}(${s.slug}): ${spec.title ?? s.slug}`, bodyFile })
   }
   s.prUrl = url
-  log(s, e, `PR ouverte : ${url}`)
-  await notify(s, e, `PR ouverte : ${url}`)
-  await stopAgentsTab(s, e, 'all', 'PR ouverte')
-  await informOrchestrator(s, e, `La PR est ouverte sur la branche ${branch} : ${url}. La mission est terminée.`)
-  return goto(s, e, 'pr-ouverte')
+  log(s, e, `PR open: ${url}`)
+  await notify(s, e, `PR open: ${url}`)
+  await stopAgentsTab(s, e, 'all', 'PR open')
+  await informOrchestrator(s, e, `The PR is open on branch ${branch}: ${url}. The mission is finished.`)
+  return goto(s, e, 'pr-open')
 }

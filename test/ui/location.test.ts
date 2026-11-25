@@ -17,10 +17,10 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 const cfg = { ...demo, repoPath: '/repo/demo' }
 const load = async () => cfg
 
-test("openCockpit crée l'onglet herness et lance le cockpit", async () => {
+test("openCockpit creates the herness tab and starts the cockpit", async () => {
   const h = new FakeHerdr()
   const s = h.seedWorkspace('demo')
-  expect(await openCockpit('/repo/demo', h, file, load)).toBe('créé')
+  expect(await openCockpit('/repo/demo', h, file, load)).toBe('created')
   const tab = h.tabs.find((t) => t.label === 'herness')
   expect(tab?.workspaceId).toBe(s.ws)
   expect(h.calls).toContain('tabCreate herness /repo/demo')
@@ -31,19 +31,19 @@ test("openCockpit crée l'onglet herness et lance le cockpit", async () => {
   expect(saved['/repo/demo']).toEqual({ workspace: s.ws, tab: tab?.tabId })
 })
 
-test("openCockpit donne le focus à l'onglet existant sans en créer", async () => {
+test("openCockpit focuses the existing tab without creating one", async () => {
   const h = new FakeHerdr()
   h.seedWorkspace('demo')
   await openCockpit('/repo/demo', h, file, load)
   h.calls.length = 0
   h.runs.length = 0
-  expect(await openCockpit('/repo/demo', h, file, load)).toBe('ouvert')
+  expect(await openCockpit('/repo/demo', h, file, load)).toBe('opened')
   expect(h.calls.some((c) => c.startsWith('tabCreate'))).toBe(false)
   expect(h.runs).toHaveLength(0)
   expect(h.calls.some((c) => c.startsWith('tabFocus'))).toBe(true)
 })
 
-test("focusCockpit recrée l'onglet disparu", async () => {
+test("focusCockpit recreates a missing tab", async () => {
   const h = new FakeHerdr()
   const s = h.seedWorkspace('demo')
   await openCockpit('/repo/demo', h, file, load)
@@ -56,7 +56,7 @@ test("focusCockpit recrée l'onglet disparu", async () => {
   expect(JSON.parse(await readFile(file, 'utf8'))['/repo/demo'].tab).toBe(tab?.tabId)
 })
 
-test("focusCockpit donne le focus à l'onglet enregistré", async () => {
+test("focusCockpit focuses the recorded tab", async () => {
   const h = new FakeHerdr()
   const s = h.seedWorkspace('demo')
   await openCockpit('/repo/demo', h, file, load)
@@ -66,32 +66,32 @@ test("focusCockpit donne le focus à l'onglet enregistré", async () => {
   expect(h.calls.some((c) => c.startsWith('tabCreate'))).toBe(false)
 })
 
-test('focusCockpit sans enregistrement rend le message', async () => {
+test('focusCockpit without a record returns the message', async () => {
   await expect(focusCockpit('/repo/demo', new FakeHerdr(), file)).rejects.toThrow(
-    'aucun cockpit pour ce projet : lance herness dans l\'espace du projet',
+    'no cockpit for this project: run herness in the project workspace',
   )
 })
 
-test('fichier cockpit.json invalide : traité comme vide', async () => {
-  await writeFile(file, '{pas du json')
-  await expect(focusCockpit('/repo/demo', new FakeHerdr(), file)).rejects.toThrow('aucun cockpit')
+test('invalid cockpit.json file: treated as empty', async () => {
+  await writeFile(file, '{not json')
+  await expect(focusCockpit('/repo/demo', new FakeHerdr(), file)).rejects.toThrow('no cockpit')
   const h = new FakeHerdr()
   h.seedWorkspace('demo')
-  expect(await openCockpit('/repo/demo', h, file, load)).toBe('créé')
+  expect(await openCockpit('/repo/demo', h, file, load)).toBe('created')
 })
 
-test('focusCockpit : espace enregistré disparu -> message clair', async () => {
+test('focusCockpit: recorded workspace gone -> clear message', async () => {
   const h = new FakeHerdr()
   h.seedWorkspace('demo')
   await openCockpit('/repo/demo', h, file, load)
   h.tabList = async () => { throw new Error('workspace not found') }
   h.workspaceFocus = async () => { throw new Error('workspace not found') }
   await expect(focusCockpit('/repo/demo', h, file)).rejects.toThrow(
-    "cockpit introuvable : relance herness dans l'espace du projet",
+    "cockpit not found: run herness again in the project workspace",
   )
 })
 
-test('createTab : paneRun en échec ferme le nouvel onglet', async () => {
+test('createTab: paneRun failure closes the new tab', async () => {
   const h = new FakeHerdr()
   h.seedWorkspace('demo')
   h.paneRun = async () => { throw new Error('boom') }

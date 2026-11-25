@@ -12,7 +12,7 @@ export async function currentBranch(wt: string): Promise<string> {
   return (await git(wt, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
 }
 
-/** Vrai si le fichier n'a aucune modification, ni indexée, ni non suivie. */
+/** True when the file has no change, neither staged nor untracked. */
 export async function isClean(wt: string, file: string): Promise<boolean> {
   return (await git(wt, ['status', '--porcelain', '--', file])).stdout.trim() === '';
 }
@@ -25,14 +25,14 @@ export async function fetchMain(repo: string, mainBranch: string): Promise<void>
   await git(repo, ['fetch', 'origin', mainBranch]);
 }
 
-/** Met à jour `origin/<branch>` ; échoue si la branche distante n'existe pas ou si le réseau manque. */
+/** Updates `origin/<branch>`; fails when the remote branch does not exist or the network is missing. */
 export async function fetchBranch(repo: string, branch: string): Promise<void> {
   await git(repo, ['fetch', 'origin', branch]);
 }
 
 /**
- * Commits de `branch` sans équivalent de patch dans `origin/<branch>` (`git cherry`) : un commit rebasé ou
- * rejoué côté origine ne compte pas. `null` : pas de branche distante (suivie localement).
+ * Commits of `branch` with no patch equivalent in `origin/<branch>` (`git cherry`): a commit rebased or
+ * replayed on the remote does not count. `null`: no remote branch (tracked locally).
  */
 export async function localOnlyCommits(repo: string, branch: string): Promise<number | null> {
   const remote = `origin/${branch}`;
@@ -41,7 +41,7 @@ export async function localOnlyCommits(repo: string, branch: string): Promise<nu
   return lines.filter((l) => l.startsWith('+')).length;
 }
 
-/** Supprime la branche locale (`git branch -D`) ; git refuse celle qui est extraite dans un worktree. */
+/** Deletes the local branch (`git branch -D`); git refuses the one checked out in a worktree. */
 export async function deleteBranch(repo: string, branch: string): Promise<void> {
   await git(repo, ['branch', '-D', branch]);
 }
@@ -53,14 +53,14 @@ export async function identity(wt: string): Promise<{ name: string; email: strin
   return { name, email };
 }
 
-/** Motif d'un contrôle en échec : `no-commit` distingue un agent arrêté sans rien commiter. */
+/** Reason of a failed check: `no-commit` marks an agent that stopped without committing anything. */
 export type ControlCode = 'no-commit' | 'identity' | 'author' | 'dirty' | 'forbidden';
 export type ControlResult = { ok: true; commits: number } | { ok: false; code: ControlCode; reason: string };
 
 /**
- * Plage des commits de la branche depuis `base`, sans ceux de `mainRef` : après un rebase, `base` ne fait plus
- * partie de la branche et `base..HEAD` contiendrait les commits de main entrés par le rebase.
- * Sans `mainRef` (référence absente), aucune exclusion.
+ * Range of the branch commits since `base`, excluding those of `mainRef`: after a rebase, `base` is no longer
+ * part of the branch and `base..HEAD` would include the main commits brought in by the rebase.
+ * Without `mainRef` (missing ref), nothing is excluded.
  */
 async function branchRange(wt: string, base: string, mainRef: string): Promise<string[]> {
   const known = await git(wt, ['rev-parse', '--verify', '--quiet', `${mainRef}^{commit}`], false);
@@ -72,32 +72,32 @@ async function filesOf(wt: string, range: string[]): Promise<string[]> {
   return [...new Set(out.split('\n').filter(Boolean))];
 }
 
-/** Fichiers touchés par les commits de `base..HEAD` absents de `mainRef`, sans doublon (un renommage : suppression + ajout). */
+/** Files touched by the `base..HEAD` commits absent from `mainRef`, without duplicates (a rename: deletion + addition). */
 export async function branchFiles(wt: string, base: string, mainRef: string): Promise<string[]> {
   return filesOf(wt, await branchRange(wt, base, mainRef));
 }
 
 /**
- * Contrôle les commits de la branche depuis `baseSha` (nombre, auteurs, arbre propre, fichiers interdits).
- * Les commits de `mainRef` sont exclus : un rebase fait par un correcteur n'y fait pas entrer ceux des collègues.
+ * Checks the branch commits since `baseSha` (count, authors, clean tree, forbidden files).
+ * Commits of `mainRef` are excluded: a rebase done by a fixer does not pull in colleagues' commits.
  */
 export async function controlCommits(wt: string, baseSha: string, forbiddenPaths: string[], mainRef: string): Promise<ControlResult> {
   const range = await branchRange(wt, baseSha, mainRef);
   const commits = Number((await git(wt, ['rev-list', '--count', ...range])).stdout.trim());
-  if (commits === 0) return { ok: false, code: 'no-commit', reason: `aucun commit depuis ${baseSha}` };
+  if (commits === 0) return { ok: false, code: 'no-commit', reason: `no commit since ${baseSha}` };
 
   const id = await identity(wt);
-  if (!id) return { ok: false, code: 'identity', reason: 'identité git (user.email) non configurée dans le worktree' };
+  if (!id) return { ok: false, code: 'identity', reason: 'git identity (user.email) is not configured in the worktree' };
   const authors = (await git(wt, ['log', '--format=%ae', ...range])).stdout.split('\n').filter(Boolean);
   const bad = [...new Set(authors.filter((a) => a !== id.email))];
-  if (bad.length > 0) return { ok: false, code: 'author', reason: `auteur(s) ≠ ${id.email} : ${bad.join(', ')}` };
+  if (bad.length > 0) return { ok: false, code: 'author', reason: `author(s) ≠ ${id.email}: ${bad.join(', ')}` };
 
   const status = (await git(wt, ['status', '--porcelain'])).stdout.trim();
-  if (status) return { ok: false, code: 'dirty', reason: `arbre non propre :\n${status}` };
+  if (status) return { ok: false, code: 'dirty', reason: `dirty tree:\n${status}` };
 
   const files = await filesOf(wt, range);
   const forbidden = files.filter((f) => forbiddenPaths.some((g) => matchesGlob(f, g)));
-  if (forbidden.length > 0) return { ok: false, code: 'forbidden', reason: `fichier(s) interdit(s) modifié(s) : ${forbidden.join(', ')}` };
+  if (forbidden.length > 0) return { ok: false, code: 'forbidden', reason: `forbidden file(s) modified: ${forbidden.join(', ')}` };
 
   return { ok: true, commits };
 }
@@ -109,13 +109,13 @@ export async function diffPackage(
 ): Promise<{ base: string; head: string; commits: number }> {
   const head = await headSha(wt);
   const known = await git(wt, ['cat-file', '-e', `${baseSha}^{commit}`], false);
-  if (known.exitCode !== 0) throw new Error(`base inconnue : ${baseSha}`);
+  if (known.exitCode !== 0) throw new Error(`unknown base: ${baseSha}`);
   const range = `${baseSha}..${head}`;
   const log = (await git(wt, ['log', '--oneline', range])).stdout;
   const stat = (await git(wt, ['diff', '--stat', range])).stdout;
   const diff = (await git(wt, ['diff', '-U10', range])).stdout;
   await mkdir(dirname(outFile), { recursive: true });
-  await writeFile(outFile, `# Commits\n${log}\n\n# Résumé\n${stat}\n\n# Diff\n${diff}\n`);
+  await writeFile(outFile, `# Commits\n${log}\n\n# Summary\n${stat}\n\n# Diff\n${diff}\n`);
   const commits = Number((await git(wt, ['rev-list', '--count', range])).stdout.trim());
   return { base: baseSha, head, commits };
 }
@@ -126,19 +126,19 @@ export async function commitFiles(wt: string, files: string[], message: string):
   return headSha(wt);
 }
 
-/** Pousse la branche de la mission ; `--force-with-lease` : elle a pu être rebasée par le moteur après un premier push. */
+/** Pushes the mission branch; `--force-with-lease`: the engine may have rebased it after a first push. */
 export async function push(wt: string, branch: string): Promise<void> {
   await git(wt, ['push', '--force-with-lease', '-u', 'origin', branch]);
 }
 
-/** Vrai si `ancestor` est un ancêtre de `ref` (ou le même commit). */
+/** True when `ancestor` is an ancestor of `ref` (or the same commit). */
 export async function isAncestor(wt: string, ancestor: string, ref: string): Promise<boolean> {
   return (await git(wt, ['merge-base', '--is-ancestor', ancestor, ref], false)).exitCode === 0;
 }
 
 export type RebaseResult = { ok: true; changedCode: boolean } | { ok: false };
 
-/** `git rebase <ref>` ; un conflit annule le rebase (`--abort`). `changedCode` : des commits ont été rejoués (HEAD a changé). */
+/** `git rebase <ref>`; a conflict aborts the rebase (`--abort`). `changedCode`: commits were replayed (HEAD changed). */
 export async function rebaseOnto(wt: string, ref: string): Promise<RebaseResult> {
   const before = await headSha(wt);
   const r = await git(wt, ['rebase', ref], false);
@@ -150,8 +150,8 @@ export async function rebaseOnto(wt: string, ref: string): Promise<RebaseResult>
 }
 
 /**
- * Commits locaux absents de l'amont (`@{u}..HEAD`). Sans amont : commits depuis la divergence avec `mainRef` ;
- * sans `mainRef` non plus, tous les commits de HEAD.
+ * Local commits absent from upstream (`@{u}..HEAD`). Without upstream: commits since the divergence from `mainRef`;
+ * without `mainRef` either, every commit of HEAD.
  */
 export async function unpushedCount(wt: string, mainRef = 'origin/main'): Promise<number> {
   const count = async (range: string) => Number((await git(wt, ['rev-list', '--count', range])).stdout.trim());
@@ -160,22 +160,22 @@ export async function unpushedCount(wt: string, mainRef = 'origin/main'): Promis
   return count(base.exitCode === 0 ? `${base.stdout.trim()}..HEAD` : 'HEAD');
 }
 
-/** Point de divergence entre HEAD et `ref`. */
+/** Divergence point between HEAD and `ref`. */
 export async function mergeBase(wt: string, ref: string): Promise<string> {
   return (await git(wt, ['merge-base', 'HEAD', ref])).stdout.trim();
 }
 
-/** Fichiers modifiés entre `base` et `head` ; un renommage compte comme suppression + ajout. */
+/** Files changed between `base` and `head`; a rename counts as deletion + addition. */
 export async function changedFiles(wt: string, base: string, head = 'HEAD'): Promise<string[]> {
   return (await git(wt, ['diff', '--name-only', '--no-renames', base, head])).stdout.split('\n').filter(Boolean);
 }
 
-/** Worktree temporaire détaché sur `ref` (preuve sur main). */
+/** Temporary worktree detached at `ref` (proof on main). */
 export async function worktreeAddDetached(repo: string, path: string, ref: string): Promise<void> {
   await git(repo, ['worktree', 'add', '--detach', path, ref]);
 }
 
-/** Supprime un worktree même sale ; tolère un dossier déjà effacé (élagage). */
+/** Removes a worktree even when dirty; tolerates a directory already deleted (prune). */
 export async function worktreeRemove(repo: string, path: string): Promise<void> {
   const r = await git(repo, ['worktree', 'remove', '--force', '--force', path], false);
   if (r.exitCode !== 0) {

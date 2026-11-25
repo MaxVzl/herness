@@ -27,38 +27,37 @@ function base(): MissionState {
   s.branch = 'feat/T-1-x'
   s.step = 'tasks'
   s.tasks.push(
-    { n: 1, title: 'Premier', testCommand: 't', phase: 'done', round: 0 },
-    { n: 2, title: 'Deuxième', testCommand: 't', phase: 'review', round: 2, implementer: 'i2', reviewer: 'r2' },
-    { n: 3, title: 'Troisième', testCommand: 't', phase: 'pending', round: 0 },
+    { n: 1, title: 'First', testCommand: 't', phase: 'done', round: 0 },
+    { n: 2, title: 'Second', testCommand: 't', phase: 'review', round: 2, implementer: 'i2', reviewer: 'r2' },
+    { n: 3, title: 'Third', testCommand: 't', phase: 'pending', round: 0 },
   )
   return s
 }
 const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms))
 
-test('affiche les tâches avec leur phase et leur tour', () => {
+test('shows tasks with their phase and round', () => {
   const { lastFrame } = render(<TasksView state={base()} />)
   const f = lastFrame()!
   expect(f).toContain('T-1 · feat/T-1-x · tasks')
-  expect(f).toMatch(/✓.*Premier/)
-  expect(f).toMatch(/▶.*Deuxième.*review.*tour 2\/3/)
-  expect(f).toMatch(/·.*Troisième/)
+  expect(f).toMatch(/✓.*First/)
+  expect(f).toMatch(/▶.*Second.*review.*round 2\/3/)
+  expect(f).toMatch(/·.*Third/)
   expect(f).toContain('i2')
   expect(f).toContain('r2')
 })
 
-test('met en évidence une porte en attente avec son résumé', () => {
+test('highlights a pending gate with its summary', () => {
   const s = base()
-  openGate(s, 'spec', 'Spec à valider', '/x/spec.md')
+  openGate(s, 'spec', 'Spec to approve', '/x/spec.md')
   s.paused = true
   const f = render(<TasksView state={s} />).lastFrame()!
   expect(f).toContain('g1')
-  expect(f).toContain('spec')
-  expect(f).toContain('Spec à valider')
-  expect(f).toContain('v valider · r refuser')
-  expect(f).toContain('EN PAUSE')
+  expect(f).toContain('spec: Spec to approve')
+  expect(f).toContain('a approve · r reject')
+  expect(f).toContain('PAUSED')
 })
 
-test('affiche revue globale, preflight, journal et PR', () => {
+test('shows global review, preflight, log and PR', () => {
   const s = base()
   s.step = 'preflight'
   s.loops.globalReview.round = 1
@@ -67,21 +66,21 @@ test('affiche revue globale, preflight, journal et PR', () => {
     { label: 'lint', exitCode: 0, durationMs: 1500, logPath: '/l' },
     { label: 'test', exitCode: 1, durationMs: 62000, logPath: '/l' },
   )
-  for (let i = 0; i < 7; i++) s.log.push({ at: 'x', msg: `ligne${i}` })
+  for (let i = 0; i < 7; i++) s.log.push({ at: 'x', msg: `line${i}` })
   s.prUrl = 'https://gh/pr/1'
   const f = render(<TasksView state={s} />).lastFrame()!
   expect(f).toMatch(/lint ✓/)
   expect(f).toMatch(/test ✗/)
-  expect(f).not.toContain('ligne1')
-  expect(f).toContain('ligne6')
-  expect(f).toContain('https://gh/pr/1')
+  expect(f).not.toContain('line1')
+  expect(f).toContain('line6')
+  expect(f).toContain('PR: https://gh/pr/1')
 })
 
-test('affiche la raison de blocage', () => {
+test('shows the blocked reason', () => {
   const s = base()
-  s.step = 'bloquée'
-  s.blockedReason = '3 tours épuisés'
-  expect(render(<TasksView state={s} />).lastFrame()!).toContain('3 tours épuisés')
+  s.step = 'blocked'
+  s.blockedReason = '3 rounds exhausted'
+  expect(render(<TasksView state={s} />).lastFrame()!).toContain('3 rounds exhausted')
 })
 
 
@@ -100,66 +99,66 @@ function fakeActions() {
   return { a, calls }
 }
 
-test('v puis Entrée valide la plus ancienne porte', async () => {
+test('a then Enter approves the oldest gate', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   openGate(s, 'plan', 'B')
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={a} load={async () => s} />)
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1 (spec) de T-1 ?')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1 (spec) of T-1?')
   expect(calls).toEqual([])
-  expect(lastFrame()).toContain('Valider g1 (spec) de T-1 ?')
+  expect(lastFrame()).toContain('Approve g1 (spec) of T-1?')
   stdin.write('\r')
   await until(() => calls.length === 1)
-  await waitFor(lastFrame, 'g1 validée')
+  await waitFor(lastFrame, 'g1 approved')
   expect(calls).toEqual([['validate', 'T-1', 'g1', undefined]])
-  expect(lastFrame()).toContain('g1 validée')
+  expect(lastFrame()).toContain('g1 approved')
 })
 
-test('v puis Échap n envoie rien', async () => {
+test('a then Esc sends nothing', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={a} load={async () => s} />)
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1')
   stdin.write('\u001b')
-  await waitGone(lastFrame, 'Valider g1')
+  await waitGone(lastFrame, 'Approve g1')
   stdin.write('\r')
   await tick()
   expect(calls).toEqual([])
-  expect(lastFrame()).not.toContain('Valider g1')
+  expect(lastFrame()).not.toContain('Approve g1')
 })
 
-test('r sans note puis Entrée ne valide rien ; avec note, confirmation puis refus', async () => {
+test('r without a note then Enter rejects nothing; with a note, confirm then reject', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={a} load={async () => s} />)
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')
   stdin.write('r')
-  await waitFor(lastFrame, 'ctrl+s valider')
-  stdin.write('\r') // nouvelle ligne vide : rien d'observable à attendre
+  await waitFor(lastFrame, 'ctrl+s submit')
+  stdin.write('\r') // empty new line: nothing observable to wait for
   await settle()
   stdin.write('\x13')
-  await waitFor(lastFrame, 'une note est obligatoire pour refuser')
+  await waitFor(lastFrame, 'a note is required to reject')
   expect(calls).toEqual([])
-  stdin.write('trop long')
-  await waitFor(lastFrame, 'trop long▏')
+  stdin.write('too long')
+  await waitFor(lastFrame, 'too long▏')
   stdin.write('\x13')
-  await waitFor(lastFrame, 'Refuser g1')
+  await waitFor(lastFrame, 'Reject g1')
   expect(calls).toEqual([])
   stdin.write('\r')
   await until(() => calls.length === 1)
-  await waitFor(lastFrame, 'g1 refusée')
-  expect(calls).toEqual([['refuse', 'T-1', 'g1', 'trop long']])
-  expect(lastFrame()).toContain('g1 refusée')
+  await waitFor(lastFrame, 'g1 rejected')
+  expect(calls).toEqual([['refuse', 'T-1', 'g1', 'too long']])
+  expect(lastFrame()).toContain('g1 rejected')
 })
 
-test('deux v rapides n envoient qu une décision', async () => {
+test('two quick a keys send only one decision', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const calls: string[] = []
@@ -168,20 +167,20 @@ test('deux v rapides n envoient qu une décision', async () => {
   const a = { ...fakeActions().a, validate: async (_id: string, gateId: string) => { calls.push(gateId); await gate; return { ok: true, lines: [] } } }
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={a} load={async () => s} />)
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1')
   stdin.write('\r')
   await until(() => calls.length === 1)
-  stdin.write('v')
-  await waitFor(lastFrame, 'aucune porte en attente')
+  stdin.write('a')
+  await waitFor(lastFrame, 'no pending gate')
   stdin.write('\r')
-  await tick() // absence : aucune seconde décision ne part
+  await tick() // absence: no second decision is sent
   release()
-  await waitFor(lastFrame, 'g1 validée')
+  await waitFor(lastFrame, 'g1 approved')
   expect(calls).toEqual(['g1'])
 })
 
-test('tab sélectionne la deuxième porte et v la vise', async () => {
+test('tab selects the second gate and a targets it', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   openGate(s, 'plan', 'B')
@@ -190,14 +189,14 @@ test('tab sélectionne la deuxième porte et v la vise', async () => {
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')
   stdin.write('\t')
   await waitMatch(lastFrame, /▸.*g2/)
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g2')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g2')
   stdin.write('\r')
   await until(() => calls.length === 1)
   expect(calls).toEqual([['validate', 'T-1', 'g2', undefined]])
 })
 
-test('v puis v avec deux portes cible g1 puis g2', async () => {
+test('a then a with two gates targets g1 then g2', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   openGate(s, 'plan', 'B')
@@ -205,40 +204,40 @@ test('v puis v avec deux portes cible g1 puis g2', async () => {
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={a} load={async () => s} />)
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')
   for (let i = 0; i < 2; i++) {
-    stdin.write('v')
-    await waitFor(lastFrame, `Valider g${i + 1}`)
+    stdin.write('a')
+    await waitFor(lastFrame, `Approve g${i + 1}`)
     stdin.write('\r')
     await until(() => calls.length === i + 1)
-    await waitGone(lastFrame, 'Valider g')
+    await waitGone(lastFrame, 'Approve g')
   }
   expect(calls.map((c) => c[2])).toEqual(['g1', 'g2'])
 })
 
-test('f demande confirmation avant close', async () => {
+test('c asks for confirmation before close', async () => {
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={a} load={async () => base()} />)
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')
-  stdin.write('f')
-  await waitFor(lastFrame, 'Fermer T-1 ?')
+  stdin.write('c')
+  await waitFor(lastFrame, 'Close T-1?')
   expect(calls).toEqual([])
-  expect(lastFrame()).toContain('Fermer T-1 ?')
+  expect(lastFrame()).toContain('Close T-1?')
   stdin.write('\r')
   await until(() => calls.length === 1)
   expect(calls).toEqual([['close', 'T-1']])
 })
 
-test('c appelle focusCockpit avec repoPath', async () => {
+test('b calls focusCockpit with repoPath', async () => {
   const focus = vi.fn(async () => {})
   const { a } = fakeActions()
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={a} focusCockpit={focus} load={async () => base()} />)
-  await waitFor(lastFrame, 'c cockpit')
-  expect(lastFrame()).toContain('c cockpit')
-  stdin.write('c')
+  await waitFor(lastFrame, 'b cockpit')
+  expect(lastFrame()).toContain('b cockpit')
+  stdin.write('b')
   await until(() => focus.mock.calls.length === 1)
   expect(focus).toHaveBeenCalledWith('/r')
 })
 
-test('R depuis le panneau tasks passe par le redémarrage détaché', async () => {
+test('R from the tasks panel uses the detached restart', async () => {
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={a} load={async () => base()} />)
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')
@@ -247,38 +246,38 @@ test('R depuis le panneau tasks passe par le redémarrage détaché', async () =
   expect(calls).toEqual([['restart', 'T-1', true]])
 })
 
-test('p désactivé sur une mission fermée', async () => {
+test('u is disabled on a closed mission', async () => {
   const s = base()
-  s.step = 'fermée'
+  s.step = 'closed'
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={a} load={async () => s} />)
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')
-  stdin.write('p')
-  await waitFor(lastFrame, 'mission terminée')
+  stdin.write('u')
+  await waitFor(lastFrame, 'mission finished')
   expect(calls).toEqual([])
-  expect(lastFrame()).toContain('mission terminée')
+  expect(lastFrame()).toContain('mission finished')
 })
 
-test('q dans une note ne quitte pas', async () => {
+test('q inside a note does not quit', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={a} load={async () => s} />)
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')
   stdin.write('r')
-  await waitFor(lastFrame, 'ctrl+s valider')
-  stdin.write('quoi')
-  await waitFor(lastFrame, 'quoi▏')
+  await waitFor(lastFrame, 'ctrl+s submit')
+  stdin.write('why')
+  await waitFor(lastFrame, 'why▏')
   stdin.write('\x13')
-  await waitFor(lastFrame, 'Refuser g1')
+  await waitFor(lastFrame, 'Reject g1')
   stdin.write('\r')
   await until(() => calls.length === 1)
-  await waitFor(lastFrame, 'g1 refusée')
-  expect(calls).toEqual([['refuse', 'T-1', 'g1', 'quoi']])
-  expect(lastFrame()).toContain('g1 refusée')
+  await waitFor(lastFrame, 'g1 rejected')
+  expect(calls).toEqual([['refuse', 'T-1', 'g1', 'why']])
+  expect(lastFrame()).toContain('g1 rejected')
 })
 
-test('état illisible : garde le dernier état et affiche un message', async () => {
+test('unreadable state: keeps the last state and shows a message', async () => {
   const s = base()
   let fail = false
   const load = async () => {
@@ -286,14 +285,14 @@ test('état illisible : garde le dernier état et affiche un message', async () 
     return s
   }
   const { lastFrame } = render(<TasksDashboard id="T-1" actions={fakeActions().a} load={load} intervalMs={20} />)
-  await waitFor(lastFrame, 'Premier')
+  await waitFor(lastFrame, 'First')
   fail = true
-  await waitFor(lastFrame, 'état illisible, nouvel essai…')
-  expect(lastFrame()).toContain('état illisible, nouvel essai…')
-  expect(lastFrame()).toContain('Premier')
+  await waitFor(lastFrame, 'unreadable state, retrying…')
+  expect(lastFrame()).toContain('unreadable state, retrying…')
+  expect(lastFrame()).toContain('First')
 })
 
-test('herness tasks <id> sans TTY imprime la vue une fois', async () => {
+test('herness tasks <id> without a TTY prints the view once', async () => {
   const s = base()
   await saveState(s)
   const r = await execa('node', ['bin/herness.js', 'tasks', 'T-1'], {
@@ -303,18 +302,18 @@ test('herness tasks <id> sans TTY imprime la vue une fois', async () => {
   expect(r.stdout).toContain('T-1 · feat/T-1-x · tasks')
 })
 
-test('le message disparaît quand la porte n est plus en attente', async () => {
+test('the message disappears when the gate is no longer pending', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   let cur = s
   const { stdin, lastFrame } = render(<TasksDashboard id="T-1" actions={fakeActions().a} load={async () => cur} intervalMs={20} />)
   await waitFor(lastFrame, 'T-1 · feat/T-1-x')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1')
   stdin.write('\r')
-  await waitFor(lastFrame, 'g1 validée')
-  expect(lastFrame()).toContain('g1 validée')
+  await waitFor(lastFrame, 'g1 approved')
+  expect(lastFrame()).toContain('g1 approved')
   cur = { ...s, gates: s.gates.map((g) => ({ ...g, status: 'approved' as const })) }
-  await waitGone(lastFrame, 'g1 validée')
-  expect(lastFrame()).not.toContain('g1 validée')
+  await waitGone(lastFrame, 'g1 approved')
+  expect(lastFrame()).not.toContain('g1 approved')
 })

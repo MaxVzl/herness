@@ -6,13 +6,13 @@ import * as git from '../git/git.ts'
 import * as forge from '../forge/github.ts'
 import type { AgentApi } from '../agents/adapters.ts'
 
-/** Surface de herdr utilisée par le moteur : disposition, agents et notifications. `Herdr` la satisfait. */
+/** herdr surface used by the engine: layout, agents and notifications. `Herdr` satisfies it. */
 export type EngineHerdr = HerdrApi & AgentApi & Pick<Herdr, 'notify'>
 
-/** Surface d'`AgentRunner` utilisée par le moteur. */
+/** `AgentRunner` surface used by the engine. */
 export type Agents = Pick<AgentRunner, 'start' | 'ask' | 'wait'>
 
-/** Tous les effets de bord du moteur passent par ici ; les tests injectent `fakeEffects`. */
+/** Every engine side effect goes through here; tests inject `fakeEffects`. */
 export interface Effects {
   herdr: EngineHerdr
   agents: Agents
@@ -24,7 +24,7 @@ export interface Effects {
   sleep(ms: number): Promise<void>
 }
 
-/** `log` reçoit les journaux de herdr et des agents ; défaut : `console.error` (le cockpit les affiche dans ink). */
+/** `log` receives herdr and agent logs; default: `console.error` (the cockpit shows them in ink). */
 export function realEffects(opts: { log?: (message: string) => void } = {}): Effects {
   const herdr = new Herdr(opts.log)
   return {

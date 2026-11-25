@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createMissionSpace, markDone, paneIsIdle, release, releaseTab, signals, slot, timing } from '../../src/herdr/layout.js';
 import { FakeHerdr } from './fake.js';
 
-// Valeur réelle, lue avant que les tests ne la mettent à zéro.
+// Real value, read before the tests set it to zero.
 const RETIRE_DELAY_MS = timing.retireDelayMs;
 
 beforeEach(() => {
   signals.kill = () => {
-    throw new Error('signal réel interdit dans les tests');
+    throw new Error('a real signal is forbidden in tests');
   };
   timing.retireDelayMs = 0;
   timing.pollMs = 0;
@@ -16,7 +16,7 @@ beforeEach(() => {
 const opts = { projectCwd: '/p', id: '1234567890', branch: 'herness/1234567890', base: 'main', worktreePath: '/wt' };
 
 describe('createMissionSpace', () => {
-  it('crée master (orchestrator | tasks / lazygit), agents, checks, process', async () => {
+  it('creates master (orchestrator | tasks / lazygit), agents, checks, process', async () => {
     const h = new FakeHerdr();
     const s = await createMissionSpace(h, opts);
     expect(h.calls[0]).toBe('worktreeCreate 1234567890 herness/1234567890 main /wt /p');
@@ -32,10 +32,10 @@ describe('createMissionSpace', () => {
     expect(byId(s.panes.tasks).tabId).toBe(s.tabs.master);
     expect(byId(s.panes.lazygit).tabId).toBe(s.tabs.master);
     expect(byId(s.panes.engine).tabId).toBe(s.tabs.process);
-    // orchestrator | tasks côte à côte ; lazygit sous tasks
+    // orchestrator | tasks side by side; lazygit under tasks
     expect(byId(s.panes.tasks).rect.x).toBeGreaterThan(byId(s.panes.orchestrator).rect.x);
     expect(byId(s.panes.lazygit).rect.y).toBeGreaterThan(byId(s.panes.tasks).rect.y);
-    // Onglet docs : spec | plan, créé juste après master (l'ordre de création fait l'ordre des onglets).
+    // Docs tab: spec | plan, created right after master (creation order is tab order).
     expect(s.tabs.docs).toBeTruthy();
     expect(byId(s.panes.spec).label).toBe('spec');
     expect(byId(s.panes.plan).label).toBe('plan');
@@ -48,7 +48,7 @@ describe('createMissionSpace', () => {
     expect(h.runs).toEqual([{ pane: s.panes.lazygit, cmd: 'lazygit -p /wt' }]);
   });
 
-  it("ajoute l'onglet docs à un espace qui n'en a pas (mission antérieure) sans toucher au reste", async () => {
+  it("adds the docs tab to a workspace that does not have one (older mission) without touching the rest", async () => {
     const h = new FakeHerdr();
     const first = await createMissionSpace(h, opts);
     const docs = h.tabs.findIndex((t) => t.tabId === first.tabs.docs);
@@ -62,7 +62,7 @@ describe('createMissionSpace', () => {
     expect(h.calls.filter((c) => c === 'tabCreate docs /wt')).toHaveLength(2);
   });
 
-  it('rappelée sur un espace complet ne crée rien', async () => {
+  it('called again on a complete workspace creates nothing', async () => {
     const h = new FakeHerdr();
     const first = await createMissionSpace(h, opts);
     const before = h.calls.length;
@@ -84,38 +84,38 @@ describe('slot', () => {
     return { h, ...s };
   };
 
-  it('prend le panneau racine libre en premier', async () => {
+  it('takes the free root pane first', async () => {
     const { h, tab, pane } = setup();
     expect(await slot(h, tab, '/wt', 'T1')).toBe(pane);
     expect(h.pane(pane).label).toBe('T1');
   });
 
-  it('coupe à droite un panneau large et en dessous un panneau haut', async () => {
+  it('splits a wide pane to the right and a tall pane downward', async () => {
     const { h, tab, pane } = setup();
-    h.pane(pane).label = 'T1'; // racine 200x60 : large (200 > 2*60)
+    h.pane(pane).label = 'T1'; // 200x60 root: wide (200 > 2*60)
     const p2 = await slot(h, tab, '/wt', 'T2');
     expect(h.calls.at(-2)).toMatch(/^paneSplit right/);
     expect(h.pane(p2).rect.x).toBeGreaterThan(0);
-    // les deux panneaux font 100x60 : 100 <= 120 -> en dessous
+    // both panes are 100x60: 100 <= 120 -> below
     await slot(h, tab, '/wt', 'T3');
     expect(h.calls.filter((c) => c.startsWith('paneSplit'))).toEqual(['paneSplit right - /wt', 'paneSplit down - /wt']);
   });
 
-  it('recycle le plus ancien panneau ✓ quand 6 panneaux existent', async () => {
+  it('recycles the oldest ✓ pane when 6 panes exist', async () => {
     const { h, tab, pane } = setup();
     h.pane(pane).label = 'T1 ✗';
     const ids = [pane];
     for (const l of ['T3 ✓', 'T2 ✓', 'T4', 'T5', 'T6']) ids.push(h.addPane(tab, { x: 0, y: 0, width: 10, height: 10 }, l));
     for (const id of ids) h.pane(id).busy = true;
     const got = await slot(h, tab, '/wt', 'T7');
-    expect(got).toBe(ids[0]); // T1 ✗ est le plus ancien (numéro le plus petit)
+    expect(got).toBe(ids[0]); // T1 ✗ is the oldest (smallest number)
     expect(h.pane(got).label).toBe('T7');
     expect(h.calls.filter((c) => c === 'paneSendKeys ctrl+c')).toHaveLength(2);
     expect(h.panes).toHaveLength(6);
   });
 
-  // Mesuré : Claude Code ne quitte pas sur deux ctrl+c espacés de 1500 ms, mais quitte à 300 ms (cursor-agent aussi à 250 ms).
-  it('les deux ctrl+c partent à 250 ms d’écart', () => {
+  // Measured: Claude Code does not quit on two ctrl+c 1500 ms apart, but quits at 300 ms (cursor-agent does too at 250 ms).
+  it('the two ctrl+c are 250 ms apart', () => {
     expect(RETIRE_DELAY_MS).toBe(250);
   });
 
@@ -128,7 +128,7 @@ describe('slot', () => {
     return { h, tab, pane };
   }
 
-  it('un panneau sourd aux ctrl+c est libéré par SIGTERM à ses processus au premier plan, jamais au shell', async () => {
+  it('a pane deaf to ctrl+c is freed by SIGTERM to its foreground processes, never the shell', async () => {
     const { h, tab, pane } = fullGrid();
     const sent: [number, string][] = [];
     signals.kill = (pid, sig) => {
@@ -139,7 +139,7 @@ describe('slot', () => {
     expect(sent).toEqual([[2, 'SIGTERM']]);
   });
 
-  it('SIGKILL si SIGTERM ne suffit pas', async () => {
+  it('SIGKILL when SIGTERM is not enough', async () => {
     const { h, tab, pane } = fullGrid();
     const sent: [number, string][] = [];
     signals.kill = (pid, sig) => {
@@ -150,26 +150,26 @@ describe('slot', () => {
     expect(sent).toEqual([[2, 'SIGTERM'], [2, 'SIGKILL']]);
   });
 
-  it('échec final : le message nomme le panneau, son agent et les PID', async () => {
+  it('final failure: the message names the pane, its agent and the PIDs', async () => {
     const { h, tab, pane } = fullGrid();
     h.pane(pane).agent = 'claude';
     signals.kill = () => {};
     await expect(slot(h, tab, '/wt', 'T7')).rejects.toThrow(
-      `le panneau ${pane} (T1 ✓, agent claude, PID 2) n'est pas revenu au shell après ctrl+c, SIGTERM et SIGKILL`,
+      `pane ${pane} (T1 ✓, agent claude, PID 2) did not return to the shell after ctrl+c, SIGTERM and SIGKILL`,
     );
   });
 
-  it('échoue avec « grille pleine » quand aucun panneau n’est recyclable', async () => {
+  it('fails with "grid full" when no pane can be recycled', async () => {
     const { h, tab, pane } = setup();
     h.pane(pane).label = 'T1';
     for (const l of ['T2', 'T3', 'T4', 'T5', 'T6']) h.addPane(tab, { x: 0, y: 0, width: 10, height: 10 }, l);
     for (const p of h.panes) p.busy = true;
-    await expect(slot(h, tab, '/wt', 'T7')).rejects.toThrow(/grille pleine/);
+    await expect(slot(h, tab, '/wt', 'T7')).rejects.toThrow(/grid full/);
   });
 });
 
 describe('markDone', () => {
-  it('ajoute la marque sans la doubler', async () => {
+  it('adds the mark without doubling it', async () => {
     const h = new FakeHerdr();
     const { pane } = h.seedWorkspace('m');
     h.pane(pane).label = 'T1 ✗';
@@ -179,7 +179,7 @@ describe('markDone', () => {
 });
 
 describe('release', () => {
-  it('un panneau occupé reçoit deux ctrl+c et revient au shell, libellé inchangé', async () => {
+  it('a busy pane receives two ctrl+c and returns to the shell, label unchanged', async () => {
     const h = new FakeHerdr();
     const { pane } = h.seedWorkspace('m');
     const n = h.panes.length;
@@ -194,7 +194,7 @@ describe('release', () => {
     expect(h.panes).toHaveLength(n);
   });
 
-  it('un panneau déjà libre ne reçoit rien', async () => {
+  it('an already free pane receives nothing', async () => {
     const h = new FakeHerdr();
     const { pane } = h.seedWorkspace('m');
     h.pane(pane).busy = false;
@@ -202,14 +202,14 @@ describe('release', () => {
     expect(h.calls.filter((c) => c.startsWith('paneSendKeys'))).toEqual([]);
   });
 
-  it('un panneau inconnu rend false', async () => {
+  it('an unknown pane returns false', async () => {
     const h = new FakeHerdr();
     h.seedWorkspace('m');
     expect(await release(h, 'w1:p999')).toBe(false);
     expect(h.calls.filter((c) => c.startsWith('paneSendKeys'))).toEqual([]);
   });
 
-  it("l'échec final remonte avec le panneau, l'agent et les PID", async () => {
+  it("the final failure propagates with the pane, the agent and the PIDs", async () => {
     const h = new FakeHerdr();
     const { pane } = h.seedWorkspace('m');
     h.pane(pane).deaf = true;
@@ -217,13 +217,13 @@ describe('release', () => {
     h.pane(pane).agent = 'claude';
     signals.kill = () => {};
     await expect(release(h, pane)).rejects.toThrow(
-      `le panneau ${pane} (agent claude, PID 2) n'est pas revenu au shell après ctrl+c, SIGTERM et SIGKILL`,
+      `pane ${pane} (agent claude, PID 2) did not return to the shell after ctrl+c, SIGTERM and SIGKILL`,
     );
   });
 });
 
 describe('releaseTab', () => {
-  it('done : arrête seulement les panneaux ✓, garde les autres', async () => {
+  it('done: stops only the ✓ panes, keeps the others', async () => {
     const h = new FakeHerdr();
     const { tab, pane } = h.seedWorkspace('m', 'agents');
     h.pane(pane).label = 'T1 · grok ✓';
@@ -238,7 +238,7 @@ describe('releaseTab', () => {
     expect(h.pane(t2).agent).toBe('ct-1-t2');
   });
 
-  it("all : arrête tous les panneaux occupés de l'onglet, jamais ceux d'un autre onglet", async () => {
+  it("all: stops every busy pane of the tab, never those of another tab", async () => {
     const h = new FakeHerdr();
     const { ws, tab, pane } = h.seedWorkspace('m', 'agents');
     h.pane(pane).label = 'T1 · grok';
@@ -260,7 +260,7 @@ describe('releaseTab', () => {
     expect(h.pane(other.rootPaneId).agent).toBe('c');
   });
 
-  it("un échec n'empêche pas les suivants", async () => {
+  it("a failure does not prevent the following ones", async () => {
     const h = new FakeHerdr();
     const { tab, pane } = h.seedWorkspace('m', 'agents');
     h.pane(pane).label = 'T1 · grok ✓';
@@ -273,15 +273,15 @@ describe('releaseTab', () => {
     signals.kill = () => {};
     const result = await releaseTab(h, tab, 'done');
     expect(result.failed).toHaveLength(1);
-    expect(result.failed[0]).toContain("n'est pas revenu au shell");
+    expect(result.failed[0]).toContain('did not return to the shell');
     expect(result.released).toEqual(['T2 · opus ✓']);
     expect(h.pane(second).busy).toBe(false);
     expect(h.pane(second).agent).toBeUndefined();
   });
 });
 
-describe('paneIsIdle (règle unique de disposition et de cycle de vie)', () => {
-  it('libre = aucun processus au premier plan autre que le shell ; liste vide = libre', () => {
+describe('paneIsIdle (single rule of layout and lifecycle)', () => {
+  it('free = no foreground process other than the shell; empty list = free', () => {
     expect(paneIsIdle({ shellPid: 1, foregroundPids: [] })).toBe(true);
     expect(paneIsIdle({ shellPid: 1, foregroundPids: [1] })).toBe(true);
     expect(paneIsIdle({ shellPid: null, foregroundPids: [] })).toBe(true);
@@ -290,7 +290,7 @@ describe('paneIsIdle (règle unique de disposition et de cycle de vie)', () => {
     expect(paneIsIdle({ shellPid: null, foregroundPids: [5] })).toBe(false);
   });
 
-  it('slot prend un panneau sans processus au premier plan (liste vide) pour libre', async () => {
+  it('slot treats a pane with no foreground process (empty list) as free', async () => {
     const h = new FakeHerdr();
     const { tab, pane } = h.seedWorkspace('w', 'agents');
     h.paneProcessInfo = async () => ({ shellPid: 1, foregroundPids: [] });

@@ -1,5 +1,5 @@
-// Config de projet fictive pour les tests : aucun de ces scripts n'est exécuté,
-// les tests ne comparent que les commandes construites.
+// Fake project config for tests: none of these scripts is executed,
+// tests only compare the commands that are built.
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ProjectConfig } from '../../../src/config/project.ts'
@@ -14,6 +14,7 @@ const config: ProjectConfig = {
   mainBranch: 'main',
   branchPrefixes: { feat: 'feature', fix: 'fix', chore: 'chore', refactor: 'chore', docs: 'chore', test: 'chore' },
   commitFormat: '{type}({scope}): {description} [{id}]',
+  language: 'en',
   forbiddenPaths: ['apps/api/openapi.json', 'packages/api-client/src/generated/**'],
   forbiddenCommands: ['git stash', '--no-verify', 'docker compose'],
   prepare: [prepareWorktree, '{worktree}'],
@@ -33,24 +34,24 @@ const config: ProjectConfig = {
       label: 'format:check',
       pattern: 'Code style issues found',
       action: 'ignore',
-      explanation: 'Artefact CRLF du worktree : à ignorer si aucun fichier touché par la branche n\'est listé par Prettier.',
+      explanation: 'CRLF artifact of the worktree: ignore it when Prettier lists no file touched by the branch.',
     },
     {
       pattern: 'Module not found.*Roboto|Roboto.*Module not found',
       action: 'retry',
-      explanation: 'Récupération de la police Roboto échouée (flake réseau) : relancer.',
+      explanation: 'Fetching the Roboto font failed (network flake): retry.',
     },
     {
       pattern: 'apps/api/src/test/setup.ts',
       action: 'cleanup',
       cleanup: ['pkill', '-f', '{worktree}/node_modules/.*vitest'],
-      explanation: 'Processus vitest orphelins : les tuer, puis relancer.',
+      explanation: 'Orphan vitest processes: kill them, then retry.',
     },
     {
       pattern: "Cannot find module '../generated/client'",
       action: 'cleanup',
       cleanup: [prepareWorktree, '{worktree}'],
-      explanation: 'SDK non généré dans le worktree : relancer la préparation, puis relancer.',
+      explanation: 'SDK not generated in the worktree: rerun preparation, then retry.',
     },
   ],
   orchestratorPermissionMode: 'auto',

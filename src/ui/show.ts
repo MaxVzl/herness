@@ -9,9 +9,9 @@ export type DocKind = 'spec' | 'plan'
 export type DocState = Pick<MissionState, 'id' | 'slug' | 'worktree' | 'createdAt'>
 export type ResolvedDoc = { path: string; proposed: boolean } | { missing: true; expected?: string }
 
-export const PROPOSED_HEADER = "proposition d'amendement en attente"
+export const PROPOSED_HEADER = "pending amendment proposal"
 
-/** Quel fichier montrer : la proposition d'amendement gagne, puis le fichier du worktree, sinon rien (encore). */
+/** Which file to show: the amendment proposal wins, then the worktree file, otherwise nothing yet. */
 export function resolveDoc(kind: DocKind, s: DocState, dir: string, exists: (path: string) => boolean): ResolvedDoc {
   const proposed = join(dir, `${kind}.proposed.md`)
   if (exists(proposed)) return { path: proposed, proposed: true }
@@ -24,25 +24,25 @@ export function resolveDoc(kind: DocKind, s: DocState, dir: string, exists: (pat
 }
 
 export interface ViewerChild {
-  /** Termine l'afficheur (et tout ce qu'il a lancé) ; résolu quand il est vraiment sorti. */
+  /** Stops the viewer (and everything it started); resolves when it has really exited. */
   kill(): Promise<void>
-  /** Appelé quand le processus se termine (y compris après `kill`). */
+  /** Called when the process exits (including after `kill`). */
   onExit(cb: () => void): void
 }
 
 export interface ViewerDeps {
   readState(): Promise<DocState>
   exists(path: string): boolean
-  /** Date de modification en ms, ou `null` si illisible. */
+  /** Modification time in ms, or `null` if unreadable. */
   mtime(path: string): number | null
-  /** Lance l'afficheur ; peut lever (fichier disparu entre-temps). */
+  /** Starts the viewer; may throw (file gone in the meantime). */
   spawn(path: string, proposed: boolean): ViewerChild
   print(line: string): void
-  /** Écoute la touche Entrée (seulement quand l'afficheur est sorti) ; `pressed` la consomme. */
+  /** Listens for Enter (only once the viewer has exited); `pressed` consumes it. */
   input: { start(): void; stop(): void; pressed(): boolean }
 }
 
-/** Boucle d'observation : `tick` est appelé chaque seconde, ne lit ni n'écrit jamais state.json autrement qu'en lecture. */
+/** Observation loop: `tick` is called every second and only ever reads state.json. */
 export class DocViewer {
   private child: ViewerChild | undefined
   private shown: string | undefined
@@ -71,7 +71,7 @@ export class DocViewer {
     this.lastMessage = undefined
     const child = this.d.spawn(path, proposed)
     this.child = child
-    // Un enfant tué puis remplacé ne doit pas marquer le nouveau comme sorti.
+    // A child that was killed then replaced must not mark the new one as exited.
     child.onExit(() => {
       if (this.child !== child) return
       this.child = undefined
@@ -84,7 +84,7 @@ export class DocViewer {
     try {
       resolved = resolveDoc(this.kind, await this.d.readState(), this.dir, this.d.exists)
     } catch (e) {
-      this.say(`état illisible, nouvel essai : ${e instanceof Error ? e.message : String(e)}`)
+      this.say(`unreadable state, retrying: ${e instanceof Error ? e.message : String(e)}`)
       return
     }
     if ('missing' in resolved) {
@@ -92,17 +92,17 @@ export class DocViewer {
       this.shown = undefined
       this.pending = undefined
       this.exited = false
-      this.say(`${this.kind} pas encore écrite${resolved.expected ? `\n${resolved.expected}` : ''}`)
+      this.say(`${this.kind} not written yet${resolved.expected ? `\n${resolved.expected}` : ''}`)
       return
     }
     const mtime = this.d.mtime(resolved.path)
     if (mtime === null) {
-      this.say(`${resolved.path} illisible, nouvel essai`)
+      this.say(`${resolved.path} unreadable, retrying`)
       return
     }
     const key = `${resolved.path}\0${mtime}`
     if (key !== this.shown) {
-      // Remplacer un affichage demande que le fichier soit stable depuis un tick (écriture en cours sinon).
+      // Replacing a view requires the file to have been stable for one tick (otherwise a write is in progress).
       if (this.shown !== undefined && this.pending !== key) {
         this.pending = key
         return
@@ -111,8 +111,8 @@ export class DocViewer {
       try {
         this.open(resolved.path, resolved.proposed)
       } catch (e) {
-        // Non marqué affiché : le prochain tick réessaie.
-        this.say(`${resolved.path} illisible, nouvel essai : ${e instanceof Error ? e.message : String(e)}`)
+        // Not marked shown: the next tick retries.
+        this.say(`${resolved.path} unreadable, retrying: ${e instanceof Error ? e.message : String(e)}`)
         return
       }
       this.shown = key
@@ -121,13 +121,13 @@ export class DocViewer {
     }
     this.pending = undefined
     if (this.exited) {
-      this.say('appuie sur Entrée pour rouvrir')
+      this.say('press Enter to reopen')
       this.d.input.start()
       if (this.d.input.pressed()) {
         try {
           this.open(resolved.path, resolved.proposed)
         } catch (e) {
-          this.say(`${resolved.path} illisible, nouvel essai : ${e instanceof Error ? e.message : String(e)}`)
+          this.say(`${resolved.path} unreadable, retrying: ${e instanceof Error ? e.message : String(e)}`)
         }
       }
     }
@@ -138,7 +138,7 @@ export class DocViewer {
   }
 }
 
-// ---------- effets réels ----------
+// ---------- real effects ----------
 
 function onPath(cmd: string): boolean {
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
@@ -147,7 +147,7 @@ function onPath(cmd: string): boolean {
       accessSync(join(dir, cmd), constants.X_OK)
       return true
     } catch {
-      // suivant
+      // next
     }
   }
   return false
@@ -156,12 +156,12 @@ function onPath(cmd: string): boolean {
 const KILL_GRACE_MS = 2000
 
 /**
- * Seul enfant durable : `less -R`, dont l'entrée reçoit l'en-tête éventuel puis la sortie de `bat` (sans pager) ;
- * sans `bat`, le contenu brut. Aucun pager imbriqué : tuer `less` suffit, `bat` est tué avec lui.
+ * The only long-lived child is `less -R`, whose input receives the optional header then the `bat` output (no pager);
+ * without `bat`, the raw content. No nested pager: killing `less` is enough, `bat` is killed with it.
  */
 function realSpawn(file: string, proposed: boolean): ViewerChild {
   const useBat = onPath('bat')
-  const raw = useBat ? undefined : readFileSync(file) // lève avant de lancer quoi que ce soit
+  const raw = useBat ? undefined : readFileSync(file) // throws before launching anything
   const less = nodeSpawn('less', ['-R'], { stdio: ['pipe', 'inherit', 'inherit'] })
   less.stdin.on('error', () => {})
   if (proposed) less.stdin.write(`${PROPOSED_HEADER}\n\n`)
@@ -240,7 +240,7 @@ export function realViewerDeps(id: string): ViewerDeps {
   }
 }
 
-/** `herness voir <spec|plan> <id>` : tourne jusqu'à ctrl+c. */
+/** `herness show <spec|plan> <id>`: runs until ctrl+c. */
 export async function runViewer(kind: DocKind, id: string): Promise<void> {
   const viewer = new DocViewer(kind, missionDir(id), realViewerDeps(id))
   const stop = (): void => void viewer.close().finally(() => process.exit(0))

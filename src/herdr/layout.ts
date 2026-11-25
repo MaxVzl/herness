@@ -2,11 +2,11 @@ import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { HerdrApi, HerdrPane, PaneProcessInfo } from './client.js';
 
-/** Délais réglables (les tests les mettent à 0). */
-// Claude Code ne quitte que si le second ctrl+c suit vite le premier (mesuré : 1500 ms ne suffit pas, 300 ms oui).
+/** Tunable delays (tests set them to 0). */
+// Claude Code quits only when the second ctrl+c follows the first quickly (measured: 1500 ms is not enough, 300 ms is).
 export const timing = { retireDelayMs: 250, pollMs: 500, retirePolls: 20, signalPolls: 6 };
 
-/** Envoi d'un signal à un processus ; remplaçable dans les tests. */
+/** Sends a signal to a process; replaceable in tests. */
 export const signals = { kill: (pid: number, sig: 'SIGTERM' | 'SIGKILL'): void => void process.kill(pid, sig) };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -33,12 +33,12 @@ export async function createMissionSpace(
   let master = tabs.find((t) => t.label === 'master')?.tabId;
   if (!master) {
     const first = tabs[0];
-    if (!first) throw new Error(`espace ${workspace} sans onglet`);
+    if (!first) throw new Error(`workspace ${workspace} has no tab`);
     await h.tabRename(first.tabId, 'master');
     master = first.tabId;
   }
 
-  // Onglet master : orchestrator | tasks / lazygit
+  // Master tab: orchestrator | tasks / lazygit
   let panes = await h.paneList(workspace);
   const inTab = (tab: string) => panes.filter((p) => p.tabId === tab);
   const byLabel = (tab: string, label: string): HerdrPane | undefined => inTab(tab).find((p) => p.label === label);
@@ -46,7 +46,7 @@ export async function createMissionSpace(
   let orchestrator = byLabel(master, 'orchestrator')?.paneId;
   if (!orchestrator) {
     const root = inTab(master).find((p) => !p.label) ?? inTab(master)[0];
-    if (!root) throw new Error(`onglet master sans panneau`);
+    if (!root) throw new Error('master tab has no pane');
     await h.paneRename(root.paneId, 'orchestrator');
     orchestrator = root.paneId;
   }
@@ -68,7 +68,7 @@ export async function createMissionSpace(
     const c = await h.tabCreate({ workspace, cwd: wt, label });
     return { tabId: c.tabId, created: c.rootPaneId };
   };
-  // herdr n'a pas de réordonnancement : `docs` est créé juste après master, l'ordre de création fait l'ordre des onglets.
+  // herdr has no reordering: `docs` is created right after master, creation order is tab order.
   const docsTab = await ensureTab('docs');
   const agents = (await ensureTab('agents')).tabId;
   const checks = (await ensureTab('checks')).tabId;
@@ -78,16 +78,16 @@ export async function createMissionSpace(
   let engine = byLabel(proc.tabId, 'engine')?.paneId;
   if (!engine) {
     engine = proc.created ?? inTab(proc.tabId)[0]?.paneId;
-    if (!engine) throw new Error(`onglet process sans panneau`);
+    if (!engine) throw new Error('process tab has no pane');
     await h.paneRename(engine, 'engine');
   }
 
-  // Onglet docs : spec | plan
+  // Docs tab: spec | plan
   panes = await h.paneList(workspace);
   let spec = byLabel(docsTab.tabId, 'spec')?.paneId;
   if (!spec) {
     spec = docsTab.created ?? inTab(docsTab.tabId).find((p) => !p.label)?.paneId ?? inTab(docsTab.tabId)[0]?.paneId;
-    if (!spec) throw new Error(`onglet docs sans panneau`);
+    if (!spec) throw new Error('docs tab has no pane');
     await h.paneRename(spec, 'spec');
   }
   let plan = byLabel(docsTab.tabId, 'plan')?.paneId;
@@ -105,20 +105,20 @@ export async function createMissionSpace(
 }
 
 /**
- * Règle unique (disposition et cycle de vie) : un panneau est au repos quand aucun processus autre que son shell
- * n'est au premier plan ; une liste vide compte comme au repos.
+ * Single rule (layout and lifecycle): a pane is idle when no process other than its shell
+ * is in the foreground; an empty list counts as idle.
  */
 export function paneIsIdle(i: PaneProcessInfo): boolean {
   return i.foregroundPids.every((p) => p === i.shellPid);
 }
 
-/** Un panneau est libre : aucun agent reconnu et rien d'autre que le shell au premier plan. */
+/** A pane is free: no recognized agent and nothing but the shell in the foreground. */
 async function isFree(h: HerdrApi, pane: HerdrPane): Promise<boolean> {
   if (pane.agent) return false;
   return paneIsIdle(await h.paneProcessInfo(pane.paneId));
 }
 
-/** Relit le panneau (l'agent a pu disparaître) jusqu'à ce qu'il soit libre ; `polls` essais. */
+/** Re-reads the pane (the agent may have gone) until it is free; `polls` attempts. */
 async function freedWithin(h: HerdrApi, pane: HerdrPane, polls: number): Promise<boolean> {
   for (let i = 0; i < polls; i++) {
     const fresh = (await h.paneList(wsOf(pane.paneId))).find((p) => p.paneId === pane.paneId) ?? pane;
@@ -129,8 +129,8 @@ async function freedWithin(h: HerdrApi, pane: HerdrPane, polls: number): Promise
 }
 
 /**
- * Libère un panneau terminé : double ctrl+c, puis SIGTERM et enfin SIGKILL aux processus au premier plan (jamais au
- * shell). Le message d'échec nomme l'agent et les PID, pour savoir quoi arrêter à la main.
+ * Frees a finished pane: double ctrl+c, then SIGTERM and finally SIGKILL to the foreground processes (never the
+ * shell). The failure message names the agent and the PIDs, so one knows what to stop by hand.
  */
 async function retire(h: HerdrApi, pane: HerdrPane): Promise<void> {
   if (await isFree(h, pane)) return;
@@ -147,18 +147,18 @@ async function retire(h: HerdrApi, pane: HerdrPane): Promise<void> {
       try {
         signals.kill(pid, sig);
       } catch {
-        /* processus déjà terminé */
+        /* process already finished */
       }
     }
     if (await freedWithin(h, pane, timing.signalPolls)) return;
   }
   const who = [pane.label, pane.agent ? `agent ${pane.agent}` : undefined, pids.length ? `PID ${pids.join(', ')}` : undefined].filter(Boolean).join(', ');
-  throw new Error(`le panneau ${pane.paneId}${who ? ` (${who})` : ''} n'est pas revenu au shell après ctrl+c, SIGTERM et SIGKILL`);
+  throw new Error(`pane ${pane.paneId}${who ? ` (${who})` : ''} did not return to the shell after ctrl+c, SIGTERM and SIGKILL`);
 }
 
 /**
- * Arrête l'agent d'un panneau et le rend au shell. `false` si le panneau est introuvable ou déjà libre
- * (aucun appel à `paneSendKeys`). L'erreur de `retire` remonte telle quelle.
+ * Stops a pane's agent and returns it to the shell. `false` when the pane is not found or already free
+ * (no call to `paneSendKeys`). The error from `retire` propagates as-is.
  */
 export async function release(h: HerdrApi, paneId: string): Promise<boolean> {
   const pane = (await h.paneList(wsOf(paneId))).find((p) => p.paneId === paneId);
@@ -167,7 +167,7 @@ export async function release(h: HerdrApi, paneId: string): Promise<boolean> {
   return true;
 }
 
-/** Arrête les panneaux d'un onglet : ceux marqués ✓ ou ✗ (`done`), ou tous (`all`). Un échec n'arrête pas le balayage. */
+/** Stops the panes of a tab: those marked ✓ or ✗ (`done`), or all of them (`all`). A failure does not stop the scan. */
 export async function releaseTab(
   h: HerdrApi,
   tab: string,
@@ -187,13 +187,13 @@ export async function releaseTab(
   return { released, failed };
 }
 
-/** Même règle que `cmd_slot` de herdr-ticket-grid.sh. Rend l'identifiant d'un panneau libre, nommé `label`. */
+/** Same rule as `cmd_slot` in herdr-ticket-grid.sh. Returns the id of a free pane, named `label`. */
 export async function slot(h: HerdrApi, tab: string, cwd: string, label: string, max = 6): Promise<string> {
   const ws = wsOf(tab);
   const panes = (await h.paneList(ws)).filter((p) => p.tabId === tab);
-  if (panes.length === 0) throw new Error(`onglet ${tab} introuvable ou vide`);
+  if (panes.length === 0) throw new Error(`tab ${tab} not found or empty`);
 
-  // 1. panneau jamais utilisé
+  // 1. pane never used
   for (const p of panes) {
     if (!p.label && (await isFree(h, p))) {
       await h.paneRename(p.paneId, label);
@@ -201,7 +201,7 @@ export async function slot(h: HerdrApi, tab: string, cwd: string, label: string,
     }
   }
 
-  // 2. place libre : couper le plus grand panneau
+  // 2. free slot: split the largest pane
   if (panes.length < max) {
     const layout = await h.paneLayout((panes[0] as HerdrPane).paneId);
     const area = (p: (typeof layout)[number]) => p.rect.width * p.rect.height;
@@ -216,17 +216,17 @@ export async function slot(h: HerdrApi, tab: string, cwd: string, label: string,
     return created.paneId;
   }
 
-  // 3. grille pleine : recycler le plus ancien panneau terminé (✓ ou ✗)
+  // 3. full grid: recycle the oldest finished pane (✓ or ✗)
   const num = (l?: string) => Number(/\d+/.exec(l ?? '')?.[0] ?? Number.MAX_SAFE_INTEGER);
   const done = panes.filter((p) => /[✓✗]/.test(p.label ?? '')).sort((a, b) => num(a.label) - num(b.label));
   const victim = done[0];
-  if (!victim) throw new Error(`grille pleine (${max} panneaux) et aucune tâche validée à recycler`);
+  if (!victim) throw new Error(`grid full (${max} panes) and no finished task to recycle`);
   await retire(h, victim);
   await h.paneRename(victim.paneId, label);
   return victim.paneId;
 }
 
-/** Ajoute ✓ ou ✗ au libellé du panneau (en remplaçant une marque précédente). */
+/** Adds ✓ or ✗ to the pane label (replacing a previous mark). */
 export async function markDone(h: HerdrApi, pane: string, mark: '✓' | '✗'): Promise<void> {
   const p = (await h.paneList(wsOf(pane))).find((x) => x.paneId === pane);
   const label = (p?.label ?? '').replace(/ [✓✗]$/, '');
@@ -235,7 +235,7 @@ export async function markDone(h: HerdrApi, pane: string, mark: '✓' | '✗'): 
 
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-/** Script dans logDir, `tee` vers le journal, code dans `.exit`, marqueur absent de la ligne tapée. */
+/** Script in logDir, `tee` to the log, code in `.exit`, marker absent from the typed line. */
 export async function runInPane(
   h: HerdrApi,
   tab: string,

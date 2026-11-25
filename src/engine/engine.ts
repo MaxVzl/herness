@@ -4,7 +4,7 @@ import { fill, type ProjectConfig } from '../config/project.ts'
 import { errorLogPath, logHernessError, type ErrorContext } from '../errlog.ts'
 import { drainInbox, type InboxMessage } from '../mission/inbox.ts'
 import { parsePlan } from '../mission/plan.ts'
-import { loadState, saveState, type Gate, type GateKind, type MissionState, type Step } from '../mission/state.ts'
+import { isLegacy, loadState, saveState, type Gate, type GateKind, type MissionState, type Step } from '../mission/state.ts'
 import { missionDir, planPath, specPath } from '../paths.ts'
 import { proposedPlanPath } from '../mission/amendment.ts'
 import type { Effects } from './effects.ts'
@@ -15,26 +15,26 @@ import { stepGlobalReview, stepPr, stepPreflight } from './finish.ts'
 import { amendmentWouldResume, applyAmendment, applyPendingAmendment, stepTasks, stopAgentsTab, taskDir, unblocksMission } from './tasks.ts'
 
 export type StepResult = 'continue' | 'wait' | 'stop'
-/** Une étape lit et modifie l'état en mémoire ; le moteur l'enregistre après chaque appel. */
+/** A step reads and updates the in-memory state; the engine saves it after each call. */
 export type StepFn = (s: MissionState, e: Effects, cfg: ProjectConfig) => Promise<StepResult>
 
 const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err))
-/** Worktree détaché temporaire de la preuve sur main. */
-export const proofWorktree = (id: string): string => join(missionDir(id), 'preuve-main')
+/** Temporary detached worktree for the proof on main. */
+export const proofWorktree = (id: string): string => join(missionDir(id), 'proof-main')
 const fileExists = (p: string): Promise<boolean> => access(p).then(() => true, () => false)
 
 export function log(s: MissionState, e: Effects, msg: string): void {
   s.log.push({ at: e.now().toISOString(), msg })
 }
 
-/** Message du moteur à la session orchestrateur, sans attente ; ne lève jamais. */
+/** Message from the engine to the orchestrator session, without waiting; never throws. */
 export async function informOrchestrator(s: MissionState, e: Effects, text: string): Promise<void> {
   const agent = s.orchestrator.agent
   if (!agent) return
   try {
     await e.herdr.agentPrompt(agent, `[herness] ${text}`, { wait: false })
   } catch (err) {
-    log(s, e, `message à l'orchestrateur non remis : ${errMsg(err)}`)
+    log(s, e, `message to the orchestrator not delivered: ${errMsg(err)}`)
   }
 }
 
@@ -42,25 +42,25 @@ export async function notify(s: MissionState, e: Effects, body: string): Promise
   try {
     await e.herdr.notify(`herness ${s.id}`, body, 'request')
   } catch (err) {
-    log(s, e, `notification non affichée : ${errMsg(err)}`)
+    log(s, e, `notification not shown: ${errMsg(err)}`)
   }
 }
 
-/** Passe la mission en `bloquée`, prévient l'utilisateur et l'orchestrateur. */
+/** Moves the mission to `blocked`, and tells the user and the orchestrator. */
 export async function block(s: MissionState, e: Effects, reason: string): Promise<StepResult> {
-  if (s.step !== 'bloquée') s.blockedFrom = s.step
-  s.step = 'bloquée'
+  if (s.step !== 'blocked') s.blockedFrom = s.step
+  s.step = 'blocked'
   s.blockedReason = reason
-  log(s, e, `mission bloquée : ${reason}`)
-  await notify(s, e, `Mission bloquée : ${reason.split('\n')[0]}`)
-  await informOrchestrator(s, e, `Mission bloquée : ${reason}`)
+  log(s, e, `mission blocked: ${reason}`)
+  await notify(s, e, `Mission blocked: ${reason.split('\n')[0]}`)
+  await informOrchestrator(s, e, `Mission blocked: ${reason}`)
   return 'continue'
 }
 
 async function dbDown(s: MissionState, e: Effects, cfg: ProjectConfig, flag: 'testDbUp' | 'proofDbUp', id: string, worktree: string): Promise<string | null> {
   if (!s[flag] || !cfg.testDb) return null
   const cwd = s.worktree ?? s.repoPath
-  // `{worktree}` : le worktree dont le .env pointe sur cette base (celui de la mission, ou celui de la preuve).
+  // `{worktree}`: the worktree whose .env points at this database (the mission's, or the proof's).
   const [cmd, ...args] = fill(cfg.testDb.down, { id, worktree })
   if (!cmd) return null
   let error: string
@@ -70,28 +70,31 @@ async function dbDown(s: MissionState, e: Effects, cfg: ProjectConfig, flag: 'te
       s[flag] = false
       return null
     }
-    error = `code ${r.exitCode} : ${(r.stderr || r.stdout).trim()}`
+    error = `code ${r.exitCode}: ${(r.stderr || r.stdout).trim()}`
   } catch (err) {
     error = errMsg(err)
   }
-  log(s, e, `arrêt de la base de test ${id} en échec (${error})`)
+  log(s, e, `failed to stop test database ${id} (${error})`)
   return error
 }
 
-/** Arrête la base de test de la mission si elle tourne ; ne lève jamais. Rend l'erreur, ou null si la base est arrêtée. */
+/** Stops the mission test database if it is running; never throws. Returns the error, or null if the database is stopped. */
 export function testDbDown(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<string | null> {
   return dbDown(s, e, cfg, 'testDbUp', s.id, s.worktree ?? s.repoPath)
 }
 
-/** Arrête la base `<id>-main` d'une preuve sur main restée en place ; ne lève jamais. */
-export function proofDbDown(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<string | null> {
-  return dbDown(s, e, cfg, 'proofDbUp', `${s.id}-main`, proofWorktree(s.id))
+/** Stops the `<id>-main` database of a proof on main that is still up; never throws. */
+export async function proofDbDown(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<string | null> {
+  let worktree = proofWorktree(s.id)
+  // 0.8 named that worktree preuve-main. A close must not call down on a folder that was never created.
+  if (isLegacy(s) && !(await fileExists(worktree))) worktree = join(missionDir(s.id), 'preuve-main')
+  return dbDown(s, e, cfg, 'proofDbUp', `${s.id}-main`, worktree)
 }
 
-/** Bloque la mission parce qu'une base de test n'a pas pu être supprimée (`testDbUp`/`proofDbUp` restent vrais). */
+/** Blocks the mission because a test database could not be removed (`testDbUp`/`proofDbUp` stay true). */
 export async function blockDbNotDown(s: MissionState, e: Effects, id: string, error: string): Promise<StepResult> {
-  const previous = s.step === 'bloquée' && s.blockedReason ? `\n(blocage précédent : ${s.blockedReason})` : ''
-  return block(s, e, `base de test ${id} non supprimée : ${error}${previous}`)
+  const previous = s.step === 'blocked' && s.blockedReason ? `\n(previous block: ${s.blockedReason})` : ''
+  return block(s, e, `test database ${id} not removed: ${error}${previous}`)
 }
 
 export function latestGate(s: MissionState, kind: GateKind): Gate | undefined {
@@ -99,14 +102,14 @@ export function latestGate(s: MissionState, kind: GateKind): Gate | undefined {
 }
 
 export function goto(s: MissionState, e: Effects, step: Step): StepResult {
-  log(s, e, `étape ${s.step} → ${step}`)
+  log(s, e, `step ${s.step} → ${step}`)
   s.step = step
   return 'continue'
 }
 
 /**
- * Commit idempotent : un fichier déjà commité (par un agent ou avant un redémarrage) n'est pas recommité. Rend
- * `missing` si un fichier est absent du worktree (rien n'est commité), `clean` si tout est déjà commité.
+ * Idempotent commit: a file already committed (by an agent, or before a restart) is not committed again.
+ * Returns `missing` if a file is absent from the worktree (nothing is committed), `clean` if everything is already committed.
  */
 export async function commitIfChanged(
   s: MissionState,
@@ -120,13 +123,13 @@ export async function commitIfChanged(
   const missing: string[] = []
   for (const rel of files) if (!(await fileExists(join(wt, rel)))) missing.push(rel)
   if (missing.length > 0) {
-    log(s, e, `${what} : fichier absent du worktree, aucun commit : ${missing.map((m) => join(wt, m)).join(', ')}`)
+    log(s, e, `${what}: file missing from the worktree, no commit: ${missing.map((m) => join(wt, m)).join(', ')}`)
     return 'missing'
   }
   const changed: string[] = []
   for (const rel of files) if (!(await e.git.isClean(wt, rel))) changed.push(rel)
   if (changed.length === 0) {
-    log(s, e, `${what} déjà commitée, aucun commit : ${files.join(', ')}`)
+    log(s, e, `${what} already committed, no commit: ${files.join(', ')}`)
     return 'clean'
   }
   await e.git.commitFiles(wt, changed, message)
@@ -137,31 +140,31 @@ const stepEnv: StepFn = async (s, e) => {
   const res = await checkEnv(s.repoPath, e)
   const kos = res.filter((r) => r.status === 'KO')
   if (kos.length === 0) return goto(s, e, 'prepare')
-  return block(s, e, `environnement incomplet :\n${kos.map((k) => `- ${k.label} : ${k.detail}`).join('\n')}`)
+  return block(s, e, `environment incomplete:\n${kos.map((k) => `- ${k.label}: ${k.detail}`).join('\n')}`)
 }
 
 const stepPrepare: StepFn = async (s, e, cfg) => {
   const tab = s.herdr.tabs['process']
-  if (!s.worktree || !tab) return block(s, e, 'préparation impossible : worktree ou onglet process inconnu')
-  const r = await e.runInPane(e.herdr, tab, s.worktree, 'préparation', fill(cfg.prepare, { worktree: s.worktree, id: s.id }), join(missionDir(s.id), 'logs'))
+  if (!s.worktree || !tab) return block(s, e, 'cannot prepare: worktree or process tab unknown')
+  const r = await e.runInPane(e.herdr, tab, s.worktree, 'prepare', fill(cfg.prepare, { worktree: s.worktree, id: s.id }), join(missionDir(s.id), 'logs'))
   if (r.exitCode === 0) return goto(s, e, 'classify')
-  return block(s, e, `préparation du worktree en échec (code ${r.exitCode}), journal : ${r.logPath}\n${r.tail}`)
+  return block(s, e, `worktree prepare failed (code ${r.exitCode}), log: ${r.logPath}\n${r.tail}`)
 }
 
 const stepClassify: StepFn = async (s, e, cfg) => {
   if (!s.type || !s.slug) return 'wait'
-  if (!s.worktree) return block(s, e, 'renommage de la branche impossible : worktree inconnu')
+  if (!s.worktree) return block(s, e, 'cannot rename branch: worktree unknown')
   const target = `${cfg.branchPrefixes[s.type]}/${s.id}-${s.slug}`
-  // Reprise : le renommage a pu être fait avant un arrêt du moteur, sans être enregistré.
+  // Resume: the rename may have happened before the engine stopped, without being recorded.
   if ((await e.git.currentBranch(s.worktree)) === target) {
-    log(s, e, `branche déjà nommée ${target}`)
+    log(s, e, `branch already named ${target}`)
   } else {
     await e.git.renameBranch(s.worktree, `herness/${s.id}`, target)
-    log(s, e, `branche renommée en ${target}`)
+    log(s, e, `branch renamed to ${target}`)
   }
   s.branch = target
-  // Le prompt de l'orchestrateur ne connaît que `herness/<id>` : il apprend le nom suivi par la PR.
-  await informOrchestrator(s, e, `Branche de la mission renommée en ${target} : c'est elle que suivra la PR.`)
+  // The orchestrator prompt only knows `herness/<id>`: it learns the name the PR will track.
+  await informOrchestrator(s, e, `Mission branch renamed to ${target}: the PR will track it.`)
   return goto(s, e, 'brainstorm')
 }
 
@@ -174,30 +177,30 @@ const stepSpec: StepFn = async (s, e) => {
   const g = latestGate(s, 'spec')
   if (!g || g.status === 'refused') return goto(s, e, 'brainstorm')
   if (g.status === 'pending') return 'wait'
-  if (!s.worktree) return block(s, e, 'commit de la spec impossible : worktree inconnu')
+  if (!s.worktree) return block(s, e, 'cannot commit the spec: worktree unknown')
   const r = await commitIfChanged(s, e, specPath(s), `docs(${s.id}): spec ${s.slug}`, 'spec')
-  if (r === 'missing') return block(s, e, `spec validée mais absente du worktree : ${join(s.worktree, specPath(s))}`)
+  if (r === 'missing') return block(s, e, `approved spec missing from the worktree: ${join(s.worktree, specPath(s))}`)
   return goto(s, e, 'plan')
 }
 
 const stepPlan: StepFn = async (s, e) => {
   const g = latestGate(s, 'plan')
   if (!g || g.status !== 'approved') return 'wait'
-  if (!s.worktree) return block(s, e, 'lecture du plan impossible : worktree inconnu')
+  if (!s.worktree) return block(s, e, 'cannot read the plan: worktree unknown')
   const rel = planPath(s)
   let md: string
   try {
     md = await readFile(join(s.worktree, rel), 'utf8')
   } catch {
-    return block(s, e, `plan validé mais absent du worktree : ${join(s.worktree, rel)}`)
+    return block(s, e, `approved plan missing from the worktree: ${join(s.worktree, rel)}`)
   }
   const parsed = parsePlan(md)
-  if (!parsed.ok) return block(s, e, `plan approuvé invalide (${rel}) :\n- ${parsed.errors.join('\n- ')}`)
+  if (!parsed.ok) return block(s, e, `approved plan invalid (${rel}):\n- ${parsed.errors.join('\n- ')}`)
   await mkdir(missionDir(s.id), { recursive: true })
   await writeFile(join(missionDir(s.id), 'plan.approved.md'), md)
   s.tasks = parsed.tasks.map((t) => ({ n: t.n, title: t.title, testCommand: t.testCommand, phase: 'pending', round: 0 }))
   if ((await commitIfChanged(s, e, rel, `docs(${s.id}): plan ${s.slug}`, 'plan')) === 'missing') {
-    return block(s, e, `plan validé mais absent du worktree : ${join(s.worktree, rel)}`)
+    return block(s, e, `approved plan missing from the worktree: ${join(s.worktree, rel)}`)
   }
   return goto(s, e, 'tasks')
 }
@@ -205,7 +208,7 @@ const stepPlan: StepFn = async (s, e) => {
 const waiting: StepFn = async () => 'wait'
 const stopped: StepFn = async () => 'stop'
 
-/** Après les tâches, un amendement approuvé s'applique avant l'étape et peut ramener la mission à `tasks`. */
+/** After the tasks, an approved amendment is applied before the step and can send the mission back to `tasks`. */
 const afterAmendment =
   (next: StepFn): StepFn =>
   async (s, e, cfg) => {
@@ -213,7 +216,7 @@ const afterAmendment =
     return next(s, e, cfg)
   }
 
-/** Une fonction par étape. */
+/** One function per step. */
 export const steps: Record<Step, StepFn> = {
   env: stepEnv,
   prepare: stepPrepare,
@@ -221,39 +224,39 @@ export const steps: Record<Step, StepFn> = {
   brainstorm: stepBrainstorm,
   spec: stepSpec,
   plan: stepPlan,
-  // Appels différés : `tasks.ts` et `finish.ts` importent ce module (import circulaire).
+  // Deferred calls: `tasks.ts` and `finish.ts` import this module (circular import).
   tasks: (s, e, cfg) => stepTasks(s, e, cfg),
-  // Ces deux étapes appliquent elles-mêmes les amendements, hors boucle de correction en cours (R14).
+  // These two steps apply amendments themselves, outside the correction loop in progress (R14).
   'global-review': (s, e, cfg) => stepGlobalReview(s, e, cfg),
   preflight: (s, e, cfg) => stepPreflight(s, e, cfg),
   pr: afterAmendment((s, e, cfg) => stepPr(s, e, cfg)),
-  bloquée: waiting,
-  'pr-ouverte': stopped,
-  fermée: stopped,
+  blocked: waiting,
+  'pr-open': stopped,
+  closed: stopped,
 }
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
-/** Archive les fichiers de correction `correctifs-<n>.md` du dossier : un tour rejoué en écrit un neuf. */
+/** Archives `fixes-<n>.md` files in the directory: a replayed round writes a fresh one. */
 async function archiveCorrections(s: MissionState, e: Effects, dir: string, gateId: string): Promise<void> {
   const names = await readdir(dir).catch(() => [] as string[])
   for (const name of names) {
-    const m = /^correctifs-(\d+)\.md$/.exec(name)
+    const m = /^fixes-(\d+)\.md$/.exec(name)
     if (!m) continue
-    await rename(join(dir, name), join(dir, `correctifs-${m[1]}.avant-${gateId}.md`))
-    log(s, e, `${join(dir, name)} archivé avant la reprise`)
+    await rename(join(dir, name), join(dir, `fixes-${m[1]}.before-${gateId}.md`))
+    log(s, e, `${join(dir, name)} archived before resume`)
   }
 }
 
 /**
- * Porte `reprise-bloquee` validée (R12/R13), ou amendement validé sur une mission bloquée dans la boucle des tâches :
- * la mission repart de l'étape où elle s'était arrêtée, avec un budget de tours neuf pour la boucle concernée
- * (tâche en cours, revue globale ou preflight). `why` : la décision de l'utilisateur, pour l'orchestrateur.
+ * Approved `resume-blocked` gate (R12/R13), or an approved amendment on a mission blocked in the task loop:
+ * the mission restarts from the step where it stopped, with a fresh round budget for the loop involved
+ * (current task, global review or preflight). `why`: the user's decision, for the orchestrator.
  */
-async function resumeBlocked(s: MissionState, e: Effects, gateId: string, why = 'la reprise de la mission'): Promise<void> {
+async function resumeBlocked(s: MissionState, e: Effects, gateId: string, why = 'the mission resume'): Promise<void> {
   const from = s.blockedFrom
-  if (s.step !== 'bloquée' || !from) {
-    log(s, e, `reprise ${gateId} ignorée : mission ${s.step === 'bloquée' ? "sans étape d'origine connue" : 'non bloquée'}`)
+  if (s.step !== 'blocked' || !from) {
+    log(s, e, `resume ${gateId} ignored: mission ${s.step === 'blocked' ? 'with no known origin step' : 'not blocked'}`)
     return
   }
   const dir = missionDir(s.id)
@@ -262,10 +265,10 @@ async function resumeBlocked(s: MissionState, e: Effects, gateId: string, why = 
     if (t) {
       t.round = 0
       await archiveCorrections(s, e, taskDir(s, t), gateId)
-      // Aucun commit depuis la base : rejouer le contrôle rebloquerait. L'implémenteur reçoit de nouveau son brief
-      // (peut-être réécrit par un amendement) au lieu d'attendre une consigne déjà close.
+      // No commit since the base: replaying the check would block again. The implementer receives the brief again
+      // (possibly rewritten by an amendment) instead of waiting on instructions that are already closed.
       if ((t.phase === 'control' || t.phase === 'implement') && t.baseSha && s.worktree && (await e.git.headSha(s.worktree)) === t.baseSha) {
-        log(s, e, `tâche ${t.n} : aucun commit depuis ${t.baseSha}, ${t.phase} → implement, l'implémenteur reçoit de nouveau son brief`)
+        log(s, e, `task ${t.n}: no commit since ${t.baseSha}, ${t.phase} → implement, the implementer receives the brief again`)
         t.phase = 'implement'
         delete t.pendingAsk
       }
@@ -277,43 +280,43 @@ async function resumeBlocked(s: MissionState, e: Effects, gateId: string, why = 
     s.loops.preflight.round = 0
     await archiveCorrections(s, e, join(dir, 'preflight'), gateId)
   }
-  // Budget neuf aussi pour le rebase automatique de l'étape PR.
+  // Fresh budget for the automatic rebase of the PR step too.
   s.loops.prRebases = 0
   const reason = s.blockedReason
   delete s.blockedReason
   delete s.blockedFrom
-  log(s, e, `reprise validée (${gateId}) : retour à l'étape ${from}`)
+  log(s, e, `resume approved (${gateId}): back to step ${from}`)
   s.step = from
-  await informOrchestrator(s, e, `L'utilisateur a validé ${why} (blocage : ${reason ?? '?'}). Retour à l'étape ${from}.`)
+  await informOrchestrator(s, e, `The user approved ${why} (block: ${reason ?? '?'}). Back to step ${from}.`)
 }
 
-/** Vrai si une correction (tâche, revue globale ou preflight) est en phase `fix` : elle attend un arbitrage éventuel. */
+/** True when a correction (task, global review or preflight) is in phase `fix`: it may be waiting for arbitration. */
 function correctionWaiting(s: MissionState): boolean {
   return s.tasks.some((t) => t.phase === 'fix') || s.loops.globalReview.phase === 'fix' || s.loops.preflight.phase === 'fix'
 }
 
-/** Vrai si une tâche, la revue globale ou le preflight attend encore cette porte `agent-arret`. */
+/** True when a task, the global review or the preflight is still holding this `agent-stopped` gate. */
 function stopGateHeld(s: MissionState, id: string): boolean {
   return s.tasks.some((t) => t.stopGate === id) || s.loops.globalReview.stopGate === id || s.loops.preflight.stopGate === id
 }
 
-/** Porte `abandon` validée : bases de test supprimées, puis mission `fermée` ; un échec bloque la mission. */
+/** Approved `abandon` gate: test databases removed, then mission `closed`; a failure blocks the mission. */
 async function abandonMission(s: MissionState, e: Effects, cfg: ProjectConfig, gateId: string): Promise<void> {
   const test = await testDbDown(s, e, cfg)
   const proof = await proofDbDown(s, e, cfg)
   if (test || proof) {
-    await blockDbNotDown(s, e, test ? s.id : `${s.id}-main`, [test, proof].filter(Boolean).join(' ; '))
+    await blockDbNotDown(s, e, test ? s.id : `${s.id}-main`, [test, proof].filter(Boolean).join('; '))
     return
   }
-  log(s, e, `abandon validé (${gateId}) : mission fermée`)
-  s.step = 'fermée'
-  await stopAgentsTab(s, e, 'all', 'abandon validé')
-  await informOrchestrator(s, e, `L'utilisateur a validé l'abandon (porte ${gateId}) : la mission est fermée.`)
+  log(s, e, `abandon approved (${gateId}): mission closed`)
+  s.step = 'closed'
+  await stopAgentsTab(s, e, 'all', 'abandon approved')
+  await informOrchestrator(s, e, `The user approved the abandon (gate ${gateId}): the mission is closed.`)
 }
 
 export class Engine {
-  /** Erreurs déjà écrites dans le journal pendant la vie de ce processus, par origine et message. */
-  private journalised = new Set<string>()
+  /** Errors already written to the journal during this process, by origin and message. */
+  private loggedErrors = new Set<string>()
 
   constructor(
     private readonly id: string,
@@ -321,12 +324,12 @@ export class Engine {
     private readonly cfg: ProjectConfig,
   ) {}
 
-  /** N'écrit pas une deuxième fois la même erreur pour la même origine. `true` si l'entrée est dans le journal. */
-  private async journaliser(ctx: ErrorContext, err: unknown): Promise<boolean> {
+  /** Does not write the same error twice for the same origin. `true` if the entry is in the journal. */
+  private async recordError(ctx: ErrorContext, err: unknown): Promise<boolean> {
     const sig = `${ctx.origin}\0${errMsg(err)}`
-    if (this.journalised.has(sig)) return true
+    if (this.loggedErrors.has(sig)) return true
     const ok = await logHernessError(ctx, err)
-    if (ok) this.journalised.add(sig)
+    if (ok) this.loggedErrors.add(sig)
     return ok
   }
 
@@ -341,51 +344,51 @@ export class Engine {
       case 'decision': {
         const r = applyDecision(s, m)
         if (!r.ok) {
-          log(s, e, `décision ignorée : ${r.reason}`)
+          log(s, e, `decision ignored: ${r.reason}`)
           return
         }
         const g = r.gate
         if (g.kind === 'abandon') {
           if (g.status === 'approved') await abandonMission(s, e, cfg, g.id)
           else {
-            log(s, e, `abandon refusé (${g.id})${g.note ? ` : ${g.note}` : ''}`)
-            await informOrchestrator(s, e, `L'utilisateur a refusé l'abandon (porte ${g.id})${g.note ? `, avec la note : ${g.note}` : ''}. La mission continue.`)
+            log(s, e, `abandon rejected (${g.id})${g.note ? `: ${g.note}` : ''}`)
+            await informOrchestrator(s, e, `The user rejected the abandon (gate ${g.id})${g.note ? `, with the note: ${g.note}` : ''}. The mission continues.`)
           }
           return
         }
-        if (g.kind === 'reprise-bloquee') {
+        if (g.kind === 'resume-blocked') {
           if (g.status === 'approved') await resumeBlocked(s, e, g.id)
-          else log(s, e, `reprise refusée (${g.id}) : la mission reste bloquée${g.note ? ` (${g.note})` : ''}`)
+          else log(s, e, `resume rejected (${g.id}): the mission stays blocked${g.note ? ` (${g.note})` : ''}`)
           return
         }
-        if (g.kind === 'arbitrage' && !correctionWaiting(s)) {
-          // Consommée : sa note n'entrera pas dans un fichier de correctifs ultérieur sans rapport avec elle.
+        if (g.kind === 'arbitration' && !correctionWaiting(s)) {
+          // Consumed: its note will not enter a later corrections file unrelated to it.
           s.consumedArbitrages.push(g.id)
-          log(s, e, `arbitrage ${g.id} ${g.status === 'approved' ? 'validé' : 'refusé'} sans effet : aucune correction n'attendait de décision`)
-          const hint = s.step === 'bloquée' ? ` La mission reste bloquée : l'utilisateur la reprend avec herness reprendre ${s.id} puis validation, ou la débloque en validant un amendement.` : ''
-          await informOrchestrator(s, e, `arbitrage ${g.id} sans effet : aucune correction n'attendait de décision.${hint}`)
+          log(s, e, `arbitration ${g.id} ${g.status === 'approved' ? 'approved' : 'rejected'} with no effect: no correction was waiting for a decision`)
+          const hint = s.step === 'blocked' ? ` The mission stays blocked: the user resumes it with herness resume ${s.id} then approval, or unblocks it by approving an amendment.` : ''
+          await informOrchestrator(s, e, `arbitration ${g.id} with no effect: no correction was waiting for a decision.${hint}`)
           return
         }
-        if (g.kind === 'agent-arret' && !stopGateHeld(s, g.id)) {
-          // Un amendement a déjà fait reprendre la tâche : rien n'attend plus cette décision.
-          log(s, e, `porte ${g.id} (agent-arret) ${g.status === 'approved' ? 'validée' : 'refusée'} sans effet : la tâche a déjà repris avec sa consigne amendée`)
+        if (g.kind === 'agent-stopped' && !stopGateHeld(s, g.id)) {
+          // An amendment already resumed the task: nothing is waiting for this decision anymore.
+          log(s, e, `gate ${g.id} (agent-stopped) ${g.status === 'approved' ? 'approved' : 'rejected'} with no effect: the task already resumed with its amended instructions`)
           return
         }
         if (g.status === 'approved') {
-          log(s, e, `porte ${g.id} (${g.kind}) validée`)
-          await informOrchestrator(s, e, `L'utilisateur a validé la porte ${g.id} (${g.kind})${g.note ? `, avec la note : ${g.note}` : ''}.`)
-          if (g.kind === 'amendement' && s.step === 'bloquée' && s.blockedFrom === 'tasks') await this.amendBlocked(s, g.id)
+          log(s, e, `gate ${g.id} (${g.kind}) approved`)
+          await informOrchestrator(s, e, `The user approved gate ${g.id} (${g.kind})${g.note ? `, with the note: ${g.note}` : ''}.`)
+          if (g.kind === 'amendment' && s.step === 'blocked' && s.blockedFrom === 'tasks') await this.amendBlocked(s, g.id)
         } else {
-          log(s, e, `porte ${g.id} (${g.kind}) refusée : ${g.note ?? ''}`)
-          const again = g.kind === 'spec' || g.kind === 'plan' ? ` Corrige puis redemande la validation avec demander_validation('${g.kind}').` : ''
-          await informOrchestrator(s, e, `L'utilisateur a refusé la porte ${g.id} (${g.kind}). Motif : ${g.note ?? '(aucun)'}.${again}`)
+          log(s, e, `gate ${g.id} (${g.kind}) rejected: ${g.note ?? ''}`)
+          const again = g.kind === 'spec' || g.kind === 'plan' ? ` Fix it, then request approval again with request_approval('${g.kind}').` : ''
+          await informOrchestrator(s, e, `The user rejected gate ${g.id} (${g.kind}). Reason: ${g.note ?? '(none)'}.${again}`)
         }
         return
       }
       case 'request-gate': {
-        const summary = m.kind === 'amendement' ? m.summary + (await this.blockedAmendmentNote(s)) : m.summary
-        if (m.kind === 'reprise-bloquee' && s.step !== 'bloquée') {
-          log(s, e, `demande de reprise ignorée : la mission n'est pas bloquée (étape ${s.step})`)
+        const summary = m.kind === 'amendment' ? m.summary + (await this.blockedAmendmentNote(s)) : m.summary
+        if (m.kind === 'resume-blocked' && s.step !== 'blocked') {
+          log(s, e, `resume request ignored: the mission is not blocked (step ${s.step})`)
           return
         }
         const dup = s.gates.find((x) => x.kind === m.kind && x.status === 'pending')
@@ -393,39 +396,39 @@ export class Engine {
           dup.summary = summary
           if (m.path !== undefined) dup.path = m.path
           if (m.hash !== undefined) dup.hash = m.hash
-          log(s, e, `demande de porte ${m.kind} : la porte ${dup.id} est déjà en attente, mise à jour`)
-          await informOrchestrator(s, e, `La porte ${dup.id} (${m.kind}) est déjà en attente de la décision de l'utilisateur ; résumé mis à jour, aucune nouvelle porte ouverte.`)
+          log(s, e, `gate request ${m.kind}: gate ${dup.id} is already pending, updated`)
+          await informOrchestrator(s, e, `Gate ${dup.id} (${m.kind}) is already pending the user's decision; summary updated, no new gate opened.`)
           return
         }
         const g = openGate(s, m.kind, summary, m.path, m.hash)
-        log(s, e, `porte ${g.id} (${g.kind}) ouverte : ${g.summary}`)
-        await notify(s, e, `Porte ${g.kind} à valider : ${g.summary}`)
-        await informOrchestrator(s, e, `Porte ${g.id} (${g.kind}) ouverte, en attente de la décision de l'utilisateur (herness valider|refuser ${s.id} --porte ${g.id}).`)
+        log(s, e, `gate ${g.id} (${g.kind}) opened: ${g.summary}`)
+        await notify(s, e, `Gate ${g.kind} to approve: ${g.summary}`)
+        await informOrchestrator(s, e, `Gate ${g.id} (${g.kind}) opened, waiting for the user's decision (herness approve|reject ${s.id} --gate ${g.id}).`)
         return
       }
       case 'classified': {
         if (s.branch && s.branch !== `herness/${s.id}`) {
-          log(s, e, `classement ${m.workType}/${m.slug} ignoré : branche déjà nommée ${s.branch}`)
+          log(s, e, `classification ${m.workType}/${m.slug} ignored: branch already named ${s.branch}`)
           return
         }
         if (!(m.workType in cfg.branchPrefixes)) {
-          log(s, e, `classement ignoré : type « ${m.workType} » inconnu (${Object.keys(cfg.branchPrefixes).join(', ')})`)
+          log(s, e, `classification ignored: unknown type "${m.workType}" (${Object.keys(cfg.branchPrefixes).join(', ')})`)
           return
         }
         if (!SLUG.test(m.slug)) {
-          log(s, e, `classement ignoré : slug « ${m.slug} » invalide`)
+          log(s, e, `classification ignored: invalid slug "${m.slug}"`)
           return
         }
         s.type = m.workType
         s.slug = m.slug
-        log(s, e, `mission classée : ${m.workType} / ${m.slug}`)
+        log(s, e, `mission classified: ${m.workType} / ${m.slug}`)
         const at = (rel: string): string => (s.worktree ? join(s.worktree, rel) : rel)
-        await informOrchestrator(s, e, `Mission classée ${m.workType} / ${m.slug}. Écris la spec dans ${at(specPath(s))} et le plan dans ${at(planPath(s))} (chemins exacts).`)
+        await informOrchestrator(s, e, `Mission classified ${m.workType} / ${m.slug}. Write the spec at ${at(specPath(s))} and the plan at ${at(planPath(s))} (exact paths).`)
         return
       }
       case 'orchestrator-started':
         s.orchestrator.started = true
-        log(s, e, "prompt d'ouverture envoyé à l'orchestrateur")
+        log(s, e, 'opening prompt sent to the orchestrator')
         return
       case 'pause':
         s.paused = true
@@ -433,48 +436,48 @@ export class Engine {
         return
       case 'resume':
         s.paused = false
-        log(s, e, 'reprise')
+        log(s, e, 'resume')
         return
       case 'abandon': {
-        // Seul l'utilisateur ferme : la demande ouvre une porte `abandon`.
+        // Only the user closes: the request opens an `abandon` gate.
         const dup = s.gates.find((x) => x.kind === 'abandon' && x.status === 'pending')
         if (dup) {
-          log(s, e, `demande d'abandon : la porte ${dup.id} est déjà en attente`)
+          log(s, e, `abandon request: gate ${dup.id} is already pending`)
           return
         }
         const g = openGate(s, 'abandon', m.reason)
-        log(s, e, `porte ${g.id} (abandon) ouverte : ${m.reason}`)
-        await notify(s, e, `Abandon à valider : ${m.reason}`)
-        await informOrchestrator(s, e, `Porte ${g.id} (abandon) ouverte, en attente de la décision de l'utilisateur (herness valider|refuser ${s.id} --porte ${g.id}).`)
+        log(s, e, `gate ${g.id} (abandon) opened: ${m.reason}`)
+        await notify(s, e, `Abandon to approve: ${m.reason}`)
+        await informOrchestrator(s, e, `Gate ${g.id} (abandon) opened, waiting for the user's decision (herness approve|reject ${s.id} --gate ${g.id}).`)
         return
       }
     }
   }
 
   /**
-   * Amendement validé alors que la mission est bloquée dans la boucle des tâches : il est appliqué aussitôt. Si
-   * c'est la tâche qui bloque la mission et qu'il change son texte, valider le changement vaut décision de
-   * continuer : la mission reprend comme après une reprise validée. Sinon elle reste bloquée.
+   * Amendment approved while the mission is blocked in the task loop: it is applied immediately. If
+   * the task is what blocks the mission and the amendment changes its text, approving the change counts as a decision
+   * to continue: the mission resumes as after an approved resume. Otherwise it stays blocked.
    */
   private async amendBlocked(s: MissionState, gateId: string): Promise<void> {
     const { e } = this
     const r = await applyAmendment(s, e, this.cfg)
-    if (r.status === 'none') log(s, e, `amendement ${gateId} validé : pas encore applicable, la mission reste bloquée`)
+    if (r.status === 'none') log(s, e, `amendment ${gateId} approved: not applicable yet, the mission stays blocked`)
     if (r.status !== 'applied') return
     if (unblocksMission(s, r.resumed)) {
-      await resumeBlocked(s, e, gateId, `l'amendement ${gateId}, qui relance la tâche ${r.resumed}`)
+      await resumeBlocked(s, e, gateId, `amendment ${gateId}, which restarts task ${r.resumed}`)
       return
     }
-    log(s, e, `amendement ${gateId} appliqué, la mission reste bloquée (${s.blockedReason ?? '?'})`)
-    await informOrchestrator(s, e, `Amendement ${gateId} appliqué, mission toujours bloquée : herness reprendre ${s.id} pour la relancer.`)
+    log(s, e, `amendment ${gateId} applied, the mission stays blocked (${s.blockedReason ?? '?'})`)
+    await informOrchestrator(s, e, `Amendment ${gateId} applied, mission still blocked: herness resume ${s.id} to restart it.`)
   }
 
-  /** Mission bloquée : ce que changera la validation d'un amendement, à ajouter au résumé de sa porte. */
+  /** Blocked mission: what approving an amendment will change, appended to its gate summary. */
   private async blockedAmendmentNote(s: MissionState): Promise<string> {
-    if (s.step !== 'bloquée') return ''
+    if (s.step !== 'blocked') return ''
     const plan = await readFile(proposedPlanPath(s.id), 'utf8').catch(() => '')
     const n = plan ? await amendmentWouldResume(s, plan) : undefined
-    return n !== undefined ? ` (mission bloquée : valider cet amendement relancera la tâche ${n})` : " (mission bloquée : valider n'enlève pas le blocage)"
+    return n !== undefined ? ` (mission blocked: approving this amendment will restart task ${n})` : ' (mission blocked: approving does not clear the block)'
   }
 
   async tick(): Promise<StepResult> {
@@ -484,7 +487,7 @@ export class Engine {
     for (const m of msgs) await this.handle(s, m)
     if (msgs.length > 0) await saveState(s)
     let r: StepResult
-    if (s.step === 'pr-ouverte' || s.step === 'fermée') r = 'stop'
+    if (s.step === 'pr-open' || s.step === 'closed') r = 'stop'
     else if (s.paused) r = 'wait'
     else {
       r = await steps[s.step](s, this.e, this.cfg)
@@ -494,29 +497,29 @@ export class Engine {
     return r
   }
 
-  /** Erreur imprévue : la mission passe en `bloquée` (base de test arrêtée) et le moteur continue. */
+  /** Unexpected error: the mission moves to `blocked` (test database stopped) and the engine continues. */
   private async fail(err: unknown): Promise<void> {
-    const msg = `erreur du moteur : ${errMsg(err)}`
-    console.error(`herness ${this.id} : ${msg}`)
+    const msg = `engine error: ${errMsg(err)}`
+    console.error(`herness ${this.id}: ${msg}`)
     let logged = false
     try {
       const s = await loadState(this.id)
-      const wrote = await this.journaliser({ mission: this.id, origin: 'moteur', step: s.step }, err)
+      const wrote = await this.recordError({ mission: this.id, origin: 'engine', step: s.step }, err)
       logged = wrote
       const dbErrors = [await testDbDown(s, this.e, this.cfg), await proofDbDown(s, this.e, this.cfg)].filter((x) => x !== null)
-      const base = dbErrors.length ? `${msg}\nbase(s) de test non supprimée(s) : ${dbErrors.join(' ; ')}` : msg
-      await block(s, this.e, wrote ? `${base}\ndétail : ${errorLogPath()}` : base)
+      const base = dbErrors.length ? `${msg}\ntest database(s) not removed: ${dbErrors.join('; ')}` : msg
+      await block(s, this.e, wrote ? `${base}\ndetail: ${errorLogPath()}` : base)
       await saveState(s)
     } catch (err2) {
-      if (!logged) await this.journaliser({ mission: this.id, origin: 'moteur' }, err)
-      console.error(`herness ${this.id} : impossible d'enregistrer le blocage : ${errMsg(err2)}`)
-      await this.journaliser({ mission: this.id, origin: 'moteur : enregistrement du blocage' }, err2)
+      if (!logged) await this.recordError({ mission: this.id, origin: 'engine' }, err)
+      console.error(`herness ${this.id}: could not record the block: ${errMsg(err2)}`)
+      await this.recordError({ mission: this.id, origin: 'engine: recording the block' }, err2)
     }
   }
 
   /**
-   * Démarrage du moteur : une commande lancée par un moteur précédent (libellé terminé par « … » dans les onglets
-   * checks et process) tourne peut-être encore ; elle est interrompue (double ctrl+c) et marquée ✗.
+   * Engine startup: a command started by a previous engine (label ending with "…" in the checks
+   * and process tabs) may still be running; it is interrupted (double ctrl+c) and marked ✗.
    */
   private async interruptStaleCommands(): Promise<void> {
     const { e } = this
@@ -535,17 +538,17 @@ export class Engine {
           stale.push(p.label ?? p.paneId)
         }
       } catch (err) {
-        log(s, e, `onglet ${kind} : commandes en cours non interrompues (${errMsg(err)})`)
+        log(s, e, `tab ${kind}: running commands not interrupted (${errMsg(err)})`)
       }
     }
-    if (stale.length) log(s, e, `démarrage du moteur : commande(s) d'un moteur précédent interrompue(s) : ${stale.join(', ')}`)
+    if (stale.length) log(s, e, `engine startup: command(s) from a previous engine interrupted: ${stale.join(', ')}`)
     await saveState(s)
   }
 
-  /** Démarrage du moteur : arrête les agents déjà terminés ; toute la mission si elle est déjà close. */
+  /** Engine startup: stops agents that are already finished; the whole mission if it is already closed. */
   private async releaseFinishedAgents(): Promise<void> {
     const s = await loadState(this.id)
-    await stopAgentsTab(s, this.e, s.step === 'pr-ouverte' || s.step === 'fermée' ? 'all' : 'done', 'démarrage du moteur')
+    await stopAgentsTab(s, this.e, s.step === 'pr-open' || s.step === 'closed' ? 'all' : 'done', 'engine startup')
     await saveState(s)
   }
 
@@ -553,14 +556,14 @@ export class Engine {
     try {
       await this.interruptStaleCommands()
     } catch (err) {
-      console.error(`herness ${this.id} : nettoyage des panneaux au démarrage impossible : ${errMsg(err)}`)
-      await logHernessError({ mission: this.id, origin: 'moteur : démarrage (nettoyage des panneaux)' }, err)
+      console.error(`herness ${this.id}: could not clean panes at startup: ${errMsg(err)}`)
+      await logHernessError({ mission: this.id, origin: 'engine: startup (pane cleanup)' }, err)
     }
     try {
       await this.releaseFinishedAgents()
     } catch (err) {
-      console.error(`herness ${this.id} : arrêt des agents terminés au démarrage impossible : ${errMsg(err)}`)
-      await logHernessError({ mission: this.id, origin: 'moteur : démarrage (arrêt des agents terminés)' }, err)
+      console.error(`herness ${this.id}: could not stop finished agents at startup: ${errMsg(err)}`)
+      await logHernessError({ mission: this.id, origin: 'engine: startup (stopping finished agents)' }, err)
     }
     for (;;) {
       let r: StepResult

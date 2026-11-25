@@ -6,7 +6,7 @@ import { run } from '../../src/exec.js';
 import { Herdr } from '../../src/herdr/client.js';
 import { runInPane } from '../../src/herdr/layout.js';
 
-describe.skipIf(process.env['HERDR_ENV'] !== '1')('Herdr (intégration)', () => {
+describe.skipIf(process.env['HERDR_ENV'] !== '1')('Herdr (integration)', () => {
   const h = new Herdr();
   let dir = '';
   let ws = '';
@@ -14,7 +14,7 @@ describe.skipIf(process.env['HERDR_ENV'] !== '1')('Herdr (intégration)', () => 
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'herness-herdr-'));
-    // le SEUL espace créé par ce test ; il est fermé en afterAll
+    // the ONLY workspace created by this test; it is closed in afterAll
     const r = await run('herdr', ['workspace', 'create', '--cwd', dir, '--label', 'herness-test-int', '--no-focus']);
     const res = JSON.parse(r.stdout).result;
     ws = res.workspace.workspace_id;
@@ -26,7 +26,7 @@ describe.skipIf(process.env['HERDR_ENV'] !== '1')('Herdr (intégration)', () => 
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
-  it("runInPane rend exitCode 3 et le journal pour « sh -c 'echo x; exit 3' »", async () => {
+  it("runInPane returns exitCode 3 and the log for \"sh -c 'echo x; exit 3'\"", async () => {
     const r = await runInPane(h, tab, dir, 'echo3', ['sh', '-c', 'echo x; exit 3'], join(dir, 'logs'), 60_000);
     expect(r.exitCode).toBe(3);
     expect(await readFile(r.logPath, 'utf8')).toContain('x');
@@ -36,13 +36,13 @@ describe.skipIf(process.env['HERDR_ENV'] !== '1')('Herdr (intégration)', () => 
     expect(panes.some((p) => p.label === 'echo3 ✗')).toBe(true);
   }, 90_000);
 
-  it('lit les espaces, onglets, disposition et agents inexistants', async () => {
+  it('reads workspaces, tabs, layout and missing agents', async () => {
     expect((await h.workspaceList()).some((w) => w.workspaceId === ws && w.label === 'herness-test-int')).toBe(true);
     expect((await h.tabList(ws)).map((t) => t.tabId)).toContain(tab);
     const pane = (await h.paneList(ws))[0]!;
     expect((await h.paneLayout(pane.paneId))[0]!.rect.width).toBeGreaterThan(0);
     expect((await h.paneProcessInfo(pane.paneId)).shellPid).not.toBeNull();
-    expect(await h.agentGet('herness-inexistant')).toBeNull();
-    expect(await h.paneWaitOutput(pane.paneId, '__jamais_present__', 500)).toBe(false);
+    expect(await h.agentGet('herness-missing')).toBeNull();
+    expect(await h.paneWaitOutput(pane.paneId, '__never_present__', 500)).toBe(false);
   });
 });

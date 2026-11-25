@@ -34,7 +34,7 @@ function inboxDir(id: string): string {
 
 let counter = 0
 
-// <ms sur 15 chiffres>-<compteur du processus sur 6>-<pid>-<aléa> : l'ordre lexicographique est l'ordre de dépôt.
+// <ms on 15 digits>-<process counter on 6>-<pid>-<random>: lexicographic order is deposit order.
 function nextName(): string {
   counter = (counter + 1) % 1_000_000
   return [
@@ -54,7 +54,7 @@ export async function postInbox(id: string, msg: InboxMessage): Promise<void> {
   await rename(tmp, join(dir, `${name}.json`))
 }
 
-// Tolère les anciens noms `<ms>-<aléa>` : horodatage, puis compteur s'il existe, puis nom.
+// Tolerates the old names `<ms>-<random>`: timestamp, then the counter when present, then the name.
 function order(name: string): [number, number, string] {
   const [ts, second] = name.split('-')
   const counter = /^\d{6}$/.test(second ?? '') ? Number(second) : 0

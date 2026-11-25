@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 
 const KEY = /\{\{\s*(\w+)\s*\}\}/g
 
-/** Rend le gabarit `src/prompts/<name>.md` en remplaçant les `{{clé}}`. */
+/** Renders the `src/prompts/<name>.md` template, replacing each `{{key}}`. */
 export async function render(name: string, vars: Record<string, string>): Promise<string> {
   const raw = await readFile(new URL(`./${name}.md`, import.meta.url), 'utf8')
   const missing = new Set<string>()
@@ -15,7 +15,7 @@ export async function render(name: string, vars: Record<string, string>): Promis
     return v
   })
   if (missing.size > 0) {
-    throw new Error(`Gabarit ${name} : valeurs manquantes pour ${[...missing].join(', ')}`)
+    throw new Error(`Template ${name}: missing values for ${[...missing].join(', ')}`)
   }
   return out
 }

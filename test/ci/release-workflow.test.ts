@@ -2,47 +2,58 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 
-const workflow = await readFile(
-  join(import.meta.dirname, '..', '..', '.github', 'workflows', 'release-please.yml'),
-  'utf8',
-)
+const root = join(import.meta.dirname, '..', '..')
+const workflow = await readFile(join(root, '.github', 'workflows', 'release-please.yml'), 'utf8')
 
-test('le script annote la release et la PR de release', () => {
-  const marque = '.github/scripts/auteurs-notes.sh "$GITHUB_REPOSITORY"'
-  const occurrences = workflow.split(marque).length - 1
+test('the script annotates the release and the release PR', () => {
+  const mark = '.github/scripts/authors-notes.sh "$GITHUB_REPOSITORY"'
+  const occurrences = workflow.split(mark).length - 1
   expect(occurrences).toBeGreaterThanOrEqual(2)
+  expect(workflow).toContain('> notes-authors.md')
+  expect(workflow).toContain('> body.md')
+  expect(workflow).toContain('< body.md >')
+  expect(workflow).toContain('body-authors.md')
+  expect(workflow).not.toContain('auteurs-notes.sh')
+  expect(workflow).not.toContain('notes-auteurs.md')
+  expect(workflow).not.toContain('corps.md')
+  expect(workflow).not.toContain('corps-auteurs.md')
   expect(workflow).toContain('autorelease: pending')
   expect(workflow).toContain('gh pr edit')
   expect(workflow).toContain('cmp -s')
 })
 
-test("l'ancienne boucle en ligne a disparu", () => {
+test('the old inline loop is gone', () => {
   expect(workflow).not.toContain('while IFS= read -r line')
 })
 
-test('le checkout tourne à chaque passage', () => {
-  const lignes = workflow.split('\n')
-  const index = lignes.findIndex((ligne) => ligne.includes('- uses: actions/checkout@v4'))
+test('checkout runs on every pass', () => {
+  const lines = workflow.split('\n')
+  const index = lines.findIndex((line) => line.includes('- uses: actions/checkout@v4'))
   expect(index).toBeGreaterThanOrEqual(0)
-  expect(lignes[index + 1]).not.toContain('if:')
+  expect(lines[index + 1]).not.toContain('if:')
 })
 
-test("l'annotation de la PR vient après release-please", () => {
-  const annotation = workflow.indexOf('name: Auteurs des PR dans la PR de release')
+test('PR annotation comes after release-please', () => {
+  const annotation = workflow.indexOf('name: PR authors in the release PR')
   const releasePlease = workflow.indexOf('googleapis/release-please-action')
   expect(annotation).toBeGreaterThan(releasePlease)
 })
 
-test('les exécutions du workflow sont sérialisées', () => {
+test('workflow runs are serialized', () => {
   expect(workflow).toContain('group: release-please')
   expect(workflow).toContain('cancel-in-progress: false')
 })
 
-test("l'annotation de la PR est la dernière étape, sans condition", () => {
-  const lignes = workflow.split('\n')
-  const index = lignes.findIndex((ligne) => ligne.includes('name: Auteurs des PR dans la PR de release'))
+test('PR annotation is the last step, with no condition', () => {
+  const lines = workflow.split('\n')
+  const index = lines.findIndex((line) => line.includes('name: PR authors in the release PR'))
   expect(index).toBeGreaterThanOrEqual(0)
-  const suite = lignes.slice(index + 1)
-  expect(suite.join('\n')).not.toMatch(/^\s*if:/m)
-  expect(suite.some((ligne) => /^\s*- name:/.test(ligne) || /^\s*- uses:/.test(ligne))).toBe(false)
+  const rest = lines.slice(index + 1)
+  expect(rest.join('\n')).not.toMatch(/^\s*if:/m)
+  expect(rest.some((line) => /^\s*- name:/.test(line) || /^\s*- uses:/.test(line))).toBe(false)
+})
+
+test('package description is the English one-liner', async () => {
+  const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { description: string }
+  expect(pkg.description).toBe('Code agent orchestrator driven by code')
 })

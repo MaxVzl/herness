@@ -20,54 +20,54 @@ function mk(over: Partial<ActionDeps> = {}, focused: string[] = []): ActionDeps 
   }
 }
 
-test('validate poste une décision et rend ses lignes', async () => {
+test('validate posts a decision and returns its lines', async () => {
   const seen: unknown[] = []
   const d = mk({
     decide: (async (id: string, decision: string, opts: { gateId?: string; note?: string; isTTY: boolean; confirm: () => Promise<boolean>; out?: (l: string) => void }) => {
       seen.push([id, decision, opts.gateId, opts.note, opts.isTTY, await opts.confirm()])
-      opts.out?.('décision postée')
+      opts.out?.('decision posted')
     }) as never,
   })
-  expect(await validate('m1', 'g1', 'ok', d)).toEqual({ ok: true, lines: ['décision postée'] })
+  expect(await validate('m1', 'g1', 'ok', d)).toEqual({ ok: true, lines: ['decision posted'] })
   expect(seen).toEqual([['m1', 'approved', 'g1', 'ok', true, true]])
 })
 
-test('refuse sans note ne poste rien', async () => {
+test('refuse without a note posts nothing', async () => {
   let called = false
   const d = mk({ decide: (async () => { called = true }) as never })
-  expect(await refuse('m1', 'g1', '  ', d)).toEqual({ ok: false, lines: ['une note est obligatoire pour refuser'] })
+  expect(await refuse('m1', 'g1', '  ', d)).toEqual({ ok: false, lines: ['a note is required to reject'] })
   expect(called).toBe(false)
 })
 
-test('refuse poste refused et une exception devient ok:false', async () => {
-  const d = mk({ decide: (async () => { throw new Error('boum') }) as never })
-  expect(await refuse('m1', 'g1', 'non', d)).toEqual({ ok: false, lines: ['boum'] })
+test('refuse posts refused and an exception becomes ok:false', async () => {
+  const d = mk({ decide: (async () => { throw new Error('boom') }) as never })
+  expect(await refuse('m1', 'g1', 'no', d)).toEqual({ ok: false, lines: ['boom'] })
 })
 
-test('close transmet la question de confirmation de closeMission à confirm', async () => {
+test('close forwards closeMission confirmation question to confirm', async () => {
   const asked: string[] = []
   const d = mk({
     close: (async (_id: string, deps: { isTTY?: boolean; confirm?: (q: string) => Promise<boolean> }) => {
       expect(deps.isTTY).toBe(true)
-      return deps.confirm!('sûr ?')
+      return deps.confirm!('sure?')
     }) as never,
   })
   const r = await close('m1', d, async (q) => { asked.push(q); return false })
-  expect(asked).toEqual(['sûr ?'])
+  expect(asked).toEqual(['sure?'])
   expect(r.ok).toBe(false)
 })
 
-test('startNew rend l\'erreur de checkEnv sans lever', async () => {
-  const d = mk({ start: (async () => { throw new Error('environnement incomplet') }) as never })
-  expect(await startNew('texte', d)).toEqual({ ok: false, lines: ['environnement incomplet'] })
+test('startNew returns the checkEnv error without throwing', async () => {
+  const d = mk({ start: (async () => { throw new Error('incomplete environment') }) as never })
+  expect(await startNew('text', d)).toEqual({ ok: false, lines: ['incomplete environment'] })
 })
 
-test('startNew rend la sortie du lancement sans ligne en double', async () => {
-  const d = mk({ start: (async (_input: string, _cwd: string, deps: { out: (l: string) => void }) => { deps.out('Mission m1 lancée : espace herdr « m1 »'); return 'm1' }) as never })
-  expect(await startNew('texte', d)).toEqual({ ok: true, lines: ['Mission m1 lancée : espace herdr « m1 »'] })
+test('startNew returns the launch output without a duplicate line', async () => {
+  const d = mk({ start: (async (_input: string, _cwd: string, deps: { out: (l: string) => void }) => { deps.out('Mission m1 started: herdr workspace "m1"'); return 'm1' }) as never })
+  expect(await startNew('text', d)).toEqual({ ok: true, lines: ['Mission m1 started: herdr workspace "m1"'] })
 })
 
-test('resume et restart passent { restart } à resumeMission', async () => {
+test('resume and restart pass { restart } to resumeMission', async () => {
   const opts: unknown[] = []
   const d = mk({ resume: (async (_id: string, _deps: unknown, o: unknown) => { opts.push(o) }) as never })
   await resume('m1', d)
@@ -77,64 +77,64 @@ test('resume et restart passent { restart } à resumeMission', async () => {
   expect(opts).toEqual([{ restart: false }, { restart: true }, { restart: false, focus: false }, { restart: true, focus: false }])
 })
 
-test('open focus l\'espace, ou rend un message', async () => {
+test('open focuses the workspace, or returns a message', async () => {
   const focused: string[] = []
   const d = mk({}, focused)
   const s = { herdr: { workspace: 'w1', tabs: {}, panes: {} } } as unknown as MissionState
   expect((await open(s, d)).ok).toBe(true)
   expect(focused).toEqual(['w1'])
   const none = { herdr: { tabs: {}, panes: {} } } as unknown as MissionState
-  expect(await open(none, d)).toEqual({ ok: false, lines: ['espace herdr inconnu'] })
+  expect(await open(none, d)).toEqual({ ok: false, lines: ['unknown herdr workspace'] })
 })
 
-test('restartDetached lance herness reprendre --redemarrer détaché via node, sortie dans un journal ; une erreur de lancement devient ok:false', async () => {
+test('restartDetached spawns detached herness resume --restart via node, output in a log; a spawn error becomes ok:false', async () => {
   const home = await mkdtemp(join(tmpdir(), 'herness-'))
   process.env.HERNESS_HOME = home
   try {
     const seen: unknown[] = []
     const spawn: Spawner = (cmd, args, opts) => {
       seen.push([cmd, args, opts])
-      writeSync(opts.stdio[1], 'sortie du redémarrage\n')
+      writeSync(opts.stdio[1], 'restart output\n')
       return { unref: () => seen.push('unref'), once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'spawn') fn() } }
     }
     const r = await restartDetached('m1', spawn, () => new Date('2026-11-02T10:11:12.000Z'))
-    const log = join(missionDir('m1'), 'logs', 'redemarrage-2026-11-02T10-11-12-000Z.log')
-    expect(r).toEqual({ ok: true, lines: [`redémarrage lancé (ce panneau va se relancer) ; journal : ${log}`] })
+    const log = join(missionDir('m1'), 'logs', 'restart-2026-11-02T10-11-12-000Z.log')
+    expect(r).toEqual({ ok: true, lines: [`restart started (this panel will relaunch); log: ${log}`] })
     const [cmd, args, opts] = seen[0] as [string, string[], { detached: boolean; stdio: unknown[] }]
     expect(cmd).toBe('node')
     expect(args[0]).toMatch(/bin\/herness\.js$/)
-    expect(args.slice(1)).toEqual(['reprendre', 'm1', '--redemarrer'])
+    expect(args.slice(1)).toEqual(['resume', 'm1', '--restart'])
     expect(opts.detached).toBe(true)
     expect(opts.stdio[0]).toBe('ignore')
     expect(typeof opts.stdio[1]).toBe('number')
     expect(opts.stdio[2]).toBe(opts.stdio[1])
     expect(seen[1]).toBe('unref')
-    expect(await readFile(log, 'utf8')).toBe('sortie du redémarrage\n')
-    const bad: Spawner = () => ({ unref: () => {}, once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'error') fn(new Error('node introuvable')) } })
-    expect(await restartDetached('m1', bad)).toEqual({ ok: false, lines: ['node introuvable'] })
+    expect(await readFile(log, 'utf8')).toBe('restart output\n')
+    const bad: Spawner = () => ({ unref: () => {}, once: (ev: string, fn: (e?: Error) => void) => { if (ev === 'error') fn(new Error('node not found')) } })
+    expect(await restartDetached('m1', bad)).toEqual({ ok: false, lines: ['node not found'] })
   } finally {
     delete process.env.HERNESS_HOME
     await rm(home, { recursive: true, force: true })
   }
 })
 
-test('remove supprime sans redemander : la confirmation a eu lieu dans l\'interface', async () => {
+test('remove deletes without asking again: confirmation already happened in the UI', async () => {
   const seen: unknown[] = []
   const d = mk({
     remove: (async (id: string, deps: { out?: (l: string) => void }, o: { force?: boolean }) => {
       seen.push([id, o.force])
-      deps.out?.(`Mission ${id} supprimée.`)
+      deps.out?.(`Mission ${id} deleted.`)
       return true
     }) as never,
   })
-  expect(await remove('m1', d)).toEqual({ ok: true, lines: ['Mission m1 supprimée.'] })
+  expect(await remove('m1', d)).toEqual({ ok: true, lines: ['Mission m1 deleted.'] })
   expect(seen).toEqual([['m1', true]])
 })
 
-test('startNew transmet la note à startMission', async () => {
+test('startNew forwards the note to startMission', async () => {
   const seen: unknown[] = []
   const d = mk({ start: (async (input: string, _cwd: string, _deps: unknown, o: { note?: string }) => { seen.push([input, o.note]); return 'm1' }) as never })
-  await startNew('lien', d, 'précision')
-  await startNew('lien', d)
-  expect(seen).toEqual([['lien', 'précision'], ['lien', undefined]])
+  await startNew('link', d, 'detail')
+  await startNew('link', d)
+  expect(seen).toEqual([['link', 'detail'], ['link', undefined]])
 })

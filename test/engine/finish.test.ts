@@ -25,8 +25,8 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-const PLAN1 = '# Plan\n\n### Tâche 1 : Modèle\n\n**Test :** `pnpm test a`\n\nfaire a\n'
-const PLAN2 = `${PLAN1}\n### Tâche 2 : Export\n\n**Test :** \`pnpm test b\`\n\nfaire b\n`
+const PLAN1 = '# Plan\n\n### Task 1: Model\n\n**Test:** `pnpm test a`\n\ndo a\n'
+const PLAN2 = `${PLAN1}\n### Task 2: Export\n\n**Test:** \`pnpm test b\`\n\ndo b\n`
 const cfg: ProjectConfig = {
   ...demo,
   preflight: [
@@ -34,18 +34,19 @@ const cfg: ProjectConfig = {
     { label: 'test', command: ['pnpm', 'test'] },
   ],
 }
-const task = (patch: Partial<TaskState> = {}): TaskState => ({ n: 1, title: 'Modèle', testCommand: 'pnpm test a', phase: 'done', round: 0, ...patch })
+const task = (patch: Partial<TaskState> = {}): TaskState => ({ n: 1, title: 'Model', testCommand: 'pnpm test a', phase: 'done', round: 0, ...patch })
 const gdir = () => join(missionDir('T-1'), 'global')
 const pdir = () => join(missionDir('T-1'), 'preflight')
 const down = () => [demo.testDb!.down[0], ['down', 'T-1', wt], { cwd: wt, reject: false }]
 
-/** Agents factices : un relecteur écrit le rapport à côté de sa consigne (`consigne-revue.md` → `revue.md`). */
+/** Fake agents: a reviewer writes its report next to its brief (`review-brief.md` → `review.md`). */
 function agentsAsk(answer: (name: string) => string | undefined) {
   return async (name: string, file: string) => {
     const v = answer(name)
     if (v !== undefined) {
-      const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
-      await writeFile(out, `${v}\n\n## Remarques\n- src/a.ts:3 remarque de ${name}\n`)
+      const fileName = basename(file)
+      const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
+      await writeFile(out, `${v}\n\n## Notes\n- src/a.ts:3 note from ${name}\n`)
     }
     return 'done' as const
   }
@@ -64,7 +65,7 @@ const verdicts = (byPrefix: Record<string, string[]>) => {
 type Res = { exitCode: number; logPath: string; tail: string; durationMs: number }
 const ok: Res = { exitCode: 0, logPath: '/l/ok.log', tail: 'ok', durationMs: 7 }
 const ko = (tail: string): Res => ({ exitCode: 1, logPath: '/l/ko.log', tail, durationMs: 9 })
-/** `runInPane` scripté par libellé ; chaque libellé consomme sa liste dans l'ordre (dernière valeur répétée). */
+/** `runInPane` scripted by label; each label consumes its list in order (last value repeated). */
 function panes(script: Record<string, (Res | 'throw')[]> = {}) {
   const n: Record<string, number> = {}
   return (async (_h: unknown, _tab: string, _cwd: string, label: string) => {
@@ -72,7 +73,7 @@ function panes(script: Record<string, (Res | 'throw')[]> = {}) {
     if (!list) return ok
     const i = (n[label] = (n[label] ?? 0) + 1)
     const r = list[Math.min(i - 1, list.length - 1)]!
-    if (r === 'throw') throw new Error(`panneau ${label} perdu`)
+    if (r === 'throw') throw new Error(`pane ${label} lost`)
     return r
   }) as never
 }
@@ -98,7 +99,7 @@ async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState>
   await mkdir(dirname(file), { recursive: true })
   await writeFile(file, opts.plan ?? PLAN1)
   await writeFile(join(missionDir('T-1'), 'plan.approved.md'), PLAN1)
-  // Un amendement est proposé hors du worktree (`plan.proposed.md`), lié à son contenu par un hachage.
+  // An amendment is proposed outside the worktree (`plan.proposed.md`), tied to its content by a hash.
   if (opts.plan !== undefined && opts.plan !== PLAN1) await writeFile(join(missionDir('T-1'), 'plan.proposed.md'), opts.plan)
   return { fx, eng: new Engine('T-1', fx, opts.config ?? cfg) }
 }
@@ -109,37 +110,37 @@ async function until(eng: Engine, pred: (s: MissionState) => boolean, max = 60):
     const s = await loadState('T-1')
     if (pred(s)) return s
   }
-  throw new Error(`condition jamais atteinte (étape ${(await loadState('T-1')).step})`)
+  throw new Error(`condition never reached (step ${(await loadState('T-1')).step})`)
 }
 
 const labels = (fx: FakeEffects) => fx.callsOf('runInPane').map((c) => c[3])
 
-// ---------- revue globale ----------
+// ---------- global review ----------
 
-test('revue globale approuvée passe au preflight', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'] }) } } })
+test('an approved global review moves on to preflight', async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROVED'] }) } } })
   const s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
   expect(fx.callsOf('git.mergeBase')[0]).toEqual([wt, 'origin/main'])
-  expect(fx.callsOf('git.diffPackage')[0]).toEqual([wt, 'sha-base', join(gdir(), 'branche.diff')])
+  expect(fx.callsOf('git.diffPackage')[0]).toEqual([wt, 'sha-base', join(gdir(), 'branch.diff')])
   const [name, role, , launch] = fx.callsOf('agents.start')[0]!
   expect([name, role]).toEqual(['rgt-1', 'reviewer'])
   expect((launch as { args: string[] }).args).toContain('claude-opus-5-5')
-  expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['rgt-1', join(gdir(), 'consigne-revue.md')])
-  const consigne = await readFile(join(gdir(), 'consigne-revue.md'), 'utf8')
+  expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['rgt-1', join(gdir(), 'review-brief.md')])
+  const consigne = await readFile(join(gdir(), 'review-brief.md'), 'utf8')
   expect(consigne).toContain('sha-base..sha-head')
-  expect(consigne).toContain(join(gdir(), 'revue.md'))
+  expect(consigne).toContain(join(gdir(), 'review.md'))
   expect(consigne).toContain('git push')
-  expect(s.loops.globalReview).toMatchObject({ round: 0, reviewedSha: 'sha-head', lastReview: join(gdir(), 'revue.md') })
+  expect(s.loops.globalReview).toMatchObject({ round: 0, reviewedSha: 'sha-head', lastReview: join(gdir(), 'review.md') })
   expect(s.loops.globalReview.pendingAsk).toBeUndefined()
 })
 
-test('revue globale en corrections démarre un implémenteur neuf puis re-revue par le même relecteur', async () => {
+test('a global review with corrections starts a fresh implementer, then a re-review by the same reviewer', async () => {
   const { fx, eng } = await setup({
     patch: { tasks: [task({ baseSha: 'b1', reviewedSha: 'h1' }), task({ n: 2, title: 'Export', testCommand: 'pnpm test b', baseSha: 'b2', reviewedSha: 'h2' })] },
     over: {
-      agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ'] }) },
-      // La correction touche src/a.ts, touché aussi par la tâche 1 seulement.
+      agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROVED'] }) },
+      // The fix touches src/a.ts, which task 1 also touched.
       git: {
         changedFiles: async (_wt: string, base: string) => (base === 'b1' ? ['src/a.ts'] : ['src/b.ts']),
         branchFiles: async () => ['src/a.ts'],
@@ -155,84 +156,84 @@ test('revue globale en corrections démarre un implémenteur neuf puis re-revue 
   expect((fx.callsOf('agents.start')[1]![3] as { args: string[] }).args).toContain('grok-4.7-medium')
   const asks = fx.callsOf('agents.ask').map((c) => c.slice(0, 2))
   expect(asks).toEqual([
-    ['rgt-1', join(gdir(), 'consigne-revue.md')],
-    ['cgt-1-1', join(gdir(), 'correctifs-1.md')],
+    ['rgt-1', join(gdir(), 'review-brief.md')],
+    ['cgt-1-1', join(gdir(), 'fixes-1.md')],
     ['rgt-1', join(gdir(), 'consigne-rerevue-1.md')],
   ])
-  const fix = await readFile(join(gdir(), 'correctifs-1.md'), 'utf8')
-  expect(fix).toContain('src/a.ts:3 remarque de rgt-1')
-  expect(fix).toContain(join(gdir(), 'rapport.md'))
+  const fix = await readFile(join(gdir(), 'fixes-1.md'), 'utf8')
+  expect(fix).toContain('src/a.ts:3 note from rgt-1')
+  expect(fix).toContain(join(gdir(), 'report.md'))
   expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths, 'origin/main'])
-  // Fichiers de la correction : commits de la branche, sans ceux de main.
+  // Files of the fix: branch commits, without those from main.
   expect(fx.callsOf('git.branchFiles')[0]).toEqual([wt, 'sha-head', 'origin/main'])
-  // Tests des tâches touchées seulement, dans l'onglet checks.
+  // Tests of the touched tasks only, in the checks tab.
   const tests = fx.callsOf('runInPane')
   expect(tests.map((c) => [c[1], c[4]])).toEqual([[s.herdr.tabs['checks'], ['bash', '-c', 'pnpm test a']]])
-  // Re-revue : diff depuis la tête relue, remarques précédentes.
+  // Re-review: diff since the reviewed head, previous findings.
   expect(fx.callsOf('git.diffPackage')[1]).toEqual([wt, 'sha-head', join(gdir(), 'correction-1.diff')])
   const rr = await readFile(join(gdir(), 'consigne-rerevue-1.md'), 'utf8')
-  expect(rr).toContain('src/a.ts:3 remarque de rgt-1')
+  expect(rr).toContain('src/a.ts:3 note from rgt-1')
   expect(s.loops.globalReview.round).toBe(0)
   expect(fx.herdr.panes.map((p) => p.label)).toContain('CG1 · grok-4.7-medium ✓')
-  // Le correcteur est arrêté au ✓, avant le contrôle de ses commits ; le relecteur global reste vivant jusqu'à la fin du preflight.
+  // The fixer is stopped at ✓, before its commits are checked; the global reviewer stays alive until preflight ends.
   expect(s.step).toBe('preflight')
   expect(fx.herdr.pane(s.herdr.panes['cgt-1-1']!).busy).toBe(false)
-  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent cgt-1-1 arrêté')
+  expect(s.log.map((l) => l.msg)).toContain('end of mission: agent cgt-1-1 stopped')
   expect(fx.herdr.pane(s.herdr.panes['rgt-1']!).busy).toBe(true)
 })
 
-test('le relecteur global est arrêté quand le preflight est terminé', async () => {
-  const { fx, eng } = await setup({ over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'] }) } } })
+test('the global reviewer is stopped when preflight finishes', async () => {
+  const { fx, eng } = await setup({ over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROVED'] }) } } })
   const s = await until(eng, (x) => x.step === 'pr')
   expect(fx.herdr.pane(s.herdr.panes['rgt-1']!).busy).toBe(false)
-  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent rgt-1 arrêté')
+  expect(s.log.map((l) => l.msg)).toContain('end of mission: agent rgt-1 stopped')
 })
 
-test('revue globale : des tests rouges après correction lancent un nouveau tour avec la sortie rouge', async () => {
+test('global review: red tests after a fix start a new round with the red output', async () => {
   const { fx, eng } = await setup({
     over: {
-      agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ'] }) },
-      runInPane: panes({ 'RG · tests T1': [ko('AssertionError: attendu 2'), ok] }),
+      agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROVED'] }) },
+      runInPane: panes({ 'RG · tests T1': [ko('AssertionError: expected 2'), ok] }),
     },
   })
   const s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1', 'cgt-1-1', 'cgt-1-2'])
-  const fix2 = await readFile(join(gdir(), 'correctifs-2.md'), 'utf8')
-  expect(fix2).toContain('AssertionError: attendu 2')
+  const fix2 = await readFile(join(gdir(), 'fixes-2.md'), 'utf8')
+  expect(fix2).toContain('AssertionError: expected 2')
 })
 
-test('revue globale : au 3e tour un implémenteur fort, au-delà la mission est bloquée', async () => {
+test('global review: a strong implementer on round 3, then the mission is blocked', async () => {
   const { fx, eng } = await setup({
-    patch: { loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 2, reviewedSha: 'sha-r', lastReview: '/nulle/part.md', phase: 'rereview' } } },
+    patch: { loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 2, reviewedSha: 'sha-r', lastReview: '/nowhere.md', phase: 'rereview' } } },
     over: { agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS'] }) } },
   })
   let s = await until(eng, (x) => x.loops.globalReview.phase === 'control')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1', 'cgt-1-3'])
   expect((fx.callsOf('agents.start')[1]![3] as { args: string[] }).args).toContain('grok-4.7-high')
-  s = await until(eng, (x) => x.step === 'bloquée')
-  expect(s.blockedReason).toContain('3 tours de correction épuisés')
+  s = await until(eng, (x) => x.step === 'blocked')
+  expect(s.blockedReason).toContain('3 correction rounds exhausted')
 })
 
 // ---------- preflight ----------
 
-test('preflight tout vert crée puis supprime la base et passe à pr', async () => {
+test('an all-green preflight creates then removes the database and moves on to pr', async () => {
   const { fx, eng } = await setup({ patch: { step: 'preflight' }, over: { runInPane: panes() } })
   const s = await until(eng, (x) => x.step !== 'preflight')
   expect(s.step).toBe('pr')
   expect(s.testDbUp).toBe(false)
-  // Tête validée par ce preflight complet : la PR ne part que de celle-ci.
+  // Head validated by this full preflight: the PR leaves only from it.
   expect(s.loops.preflight.validatedSha).toBe('sha-head')
   const rip = fx.callsOf('runInPane')
   expect(rip.map((c) => [c[1], c[2], c[3], c[4]])).toEqual([
-    [s.herdr.tabs['process'], wt, 'base de test', [demo.testDb!.up[0], 'up', 'T-1', wt]],
+    [s.herdr.tabs['process'], wt, 'test database', [demo.testDb!.up[0], 'up', 'T-1', wt]],
     [s.herdr.tabs['checks'], wt, 'preflight · lint', ['pnpm', 'lint']],
     [s.herdr.tabs['checks'], wt, 'preflight · test', ['pnpm', 'test']],
   ])
   expect(fx.callsOf('run')).toEqual([down()])
-  // origin/main récupéré une fois, juste avant le premier check.
+  // origin/main is fetched once, just before the first check.
   const order = fx.calls.map((c) => (c.fn === 'runInPane' ? `rip ${c.args[3]}` : c.fn)).filter((f) => f.startsWith('rip') || f === 'git.fetchMain')
-  expect(order).toEqual(['rip base de test', 'git.fetchMain', 'rip preflight · lint', 'rip preflight · test'])
+  expect(order).toEqual(['rip test database', 'git.fetchMain', 'rip preflight · lint', 'rip preflight · test'])
   expect(fx.callsOf('git.fetchMain')).toEqual([[wt, 'main']])
   expect(s.loops.preflight.results).toEqual([
     { label: 'lint', exitCode: 0, durationMs: 7, logPath: '/l/ok.log' },
@@ -240,41 +241,41 @@ test('preflight tout vert crée puis supprime la base et passe à pr', async () 
   ])
 })
 
-test('un check rouge correspondant au faux positif Roboto est relancé une fois', async () => {
+test('a red check matching the Roboto false positive is retried once', async () => {
   const { fx, eng } = await setup({
     patch: { step: 'preflight' },
     over: { runInPane: panes({ 'preflight · lint': [ko("Module not found: Can't resolve 'Roboto'"), ok] }) },
   })
   const s = await until(eng, (x) => x.step !== 'preflight')
   expect(s.step).toBe('pr')
-  expect(labels(fx)).toEqual(['base de test', 'preflight · lint', 'preflight · lint', 'preflight · test'])
+  expect(labels(fx)).toEqual(['test database', 'preflight · lint', 'preflight · lint', 'preflight · test'])
   expect(fx.callsOf('agents.start')).toEqual([])
   expect(s.log.map((l) => l.msg).join('\n')).toContain('Roboto')
 })
 
-test('le même faux positif rouge deux fois part au diagnostic', async () => {
+test('the same red false positive twice goes to diagnosis', async () => {
   const { fx, eng } = await setup({
     patch: { step: 'preflight' },
     over: {
       runInPane: panes({ 'preflight · lint': [ko("Module not found: Can't resolve 'Roboto'")] }),
-      agents: { ask: verdicts({ rd: ['CAUSE: ENVIRONNEMENT'] }) },
+      agents: { ask: verdicts({ rd: ['CAUSE: ENVIRONMENT'] }) },
     },
   })
   let s = await until(eng, (x) => x.loops.preflight.phase === 'diagnose')
-  expect(labels(fx)).toEqual(['base de test', 'preflight · lint', 'preflight · lint'])
+  expect(labels(fx)).toEqual(['test database', 'preflight · lint', 'preflight · lint'])
   expect(s.loops.preflight.failing).toMatchObject({ label: 'lint', exitCode: 1, logPath: '/l/ko.log' })
-  s = await until(eng, (x) => x.step === 'bloquée')
+  s = await until(eng, (x) => x.step === 'blocked')
   expect(fx.callsOf('agents.start').map((c) => [c[0], c[1]])).toEqual([['rdt-1-1', 'diagnostic']])
   expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['rdt-1-1', join(pdir(), 'consigne-diagnostic-1.md')])
   const consigne = await readFile(join(pdir(), 'consigne-diagnostic-1.md'), 'utf8')
   expect(consigne).toContain('/l/ko.log')
-  expect(s.blockedReason).toContain('ENVIRONNEMENT')
-  expect(s.blockedReason).toContain('remarque de rdt-1-1')
+  expect(s.blockedReason).toContain('ENVIRONMENT')
+  expect(s.blockedReason).toContain('note from rdt-1-1')
   expect(s.testDbUp).toBe(false)
   expect(fx.callsOf('run')).toEqual([down()])
 })
 
-test("le faux positif format:check est ignoré si aucun fichier de la branche n'est dans le journal", async () => {
+test("the format:check false positive is ignored when no branch file is in the log", async () => {
   const config: ProjectConfig = { ...cfg, preflight: [{ label: 'format:check', command: ['pnpm', 'format:check'] }] }
   const { fx, eng } = await setup({
     config,
@@ -292,7 +293,7 @@ test("le faux positif format:check est ignoré si aucun fichier de la branche n'
   ])
 })
 
-test('le faux positif format:check ne s\'applique pas si un fichier touché par la branche est dans le journal', () => {
+test('the format:check false positive does not apply when a file touched by the branch is in the log', () => {
   const r = { label: 'format:check', log: '[warn] apps/web/x.ts\n[warn] Code style issues found' }
   expect(triage(r, demo, ['apps/web/x.ts'])).toBe('diagnose')
   expect(triage(r, demo, ['apps/api/y.ts'])).toBe('ignore')
@@ -302,7 +303,7 @@ test('le faux positif format:check ne s\'applique pas si un fichier touché par 
   expect(triage({ label: 'build', log: 'Module not found: Error: Roboto' }, demo, [], [1])).toBe('diagnose')
 })
 
-test('un nettoyage prévu est lancé dans l\'onglet process avant de relancer le check', async () => {
+test('a planned cleanup runs in the process tab before the check is rerun', async () => {
   const { fx, eng } = await setup({
     patch: { step: 'preflight' },
     over: { runInPane: panes({ 'preflight · test': [ko('Error in apps/api/src/test/setup.ts'), ok] }) },
@@ -310,19 +311,19 @@ test('un nettoyage prévu est lancé dans l\'onglet process avant de relancer le
   const s = await until(eng, (x) => x.step !== 'preflight')
   expect(s.step).toBe('pr')
   const rip = fx.callsOf('runInPane')
-  expect(rip.map((c) => c[3])).toEqual(['base de test', 'preflight · lint', 'preflight · test', 'nettoyage', 'preflight · test'])
+  expect(rip.map((c) => c[3])).toEqual(['test database', 'preflight · lint', 'preflight · test', 'cleanup', 'preflight · test'])
   expect(rip[3]!.slice(1, 3)).toEqual([s.herdr.tabs['process'], wt])
-  // Limité aux vitest du worktree de la mission : jamais ceux d'un autre checkout.
+  // Limited to vitest in the mission worktree: never those of another checkout.
   expect(rip[3]![4]).toEqual(['pkill', '-f', `${wt}/node_modules/.*vitest`])
 })
 
-const MAIN_WT = () => join(missionDir('T-1'), 'preuve-main')
+const MAIN_WT = () => join(missionDir('T-1'), 'proof-main')
 
-test('CAUSE: MAIN prouvée ouvre la porte pr-malgre-main et supprime le worktree temporaire', async () => {
+test('a proven CAUSE: MAIN opens the pr-despite-main gate and removes the temporary worktree', async () => {
   const { fx, eng } = await setup({
     patch: { step: 'preflight' },
     over: {
-      runInPane: panes({ 'preflight · lint': [ko('erreur de lint ancienne')], 'preuve main · lint': [ko('erreur de lint ancienne')] }),
+      runInPane: panes({ 'preflight · lint': [ko('old lint error')], 'proof on main · lint': [ko('old lint error')] }),
       agents: { ask: verdicts({ rd: ['CAUSE: MAIN'] }) },
     },
   })
@@ -330,18 +331,18 @@ test('CAUSE: MAIN prouvée ouvre la porte pr-malgre-main et supprime le worktree
   const repo = join(home, 'repo')
   expect(fx.callsOf('git.worktreeAddDetached')).toEqual([[repo, MAIN_WT(), 'origin/main']])
   expect(fx.callsOf('git.worktreeRemove')).toEqual([[repo, MAIN_WT()]])
-  const proof = fx.callsOf('runInPane').filter((c) => String(c[3]).startsWith('preuve main'))
+  const proof = fx.callsOf('runInPane').filter((c) => String(c[3]).startsWith('proof on main'))
   expect(proof.map((c) => [c[1], c[2], c[3], c[4]])).toEqual([
-    [s.herdr.tabs['process'], MAIN_WT(), 'preuve main · préparation', [demo.prepare[0], MAIN_WT()]],
-    [s.herdr.tabs['process'], MAIN_WT(), 'preuve main · base de test', [demo.testDb!.up[0], 'up', 'T-1-main', MAIN_WT()]],
-    [s.herdr.tabs['process'], MAIN_WT(), 'preuve main · lint', ['pnpm', 'lint']],
-    [s.herdr.tabs['process'], wt, 'preuve main · arrêt de la base', [demo.testDb!.down[0], 'down', 'T-1-main', MAIN_WT()]],
+    [s.herdr.tabs['process'], MAIN_WT(), 'proof on main · prepare', [demo.prepare[0], MAIN_WT()]],
+    [s.herdr.tabs['process'], MAIN_WT(), 'proof on main · test database', [demo.testDb!.up[0], 'up', 'T-1-main', MAIN_WT()]],
+    [s.herdr.tabs['process'], MAIN_WT(), 'proof on main · lint', ['pnpm', 'lint']],
+    [s.herdr.tabs['process'], wt, 'proof on main · stop database', [demo.testDb!.down[0], 'down', 'T-1-main', MAIN_WT()]],
   ])
-  // La base de la preuve est arrêtée avant la suppression du worktree.
-  const order = fx.calls.map((c) => (c.fn === 'runInPane' ? String(c.args[3]) : c.fn)).filter((f) => f === 'preuve main · arrêt de la base' || f === 'git.worktreeRemove')
-  expect(order).toEqual(['preuve main · arrêt de la base', 'git.worktreeRemove'])
+  // The proof database is stopped before the worktree is removed.
+  const order = fx.calls.map((c) => (c.fn === 'runInPane' ? String(c.args[3]) : c.fn)).filter((f) => f === 'proof on main · stop database' || f === 'git.worktreeRemove')
+  expect(order).toEqual(['proof on main · stop database', 'git.worktreeRemove'])
   const g = s.gates.at(-1)!
-  expect(g).toMatchObject({ kind: 'pr-malgre-main', status: 'pending' })
+  expect(g).toMatchObject({ kind: 'pr-despite-main', status: 'pending' })
   expect(g.summary).toContain('lint')
   expect(s.testDbUp).toBe(true)
 
@@ -354,31 +355,31 @@ test('CAUSE: MAIN prouvée ouvre la porte pr-malgre-main et supprime le worktree
   expect(s.testDbUp).toBe(false)
 })
 
-test('pr-malgre-main refusée bloque la mission et supprime la base', async () => {
+test('a refused pr-despite-main blocks the mission and removes the database', async () => {
   const { fx, eng } = await setup({
     patch: { step: 'preflight' },
     over: {
-      runInPane: panes({ 'preflight · lint': [ko('erreur')], 'preuve main · lint': [ko('erreur')] }),
+      runInPane: panes({ 'preflight · lint': [ko('error')], 'proof on main · lint': [ko('error')] }),
       agents: { ask: verdicts({ rd: ['CAUSE: MAIN'] }) },
     },
   })
   const s0 = await until(eng, (x) => x.loops.preflight.phase === 'gate')
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: s0.gates.at(-1)!.id, decision: 'refused', note: 'non' })
-  const s = await until(eng, (x) => x.step === 'bloquée')
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: s0.gates.at(-1)!.id, decision: 'refused', note: 'no' })
+  const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedFrom).toBe('preflight')
   expect(s.testDbUp).toBe(false)
   expect(fx.callsOf('run')).toEqual([down()])
 })
 
-test('CAUSE: MAIN non reproduite sur main est corrigée comme BRANCHE', async () => {
+test('CAUSE: MAIN not reproduced on main is fixed like BRANCH', async () => {
   const { fx, eng } = await setup({
     patch: {
       step: 'preflight',
-      loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, reviewedSha: 'sha-rev', lastReview: '/x/revue.md' } },
+      loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, reviewedSha: 'sha-rev', lastReview: '/x/review.md' } },
     },
     over: {
-      runInPane: panes({ 'preflight · lint': [ko('erreur de lint'), ok] }),
-      agents: { ask: verdicts({ rd: ['CAUSE: MAIN'], rg: ['VERDICT: APPROUVÉ'] }) },
+      runInPane: panes({ 'preflight · lint': [ko('lint error'), ok] }),
+      agents: { ask: verdicts({ rd: ['CAUSE: MAIN'], rg: ['VERDICT: APPROVED'] }) },
     },
   })
   let s = await until(eng, (x) => x.loops.preflight.phase === 'fix')
@@ -389,14 +390,14 @@ test('CAUSE: MAIN non reproduite sur main est corrigée comme BRANCHE', async ()
   s = await until(eng, (x) => x.step !== 'preflight')
   expect(s.step).toBe('pr')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rdt-1-1', 'cpt-1-1', 'rgt-1'])
-  const fix = await readFile(join(pdir(), 'correctifs-1.md'), 'utf8')
-  expect(fix).toContain('remarque de rdt-1-1')
-  expect(fix).toContain('vert sur origin/main')
+  const fix = await readFile(join(pdir(), 'fixes-1.md'), 'utf8')
+  expect(fix).toContain('note from rdt-1-1')
+  expect(fix).toContain('green on origin/main')
   expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths, 'origin/main'])
-  // Re-revue par le relecteur global sur le diff depuis sa dernière tête relue.
+  // Re-review by the global reviewer on the diff since its last reviewed head.
   expect(fx.callsOf('git.diffPackage')[0]).toEqual([wt, 'sha-rev', join(pdir(), 'correction-1.diff')])
   expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['rgt-1', join(pdir(), 'consigne-rerevue-1.md')])
-  // Preflight rejoué en entier : lint (rouge), puis lint, test.
+  // Preflight replayed in full: lint (red), then lint, test.
   expect(labels(fx).filter((l) => String(l).startsWith('preflight'))).toEqual(['preflight · lint', 'preflight · lint', 'preflight · test'])
   expect(fx.callsOf('git.fetchMain')).toHaveLength(2)
   expect(s.loops.preflight.results.map((r) => r.label)).toEqual(['lint', 'test'])
@@ -404,53 +405,53 @@ test('CAUSE: MAIN non reproduite sur main est corrigée comme BRANCHE', async ()
   expect(s.testDbUp).toBe(false)
 })
 
-test('un diagnostic et un correcteur de preflight sont arrêtés à la fin de leur tour', async () => {
+test('a preflight diagnosis and fixer are stopped at the end of their turn', async () => {
   const { fx, eng } = await setup({
     patch: {
       step: 'preflight',
-      loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, reviewedSha: 'sha-rev', lastReview: '/x/revue.md' } },
+      loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, reviewedSha: 'sha-rev', lastReview: '/x/review.md' } },
     },
     over: {
-      runInPane: panes({ 'preflight · lint': [ko('erreur de lint'), ok] }),
-      agents: { ask: verdicts({ rd: ['CAUSE: BRANCHE'], rg: ['VERDICT: APPROUVÉ'] }) },
+      runInPane: panes({ 'preflight · lint': [ko('lint error'), ok] }),
+      agents: { ask: verdicts({ rd: ['CAUSE: BRANCH'], rg: ['VERDICT: APPROVED'] }) },
     },
   })
   let s = await until(eng, (x) => x.loops.preflight.phase === 'fix')
   expect(fx.herdr.pane(s.herdr.panes['rdt-1-1']!).busy).toBe(false)
-  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent rdt-1-1 arrêté')
+  expect(s.log.map((l) => l.msg)).toContain('end of mission: agent rdt-1-1 stopped')
   s = await until(eng, (x) => x.step !== 'preflight')
   expect(fx.herdr.pane(s.herdr.panes['cpt-1-1']!).busy).toBe(false)
-  expect(s.log.map((l) => l.msg)).toContain('fin de mission : agent cpt-1-1 arrêté')
+  expect(s.log.map((l) => l.msg)).toContain('end of mission: agent cpt-1-1 stopped')
 })
 
-test('une exception pendant un check supprime quand même la base de test', async () => {
+test('an exception during a check still removes the test database', async () => {
   const { fx, eng } = await setup({ patch: { step: 'preflight' }, over: { runInPane: panes({ 'preflight · lint': ['throw'] }) } })
   await eng.tick()
   expect((await loadState('T-1')).testDbUp).toBe(true)
-  await expect(eng.tick()).rejects.toThrow('panneau preflight · lint perdu')
+  await expect(eng.tick()).rejects.toThrow('pane preflight · lint lost')
   expect(fx.callsOf('run')).toContainEqual(down())
 })
 
-test('une exception pendant la preuve sur main supprime le worktree temporaire et sa base', async () => {
+test('an exception during the proof on main removes the temporary worktree and its database', async () => {
   const { fx, eng } = await setup({
     patch: { step: 'preflight' },
     over: {
-      runInPane: panes({ 'preflight · lint': [ko('erreur')], 'preuve main · lint': ['throw'] }),
+      runInPane: panes({ 'preflight · lint': [ko('error')], 'proof on main · lint': ['throw'] }),
       agents: { ask: verdicts({ rd: ['CAUSE: MAIN'] }) },
     },
   })
   await until(eng, (x) => x.loops.preflight.phase === 'proof')
-  await expect(eng.tick()).rejects.toThrow('perdu')
-  expect(labels(fx)).toContain('preuve main · arrêt de la base')
+  await expect(eng.tick()).rejects.toThrow('lost')
+  expect(labels(fx)).toContain('proof on main · stop database')
   expect(fx.callsOf('git.worktreeRemove')).toEqual([[join(home, 'repo'), MAIN_WT()]])
   expect(fx.callsOf('run')).toContainEqual(down())
 })
 
-// ---------- amendements (R14) ----------
+// ---------- amendments (R14) ----------
 
-const amend = (patch: Partial<Gate> = {}): Gate => ({ id: 'g1', kind: 'amendement', status: 'approved', summary: 's', createdAt: '2026-10-29T10:00:00.000Z', hash: proposalHash(PLAN2), ...patch })
+const amend = (patch: Partial<Gate> = {}): Gate => ({ id: 'g1', kind: 'amendment', status: 'approved', summary: 's', createdAt: '2026-10-29T10:00:00.000Z', hash: proposalHash(PLAN2), ...patch })
 
-test('un amendement approuvé pendant une boucle de correction du preflight attend sa résolution', async () => {
+test('an approved amendment during a preflight fix loop waits for that loop to finish', async () => {
   const { eng } = await setup({
     plan: PLAN2,
     patch: {
@@ -465,7 +466,7 @@ test('un amendement approuvé pendant une boucle de correction du preflight atte
   expect(s.appliedAmendments).toEqual([])
 })
 
-test('un amendement approuvé au preflight hors boucle ramène à tasks et supprime la base', async () => {
+test('an approved amendment at preflight outside a loop returns to tasks and removes the database', async () => {
   const { fx, eng } = await setup({ plan: PLAN2, patch: { step: 'preflight', testDbUp: true, gates: [amend()] } })
   await eng.tick()
   const s = await loadState('T-1')
@@ -476,17 +477,17 @@ test('un amendement approuvé au preflight hors boucle ramène à tasks et suppr
   expect(s.tasks.map((t) => [t.n, t.phase])).toEqual([[1, 'done'], [2, 'pending']])
 })
 
-test('un amendement approuvé pendant une boucle de la revue globale attend sa résolution', async () => {
+test('an approved amendment during a global review loop waits for that loop to finish', async () => {
   const { eng } = await setup({
     plan: PLAN2,
     patch: {
       gates: [amend()],
       loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 1, phase: 'control', fixBase: 'sha-head' } },
     },
-    over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'] }) } },
+    over: { agents: { ask: verdicts({ rg: ['VERDICT: APPROVED'] }) } },
   })
   const s = await until(eng, (x) => x.step !== 'global-review')
-  // Revue globale résolue → l'amendement s'applique au preflight, avant tout check.
+  // Global review resolved: the amendment applies at preflight, before any check.
   expect(s.step).toBe('preflight')
   expect(s.appliedAmendments).toEqual([])
   await eng.tick()
@@ -495,15 +496,15 @@ test('un amendement approuvé pendant une boucle de la revue globale attend sa r
   expect(s2.appliedAmendments).toEqual(['g1'])
 })
 
-test('reprise : un relecteur global vivant est attendu sans renvoi de la consigne', async () => {
-  const out = join(gdir(), 'revue.md')
+test('resume: a living global reviewer is awaited without resending the brief', async () => {
+  const out = join(gdir(), 'review.md')
   const { fx, eng } = await setup({
-    patch: { loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, pendingAsk: { agent: 'rgt-1', file: join(gdir(), 'consigne-revue.md'), out, head: 'sha-h0' } } } },
+    patch: { loops: { ...newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops, globalReview: { round: 0, pendingAsk: { agent: 'rgt-1', file: join(gdir(), 'review-brief.md'), out, head: 'sha-h0' } } } },
     over: {
       agents: {
         wait: async () => {
           await mkdir(gdir(), { recursive: true })
-          await writeFile(out, 'VERDICT: APPROUVÉ\n')
+          await writeFile(out, 'VERDICT: APPROVED\n')
           return 'done' as const
         },
       },
@@ -516,61 +517,61 @@ test('reprise : un relecteur global vivant est attendu sans renvoi de la consign
   expect(fx.callsOf('agents.ask')).toEqual([])
   expect(fx.callsOf('agents.wait')).toHaveLength(1)
   expect(s.loops.globalReview.reviewedSha).toBe('sha-h0')
-  await expect(access(join(gdir(), 'consigne-revue.md'))).rejects.toThrow()
+  await expect(access(join(gdir(), 'review-brief.md'))).rejects.toThrow()
 })
 
 // ---------- fix round 1 ----------
 
 const loops0 = () => newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops
 
-test('après un amendement, les dossiers des boucles sont archivés et la nouvelle revue globale repart avec des agents neufs', async () => {
+test('after an amendment, loop directories are archived and the new global review starts with fresh agents', async () => {
   const { fx, eng } = await setup({
     plan: PLAN2,
     patch: { gates: [amend()] },
-    over: { agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROUVÉ'] }) } },
+    over: { agents: { ask: verdicts({ rg: ['VERDICT: CORRECTIONS', 'VERDICT: APPROVED'] }) } },
   })
-  // Restes d'une revue globale et d'un preflight précédents.
+  // Leftovers from a previous global review and preflight.
   await mkdir(gdir(), { recursive: true })
-  await writeFile(join(gdir(), 'correctifs-1.md'), 'ANCIEN correctif\n')
-  await writeFile(join(gdir(), 'revue.md'), 'VERDICT: APPROUVÉ\n\nANCIENNE revue\n')
+  await writeFile(join(gdir(), 'fixes-1.md'), 'OLD fix\n')
+  await writeFile(join(gdir(), 'review.md'), 'VERDICT: APPROVED\n\nOLD review\n')
   await mkdir(pdir(), { recursive: true })
   await writeFile(join(pdir(), 'diagnostic-1.md'), 'CAUSE: MAIN\n')
   await eng.tick()
   let s = await loadState('T-1')
   expect(s.step).toBe('tasks')
   expect(s.loopGeneration).toBe(2)
-  expect(await readFile(join(`${gdir()}.1`, 'correctifs-1.md'), 'utf8')).toContain('ANCIEN')
+  expect(await readFile(join(`${gdir()}.1`, 'fixes-1.md'), 'utf8')).toContain('OLD')
   expect(await readFile(join(`${pdir()}.1`, 'diagnostic-1.md'), 'utf8')).toContain('CAUSE: MAIN')
   await expect(access(gdir())).rejects.toThrow()
   await expect(access(pdir())).rejects.toThrow()
 
-  // La nouvelle tâche est faite ; retour à la revue globale.
+  // The new task is done; back to the global review.
   s.tasks = s.tasks.map((t) => ({ ...t, phase: 'done' as const }))
   s.step = 'global-review'
   await saveState(s)
-  fx.herdr.started.add('rgt-1') // ancien relecteur encore vivant : il ne doit pas être réutilisé
+  fx.herdr.started.add('rgt-1') // the previous reviewer is still alive: it must not be reused
   s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1-g2', 'cgt-1-1-g2'])
-  const fix = await readFile(join(gdir(), 'correctifs-1.md'), 'utf8')
-  expect(fix).not.toContain('ANCIEN')
-  expect(fix).toContain('remarque de rgt-1-g2')
+  const fix = await readFile(join(gdir(), 'fixes-1.md'), 'utf8')
+  expect(fix).not.toContain('OLD')
+  expect(fix).toContain('note from rgt-1-g2')
 })
 
-test("une base de test non supprimée après un preflight tout vert bloque la mission au lieu d'aller à pr", async () => {
+test("a test database not removed after an all-green preflight blocks the mission instead of going to pr", async () => {
   const { eng } = await setup({
     patch: { step: 'preflight' },
-    over: { runInPane: panes(), run: async () => ({ stdout: '', stderr: 'conteneur occupé', exitCode: 1 }) },
+    over: { runInPane: panes(), run: async () => ({ stdout: '', stderr: 'container busy', exitCode: 1 }) },
   })
   const s = await until(eng, (x) => x.step !== 'preflight')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedFrom).toBe('preflight')
-  expect(s.blockedReason).toContain('base de test T-1 non supprimée : ')
-  expect(s.blockedReason).toContain('conteneur occupé')
+  expect(s.blockedReason).toContain('test database T-1 not removed: ')
+  expect(s.blockedReason).toContain('container busy')
   expect(s.testDbUp).toBe(true)
 })
 
-test("un amendement au preflight avec une base impossible à supprimer bloque sans revenir à tasks", async () => {
+test("a preflight amendment whose database cannot be removed blocks without returning to tasks", async () => {
   const { eng } = await setup({
     plan: PLAN2,
     patch: { step: 'preflight', testDbUp: true, gates: [amend()] },
@@ -578,29 +579,29 @@ test("un amendement au preflight avec une base impossible à supprimer bloque sa
   })
   await eng.tick()
   const s = await loadState('T-1')
-  expect(s.step).toBe('bloquée')
+  expect(s.step).toBe('blocked')
   expect(s.blockedFrom).toBe('preflight')
-  expect(s.blockedReason).toContain('base de test T-1 non supprimée')
+  expect(s.blockedReason).toContain('test database T-1 not removed')
   expect(s.appliedAmendments).toEqual([])
   expect(s.testDbUp).toBe(true)
 })
 
-test('une base de preuve impossible à supprimer bloque la mission et reste connue de l\'état', async () => {
+test('a proof database that cannot be removed blocks the mission and stays in state', async () => {
   const { eng } = await setup({
     patch: { step: 'preflight' },
     over: {
-      runInPane: panes({ 'preflight · lint': [ko('erreur')], 'preuve main · lint': [ko('erreur')], 'preuve main · arrêt de la base': [ko('refus')] }),
+      runInPane: panes({ 'preflight · lint': [ko('error')], 'proof on main · lint': [ko('error')], 'proof on main · stop database': [ko('refused')] }),
       agents: { ask: verdicts({ rd: ['CAUSE: MAIN'] }) },
     },
   })
   const s = await until(eng, (x) => x.step !== 'preflight')
-  expect(s.step).toBe('bloquée')
-  expect(s.blockedReason).toContain('base de test T-1-main non supprimée')
+  expect(s.step).toBe('blocked')
+  expect(s.blockedReason).toContain('test database T-1-main not removed')
   expect(s.proofDbUp).toBe(true)
-  expect(s.gates.filter((g) => g.kind === 'pr-malgre-main')).toEqual([])
+  expect(s.gates.filter((g) => g.kind === 'pr-despite-main')).toEqual([])
 })
 
-test('abandon pendant une preuve sur main supprime les deux bases', async () => {
+test('abandon during a proof on main removes both databases', async () => {
   const { fx, eng } = await setup({
     patch: { step: 'preflight', testDbUp: true, proofDbUp: true, loops: { ...loops0(), preflight: { ...loops0().preflight, phase: 'proof' } } },
   })
@@ -608,22 +609,22 @@ test('abandon pendant une preuve sur main supprime les deux bases', async () => 
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved' })
   expect(await eng.tick()).toBe('stop')
   const s = await loadState('T-1')
-  expect(s.step).toBe('fermée')
+  expect(s.step).toBe('closed')
   expect(fx.callsOf('run')).toEqual([down(), [demo.testDb!.down[0], ['down', 'T-1-main', MAIN_WT()], { cwd: wt, reject: false }]])
   expect(s.testDbUp).toBe(false)
   expect(s.proofDbUp).toBe(false)
 })
 
-test("une correction de branche efface les rouges acceptés : le check repasse par le diagnostic", async () => {
+test("a branch fix clears accepted reds: the check goes through diagnosis again", async () => {
   const { eng } = await setup({
     patch: {
       step: 'preflight',
       testDbUp: true,
-      loops: { ...loops0(), preflight: { ...loops0().preflight, round: 1, phase: 'fix', fixFindings: '', fixFailure: 'rouge', acceptedRed: ['lint'], diag: 1 } },
+      loops: { ...loops0(), preflight: { ...loops0().preflight, round: 1, phase: 'fix', fixFindings: '', fixFailure: 'red', acceptedRed: ['lint'], diag: 1 } },
     },
     over: {
-      runInPane: panes({ 'preflight · lint': [ko('erreur')] }),
-      agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'], rd: ['CAUSE: ENVIRONNEMENT'] }) },
+      runInPane: panes({ 'preflight · lint': [ko('error')] }),
+      agents: { ask: verdicts({ rg: ['VERDICT: APPROVED'], rd: ['CAUSE: ENVIRONMENT'] }) },
     },
   })
   const s = await until(eng, (x) => x.loops.preflight.phase === 'diagnose')
@@ -631,149 +632,150 @@ test("une correction de branche efface les rouges acceptés : le check repasse p
   expect(s.loops.preflight.diag).toBe(2)
 })
 
-test('revue globale : une remarque « imposé par le plan » ouvre un arbitrage avant les correctifs, la note y entre', async () => {
+test('global review: a finding "imposed by the plan" opens an arbitration before the fixes, and the note is included', async () => {
   const ask = async (name: string, file: string) => {
     if (name.startsWith('rg')) {
-      const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
+      const fileName = basename(file)
+      const out = join(dirname(file), fileName === 'review-brief.md' ? 'review.md' : fileName.replace(/^consigne-/, ''))
       const first = !out.includes('rerevue')
-      await writeFile(out, first ? 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 imposé par le plan mais incohérent\n' : 'VERDICT: APPROUVÉ\n')
+      await writeFile(out, first ? 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 imposed by the plan but inconsistent\n' : 'VERDICT: APPROVED\n')
     }
     return 'done' as const
   }
   const { fx, eng } = await setup({ over: { agents: { ask } } })
-  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'arbitrage'))
-  const g = s.gates.find((x) => x.kind === 'arbitrage')!
-  expect(g.summary).toContain('src/a.ts:3 imposé par le plan')
+  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'arbitration'))
+  const g = s.gates.find((x) => x.kind === 'arbitration')!
+  expect(g.summary).toContain('src/a.ts:3 imposed by the plan')
   expect(await eng.tick()).toBe('wait')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1'])
-  await expect(readFile(join(gdir(), 'correctifs-1.md'))).rejects.toThrow()
-  expect(fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).some((p) => p.startsWith('[herness] revue globale : revue CORRECTIONS (tour 1)'))).toBe(true)
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'refused', note: 'suivre le plan' })
+  await expect(readFile(join(gdir(), 'fixes-1.md'))).rejects.toThrow()
+  expect(fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).some((p) => p.startsWith('[herness] global review: review CORRECTIONS (round 1)'))).toBe(true)
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'refused', note: 'follow the plan' })
   s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
-  expect(await readFile(join(gdir(), 'correctifs-1.md'), 'utf8')).toContain('suivre le plan')
+  expect(await readFile(join(gdir(), 'fixes-1.md'), 'utf8')).toContain('follow the plan')
   expect(s.consumedArbitrages).toEqual([g.id])
 })
 
-// ---------- correcteur arrêté sans commit (agent-arret) ----------
+// ---------- fixer stopped without a commit (agent-stopped) ----------
 
-const noCommit = { ok: false as const, code: 'no-commit' as const, reason: 'aucun commit depuis f1' }
+const noCommit = { ok: false as const, code: 'no-commit' as const, reason: 'no commit since f1' }
 const baseLoops = () => newState({ id: 'x', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/' }).loops
 
-test("revue globale : correcteur arrêté sans commit avec compte rendu, porte agent-arret ; validée, nouveau tour avec la décision", async () => {
+test("global review: fixer stopped without a commit and with a report, agent-stopped gate; approved, a new round with the decision", async () => {
   const { fx, eng } = await setup({
-    patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'control', fixer: 'new', fixBase: 'f1', reviewedSha: 'h1', lastReview: join(gdir(), 'revue.md') } } },
+    patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'control', fixer: 'new', fixBase: 'f1', reviewedSha: 'h1', lastReview: join(gdir(), 'review.md') } } },
     over: {
-      agents: { ask: verdicts({ rg: ['VERDICT: APPROUVÉ'] }) },
+      agents: { ask: verdicts({ rg: ['VERDICT: APPROVED'] }) },
       git: { controlCommits: (() => { let i = 0; return async () => (i++ === 0 ? noCommit : { ok: true as const, commits: 1 }) })() },
     },
   })
   await mkdir(gdir(), { recursive: true })
-  await writeFile(join(gdir(), 'revue.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 renommer\n')
-  await writeFile(join(gdir(), 'rapport.md'), 'Je ne peux pas renommer : le nom est imposé par la spec.\n')
-  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-arret'))
-  const g = s.gates.find((x) => x.kind === 'agent-arret')!
-  expect(g.summary).toMatch(/^revue globale : l'implémenteur s'est arrêté sans commit\n/)
-  expect(g.summary).toContain('imposé par la spec')
+  await writeFile(join(gdir(), 'review.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 rename\n')
+  await writeFile(join(gdir(), 'report.md'), 'I cannot rename: the name is required by the spec.\n')
+  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
+  const g = s.gates.find((x) => x.kind === 'agent-stopped')!
+  expect(g.summary).toMatch(/^global review: the implementer stopped without a commit\n/)
+  expect(g.summary).toContain('required by the spec')
   expect(s.loops.globalReview).toMatchObject({ round: 1, phase: 'control', stopGate: g.id })
   expect(await eng.tick()).toBe('wait')
 
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved', note: 'ne renomme pas' })
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved', note: 'do not rename' })
   s = await until(eng, (x) => x.loops.globalReview.round === 2 && x.loops.globalReview.phase === 'control')
-  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cgt-1-2', join(gdir(), 'correctifs-2.md')])
-  const fix = await readFile(join(gdir(), 'correctifs-2.md'), 'utf8')
-  expect(fix).toContain('src/a.ts:3 renommer')
-  expect(fix).toContain("Décision de l'utilisateur : ne renomme pas")
+  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cgt-1-2', join(gdir(), 'fixes-2.md')])
+  const fix = await readFile(join(gdir(), 'fixes-2.md'), 'utf8')
+  expect(fix).toContain('src/a.ts:3 rename')
+  expect(fix).toContain('User decision: do not rename')
   s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
 })
 
-test('revue globale : aucun commit sans compte rendu bloque comme avant', async () => {
+test('global review: no commit and no report blocks as before', async () => {
   const { eng } = await setup({
     patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'control', fixer: 'new', fixBase: 'f1' } } },
     over: { git: { controlCommits: async () => noCommit } },
   })
-  const s = await until(eng, (x) => x.step === 'bloquée')
-  expect(s.blockedReason).toContain('contrôle du commit en échec')
+  const s = await until(eng, (x) => x.step === 'blocked')
+  expect(s.blockedReason).toContain('commit check failed')
   expect(s.gates).toEqual([])
 })
 
-test('preflight : correcteur arrêté sans commit avec compte rendu ; porte validée, nouveau tour ; refusée, mission bloquée', async () => {
+test('preflight: fixer stopped without a commit and with a report; gate approved, new round; refused, mission blocked', async () => {
   const P = { round: 1, results: [], acceptedRed: [], used: [], diag: 1, phase: 'control' as const, fixer: 'new' as const, fixBase: 'f1', fixFindings: '- src/x.ts:1 lint', fixFailure: '' }
   const { fx, eng } = await setup({
     patch: { step: 'preflight', loops: { ...baseLoops(), globalReview: { round: 0, reviewedSha: 'sha-rev' }, preflight: P } },
     over: {
       git: { controlCommits: async () => noCommit },
-      // Le correcteur du tour 2 s'arrête aussi, en complétant le compte rendu.
-      agents: { ask: async (_name: string, file: string) => (await appendFile(join(dirname(file), 'rapport.md'), 'Arrêt encore.\n'), 'done' as const) },
+      // The round-2 fixer also stops, after appending to the report.
+      agents: { ask: async (_name: string, file: string) => (await appendFile(join(dirname(file), 'report.md'), 'Stopped again.\n'), 'done' as const) },
     },
   })
   await mkdir(pdir(), { recursive: true })
-  await writeFile(join(pdir(), 'rapport.md'), 'Arrêt : la règle de lint contredit la spec.\n')
-  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-arret'))
-  const g1 = s.gates.find((x) => x.kind === 'agent-arret')!
-  expect(g1.summary).toMatch(/^preflight : l'implémenteur s'est arrêté sans commit\n/)
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g1.id, decision: 'approved', note: 'désactive la règle localement' })
-  s = await until(eng, (x) => x.gates.filter((g) => g.kind === 'agent-arret').length === 2)
+  await writeFile(join(pdir(), 'report.md'), 'Stop: the lint rule contradicts the spec.\n')
+  let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
+  const g1 = s.gates.find((x) => x.kind === 'agent-stopped')!
+  expect(g1.summary).toMatch(/^preflight: the implementer stopped without a commit\n/)
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: g1.id, decision: 'approved', note: 'disable the rule locally' })
+  s = await until(eng, (x) => x.gates.filter((g) => g.kind === 'agent-stopped').length === 2)
   expect(s.loops.preflight.round).toBe(2)
-  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cpt-1-2', join(pdir(), 'correctifs-2.md')])
-  const fix = await readFile(join(pdir(), 'correctifs-2.md'), 'utf8')
+  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cpt-1-2', join(pdir(), 'fixes-2.md')])
+  const fix = await readFile(join(pdir(), 'fixes-2.md'), 'utf8')
   expect(fix).toContain('src/x.ts:1 lint')
-  expect(fix).toContain("Décision de l'utilisateur : désactive la règle localement")
+  expect(fix).toContain('User decision: disable the rule locally')
 
   const g2 = s.gates.at(-1)!
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g2.id, decision: 'refused', note: 'stop' })
-  s = await until(eng, (x) => x.step === 'bloquée')
+  s = await until(eng, (x) => x.step === 'blocked')
   expect(s.blockedFrom).toBe('preflight')
-  expect(s.blockedReason).toContain("arrêté sans commit")
+  expect(s.blockedReason).toContain('stopped without a commit')
 })
 
-test("M1 : revue globale, compte rendu inchangé depuis l'envoi des correctifs : blocage, pas de porte", async () => {
+test("M1: global review, report unchanged since the fixes were sent: blocked, no gate", async () => {
   const { eng } = await setup({
-    patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'fix', fixer: 'new', reviewedSha: 'h1', lastReview: join(gdir(), 'revue.md') } } },
+    patch: { loops: { ...baseLoops(), globalReview: { round: 1, phase: 'fix', fixer: 'new', reviewedSha: 'h1', lastReview: join(gdir(), 'review.md') } } },
     over: { git: { controlCommits: async () => noCommit } },
   })
   await mkdir(gdir(), { recursive: true })
-  await writeFile(join(gdir(), 'revue.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 renommer\n')
-  await writeFile(join(gdir(), 'rapport.md'), 'compte rendu du tour précédent\n')
-  const s = await until(eng, (x) => x.step === 'bloquée')
-  expect(s.loops.globalReview.reportSize).toBe(Buffer.byteLength('compte rendu du tour précédent\n'))
+  await writeFile(join(gdir(), 'review.md'), 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 rename\n')
+  await writeFile(join(gdir(), 'report.md'), 'report from the previous round\n')
+  const s = await until(eng, (x) => x.step === 'blocked')
+  expect(s.loops.globalReview.reportSize).toBe(Buffer.byteLength('report from the previous round\n'))
   expect(s.gates).toEqual([])
 })
 
-test("M1 : preflight, compte rendu inchangé depuis l'envoi des correctifs : blocage, pas de porte", async () => {
+test("M1: preflight, report unchanged since the fixes were sent: blocked, no gate", async () => {
   const P = { round: 1, results: [], acceptedRed: [], used: [], diag: 1, phase: 'fix' as const, fixer: 'new' as const, fixFindings: '- src/x.ts:1 lint', fixFailure: '' }
   const { eng } = await setup({
     patch: { step: 'preflight', loops: { ...baseLoops(), globalReview: { round: 0, reviewedSha: 'sha-rev' }, preflight: P } },
     over: { git: { controlCommits: async () => noCommit } },
   })
   await mkdir(pdir(), { recursive: true })
-  await writeFile(join(pdir(), 'rapport.md'), 'ancien\n')
-  const s = await until(eng, (x) => x.step === 'bloquée')
+  await writeFile(join(pdir(), 'report.md'), 'old\n')
+  const s = await until(eng, (x) => x.step === 'blocked')
   expect(s.gates).toEqual([])
-  expect(s.blockedReason).toContain('contrôle du commit en échec')
+  expect(s.blockedReason).toContain('commit check failed')
 })
 
-test("preflight : correcteur vu au repos sans compte rendu, le commit n'est contrôlé qu'après son compte rendu", async () => {
+test("preflight: fixer seen idle without a report, the commit is checked only after its report", async () => {
   let sleeps = 0
   const P = { round: 1, results: [], acceptedRed: [], used: [], diag: 1, phase: 'fix' as const, fixer: 'new' as const, fixFindings: '- src/x.ts:1 lint', fixFailure: '' }
   const { fx, eng } = await setup({
     patch: { step: 'preflight', loops: { ...baseLoops(), globalReview: { round: 0, reviewedSha: 'sha-rev' }, preflight: P } },
     over: {
       sleep: async () => {
-        if (++sleeps === 2) await writeFile(join(pdir(), 'rapport.md'), 'ancien\ncorrigé, commit c1\n')
+        if (++sleeps === 2) await writeFile(join(pdir(), 'report.md'), 'old\nfixed, commit c1\n')
       },
       git: {
         controlCommits: async () => {
-          expect(await readFile(join(pdir(), 'rapport.md'), 'utf8')).toContain('commit c1')
+          expect(await readFile(join(pdir(), 'report.md'), 'utf8')).toContain('commit c1')
           return { ok: true, commits: 1 }
         },
       },
     },
   })
   await mkdir(pdir(), { recursive: true })
-  await writeFile(join(pdir(), 'rapport.md'), 'ancien\n')
+  await writeFile(join(pdir(), 'report.md'), 'old\n')
   const s = await until(eng, () => fx.callsOf('git.controlCommits').length > 0)
   expect(sleeps).toBe(2)
-  expect(s.log.map((l) => l.msg)).toContain('preflight : cpt-1-1 vu au repos sans compte rendu, attente de la fin réelle')
+  expect(s.log.map((l) => l.msg)).toContain('preflight: cpt-1-1 seen idle without a report, waiting for the real end')
 })

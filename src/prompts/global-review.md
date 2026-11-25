@@ -1,36 +1,36 @@
-# Revue globale de la branche
+# Global review of the branch
 
-Tu relis toute la branche, c'est-à-dire les commits `{{baseSha}}..{{headSha}}`, contre la spec. Les tâches ont déjà été relues une à une : tu cherches ce qui n'apparaît qu'à l'échelle de l'ensemble (incohérences entre tâches, exigence de la spec jamais couverte, doublons, contrats incompatibles, dette introduite, tests qui ne couvrent pas le comportement d'ensemble).
+You review the whole branch, that is the commits `{{baseSha}}..{{headSha}}`, against the spec. The tasks have already been reviewed one by one: you look for what appears only at the scale of the whole (inconsistencies between tasks, a spec requirement never covered, duplicates, incompatible contracts, introduced debt, tests that do not cover the behavior of the whole).
 
-## Ce qui était demandé
+## What was asked
 
-Spec : `{{specPath}}`
-Plan : `{{planPath}}`
+Spec: `{{specPath}}`
+Plan: `{{planPath}}`
 
-Contraintes globales qui s'imposent à la branche :
+Global constraints that apply to the branch:
 
 {{constraints}}
 
-## Diff à relire
+## Diff to review
 
-Base : `{{baseSha}}`
-Tête : `{{headSha}}`
-Fichier de diff : `{{diffPath}}`
+Base: `{{baseSha}}`
+Head: `{{headSha}}`
+Diff file: `{{diffPath}}`
 
-Lis le fichier de diff ; s'il est absent, utilise `git diff --stat {{baseSha}}..{{headSha}}` et `git diff {{baseSha}}..{{headSha}}`. Tu peux lire le code hors du diff pour vérifier un risque concret que tu peux nommer (site d'appel, contrat partagé). Ta revue est en lecture seule : ne modifie ni l'arbre de travail, ni l'index, ni HEAD, ni les branches. Fais tout toi-même : ne lance aucun sous-agent.
+Read the diff file; if it is missing, use `git diff --stat {{baseSha}}..{{headSha}}` and `git diff {{baseSha}}..{{headSha}}`. You may read code outside the diff to check a concrete risk you can name (call site, shared contract). Your review is read-only: do not modify the working tree, the index, HEAD, or the branches. Do everything yourself: launch no sub-agent.
 
-## Méthode
+## Method
 
-Ne fais pas confiance aux comptes rendus des implémenteurs : vérifie contre le code. D'abord la conformité à la spec (manquant, en trop, mal compris), puis la qualité (séparation des responsabilités, gestion des erreurs, cas limites, tests qui vérifient un comportement réel). Ne relance pas la suite de tests ; ne lance un test ciblé que pour lever un doute précis.
+Do not trust the implementers' reports: check against the code. First compliance with the spec (missing, extra, misunderstood), then quality (separation of responsibilities, error handling, edge cases, tests that check a real behavior). Do not re-run the test suite; run a targeted test only to settle a precise doubt.
 
-## Gravité
+## Severity
 
-- **Critique** : comportement faux, régression, faille, interdit enfreint.
-- **Important** : la branche ne peut pas être fusionnée tant que ce n'est pas corrigé (exigence de la spec manquée, comportement fragile, dégât de maintenabilité).
-- **Mineur** : confort, finition.
+- **Critical**: wrong behavior, regression, security hole, a forbidden rule broken.
+- **Important**: the branch cannot be merged until this is fixed (missed spec requirement, fragile behavior, maintainability damage).
+- **Minor**: comfort, polish.
 
-Chaque remarque cite `fichier:ligne`, ce qui ne va pas, pourquoi cela compte et comment corriger si ce n'est pas évident.
+Each remark cites `file:line`, what is wrong, why it matters, and how to fix it when that is not obvious.
 
-## Sortie
+## Output
 
-Écris ton rapport dans `{{outPath}}`. La première ligne est exactement `VERDICT: APPROUVÉ` ou `VERDICT: CORRECTIONS` (CORRECTIONS dès qu'il reste une remarque Critique ou Important). Ensuite : conformité à la spec, points forts, remarques sous les titres Critique / Important / Mineur, bilan en une ou deux phrases. Pas de préambule. Puis réponds seulement `TERMINÉ`.
+Write your report in `{{outPath}}`, in English. The first line is exactly `VERDICT: APPROVED` or `VERDICT: CORRECTIONS` (CORRECTIONS as soon as a Critical or Important remark remains). Then: compliance with the spec, strengths, remarks under the headings Critical / Important / Minor, a summary in one or two sentences. No preamble. Then reply only `DONE`.

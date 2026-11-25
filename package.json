@@ -2,7 +2,7 @@
   "name": "herness",
   "version": "0.8.1",
   "private": true,
-  "description": "Orchestrateur d agents de code piloté par le code",
+  "description": "Code agent orchestrator driven by code",
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

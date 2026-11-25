@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 
-/** Longueur maximale d'un nom d'agent herdr (`[a-z][a-z0-9_-]{0,31}`). */
+/** Maximum length of a herdr agent name (`[a-z][a-z0-9_-]{0,31}`). */
 const MAX = 32
 
 /**
- * Nom d'agent accepté par herdr : minuscules, tout autre caractère que `[a-z0-9_-]` remplacé par `-`, une lettre en
- * tête, 32 caractères au plus. Un nom tronqué prend un suffixe de hachage du nom d'origine : il reste unique.
+ * Agent name accepted by herdr: lowercase, any character other than `[a-z0-9_-]` replaced by `-`, a letter
+ * first, 32 characters at most. A truncated name takes a hash suffix of the original name so it stays unique.
  */
 export function agentName(raw: string): string {
   let n = raw.toLowerCase().replace(/[^a-z0-9_-]/g, '-')
@@ -17,7 +17,7 @@ export function agentName(raw: string): string {
   return n
 }
 
-/** Génération des boucles revue globale / preflight : `-g<n>` à partir de la deuxième. */
+/** Generation of the global-review / preflight loops: `-g<n>` from the second one. */
 const gen = (name: string, generation: number): string => agentName(generation > 1 ? `${name}-g${generation}` : name)
 
 export const orchestratorName = (id: string): string => agentName(`o${id}`)

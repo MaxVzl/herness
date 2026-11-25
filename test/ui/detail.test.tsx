@@ -18,7 +18,7 @@ function base(): MissionState {
   const s = newState({ id: 'T-1', source: { kind: 'text', ref: 'x' }, project: 'p', repoPath: '/r' })
   s.branch = 'feat/T-1-x'
   s.step = 'tasks'
-  s.tasks.push({ n: 1, title: 'Premier', testCommand: 't', phase: 'review', round: 1 })
+  s.tasks.push({ n: 1, title: 'First', testCommand: 't', phase: 'review', round: 1 })
   return s
 }
 
@@ -29,11 +29,11 @@ function fakeActions(over: Partial<MissionActions> = {}) {
   const a: MissionActions = {
     validate: async (id, gateId, note) => { calls.push(['validate', id, gateId, note]); return ok() },
     refuse: async (id, gateId, note) => { calls.push(['refuse', id, gateId, note]); return ok() },
-    resume: async (id) => { calls.push(['resume', id]); return ok(['reprise demandée']) },
-    restart: async (id, o) => { calls.push(o?.detached ? ['restart', id, 'détaché'] : ['restart', id]); return ok() },
-    close: async (id, confirm) => { calls.push(['close', id]); return { ok: await confirm('Fermer quand même ?'), lines: [] } },
+    resume: async (id) => { calls.push(['resume', id]); return ok(['resume requested']) },
+    restart: async (id, o) => { calls.push(o?.detached ? ['restart', id, 'detached'] : ['restart', id]); return ok() },
+    close: async (id, confirm) => { calls.push(['close', id]); return { ok: await confirm('Close anyway?'), lines: [] } },
     open: async (s) => { calls.push(['open', s.id]); return ok() },
-    remove: async (id) => { calls.push(['remove', id]); return ok(['Mission T-1 supprimée.']) },
+    remove: async (id) => { calls.push(['remove', id]); return ok(['Mission T-1 deleted.']) },
     ...over,
   }
   return { a, calls }
@@ -46,12 +46,12 @@ function Harness(props: { state: MissionState; actions: MissionActions; onBack?:
       <MissionDetail state={props.state} sentGates={k.sentGates} {...(k.selectedGate ? { selectedGate: k.selectedGate } : {})} />
       {k.overlay}
       {k.message ? <Text>{`MSG ${k.message}`}</Text> : null}
-      <Text>{`AIDE ${k.help}`}</Text>
+      <Text>{`HELP ${k.help}`}</Text>
     </Box>
   )
 }
 
-test('MissionDetail met en évidence la porte sélectionnée', () => {
+test('MissionDetail highlights the selected gate', () => {
   const s = base()
   openGate(s, 'spec', 'A')
   openGate(s, 'plan', 'B')
@@ -60,25 +60,25 @@ test('MissionDetail met en évidence la porte sélectionnée', () => {
   expect(f).not.toMatch(/▸.*g1/)
   const d = render(<MissionDetail state={s} sentGates={['g1']} />).lastFrame()!
   expect(d).not.toContain('▸')
-  expect(d).toMatch(/g1.*décision envoyée/)
-  expect(d).not.toMatch(/g2.*décision envoyée/)
+  expect(d).toMatch(/g1.*decision sent/)
+  expect(d).not.toMatch(/g2.*decision sent/)
 })
 
-test('pendant l envoi, la porte n est plus marquée ▸ et affiche décision envoyée', async () => {
+test('while sending, the gate is no longer marked and shows decision sent', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const { a } = fakeActions({ validate: () => new Promise(() => {}) })
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1')
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1')
   stdin.write('\r')
-  await waitFor(lastFrame, 'décision envoyée')
+  await waitFor(lastFrame, 'decision sent')
   expect(lastFrame()).not.toContain('▸')
-  expect(lastFrame()).toMatch(/g1.*décision envoyée/)
+  expect(lastFrame()).toMatch(/g1.*decision sent/)
 })
 
-test('une action qui lève affiche son erreur', async () => {
+test('an action that throws shows its error', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const { a } = fakeActions({
@@ -86,25 +86,25 @@ test('une action qui lève affiche son erreur', async () => {
     resume: async () => { throw new Error('boum p') },
   })
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1')
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1')
   stdin.write('\r')
   await waitFor(lastFrame, 'boum v')
   expect(lastFrame()).toContain('boum v')
-  stdin.write('p')
+  stdin.write('u')
   await waitFor(lastFrame, 'boum p')
   expect(lastFrame()).toContain('boum p')
 })
 
-test('la porte sélectionnée est réinitialisée quand la mission change', async () => {
+test('the selected gate resets when the mission changes', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   openGate(s, 'plan', 'B')
   const other = { ...s, id: 'T-2', gates: s.gates.map((g) => ({ ...g })) }
   const { a } = fakeActions()
   const r = render(<Harness state={s} actions={a} />)
-  await waitFor(r.lastFrame, 'AIDE')
+  await waitFor(r.lastFrame, 'HELP')
   r.stdin.write('\t')
   await waitMatch(r.lastFrame, /▸.*g2/)
   expect(r.lastFrame()).toMatch(/▸.*g2/)
@@ -113,125 +113,125 @@ test('la porte sélectionnée est réinitialisée quand la mission change', asyn
   expect(r.lastFrame()).toMatch(/▸.*g1/)
 })
 
-test('la libération d une porte n efface que son propre message', async () => {
+test('releasing a gate clears only its own message', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const { a } = fakeActions()
   const r = render(<Harness state={s} actions={a} />)
-  await waitFor(r.lastFrame, 'AIDE')
-  r.stdin.write('v')
-  await waitFor(r.lastFrame, 'Valider g1')
+  await waitFor(r.lastFrame, 'HELP')
+  r.stdin.write('a')
+  await waitFor(r.lastFrame, 'Approve g1')
   r.stdin.write('\r')
-  await waitFor(r.lastFrame, 'g1 validée')
+  await waitFor(r.lastFrame, 'g1 approved')
   r.stdin.write('R')
-  await waitFor(r.lastFrame, 'redémarrage demandé')
-  expect(r.lastFrame()).toContain('redémarrage demandé')
+  await waitFor(r.lastFrame, 'restart requested')
+  expect(r.lastFrame()).toContain('restart requested')
   const done = { ...s, gates: s.gates.map((g) => ({ ...g, status: 'approved' as const })) }
   r.rerender(<Harness state={done} actions={a} />)
   await tick()
-  expect(r.lastFrame()).toContain('redémarrage demandé')
+  expect(r.lastFrame()).toContain('restart requested')
 })
 
-test('démontage pendant la confirmation interne de close : elle rend false', async () => {
+test('unmount during close internal confirmation: it resolves false', async () => {
   let answer: boolean | undefined
-  const { a } = fakeActions({ close: async (_id, confirm) => { answer = await confirm('Fermer quand même ?'); return ok() } })
+  const { a } = fakeActions({ close: async (_id, confirm) => { answer = await confirm('Close anyway?'); return ok() } })
   const r = render(<Harness state={base()} actions={a} />)
-  await waitFor(r.lastFrame, 'AIDE')
-  r.stdin.write('f')
-  await waitFor(r.lastFrame, 'Fermer T-1 ?')
+  await waitFor(r.lastFrame, 'HELP')
+  r.stdin.write('c')
+  await waitFor(r.lastFrame, 'Close T-1?')
   r.stdin.write('\r')
-  await waitFor(r.lastFrame, 'Fermer quand même ?')
-  expect(r.lastFrame()).toContain('Fermer quand même ?')
+  await waitFor(r.lastFrame, 'Close anyway?')
+  expect(r.lastFrame()).toContain('Close anyway?')
   r.unmount()
   await until(() => answer === false)
   expect(answer).toBe(false)
 })
 
-test('v affiche la question puis Entrée valide ; Échap n envoie rien', async () => {
+test('a shows the question then Enter approves; Esc sends nothing', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1 (spec) de T-1 ?')
-  expect(lastFrame()).toContain('Valider g1 (spec) de T-1 ?')
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1 (spec) of T-1?')
+  expect(lastFrame()).toContain('Approve g1 (spec) of T-1?')
   stdin.write(ESC)
-  await waitGone(lastFrame, 'Valider g1')
+  await waitGone(lastFrame, 'Approve g1')
   expect(calls).toEqual([])
-  expect(lastFrame()).not.toContain('Valider g1')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1')
+  expect(lastFrame()).not.toContain('Approve g1')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1')
   stdin.write('\r')
   await until(() => calls.length === 1)
-  await waitFor(lastFrame, 'g1 validée')
+  await waitFor(lastFrame, 'g1 approved')
   expect(calls).toEqual([['validate', 'T-1', 'g1', undefined]])
-  expect(lastFrame()).toContain('g1 validée')
+  expect(lastFrame()).toContain('g1 approved')
 })
 
-test('r : note vide refusée, puis note, confirmation et refus', async () => {
+test('r: empty note rejected, then note, confirmation and reject', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
+  await waitFor(lastFrame, 'HELP')
   stdin.write('r')
-  await waitFor(lastFrame, 'ctrl+s valider')
+  await waitFor(lastFrame, 'ctrl+s submit')
   stdin.write('\x13')
-  await waitFor(lastFrame, 'une note est obligatoire pour refuser')
-  expect(lastFrame()).toContain('une note est obligatoire pour refuser')
+  await waitFor(lastFrame, 'a note is required to reject')
+  expect(lastFrame()).toContain('a note is required to reject')
   expect(calls).toEqual([])
-  stdin.write('trop long')
-  await waitFor(lastFrame, 'trop long▏')
+  stdin.write('too long')
+  await waitFor(lastFrame, 'too long▏')
   stdin.write('\x13')
-  await waitFor(lastFrame, 'Refuser g1 (spec) de T-1 ?')
-  expect(lastFrame()).toContain('Refuser g1 (spec) de T-1 ?')
+  await waitFor(lastFrame, 'Reject g1 (spec) of T-1?')
+  expect(lastFrame()).toContain('Reject g1 (spec) of T-1?')
   stdin.write('\r')
   await until(() => calls.length === 1)
-  await waitFor(lastFrame, 'g1 refusée')
-  expect(calls).toEqual([['refuse', 'T-1', 'g1', 'trop long']])
-  expect(lastFrame()).toContain('g1 refusée')
+  await waitFor(lastFrame, 'g1 rejected')
+  expect(calls).toEqual([['refuse', 'T-1', 'g1', 'too long']])
+  expect(lastFrame()).toContain('g1 rejected')
 })
 
-test('n : note, choix v, confirmation, validation avec note', async () => {
+test('n: note, choose a, confirmation, approve with the note', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
+  await waitFor(lastFrame, 'HELP')
   stdin.write('n')
-  await waitFor(lastFrame, 'ctrl+s valider · ctrl+e')
-  stdin.write('ok pour moi')
-  await waitFor(lastFrame, 'ok pour moi▏')
+  await waitFor(lastFrame, 'ctrl+s submit · ctrl+e')
+  stdin.write('ok for me')
+  await waitFor(lastFrame, 'ok for me▏')
   stdin.write('\x13')
-  await waitFor(lastFrame, 'v valider · r refuser · échap annuler')
-  expect(lastFrame()).toContain('v valider · r refuser · échap annuler')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1 (spec) de T-1 ?')
-  expect(lastFrame()).toContain('Valider g1 (spec) de T-1 ?')
+  await waitFor(lastFrame, 'a approve · r reject · esc cancel')
+  expect(lastFrame()).toContain('a approve · r reject · esc cancel')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1 (spec) of T-1?')
+  expect(lastFrame()).toContain('Approve g1 (spec) of T-1?')
   stdin.write('\r')
   await until(() => calls.length === 1)
-  expect(calls).toEqual([['validate', 'T-1', 'g1', 'ok pour moi']])
+  expect(calls).toEqual([['validate', 'T-1', 'g1', 'ok for me']])
 })
 
-test('n : note vide puis r reste sur le choix', async () => {
+test('n: empty note then r stays on the choice', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
+  await waitFor(lastFrame, 'HELP')
   stdin.write('n')
-  await waitFor(lastFrame, 'ctrl+s valider · ctrl+e')
+  await waitFor(lastFrame, 'ctrl+s submit · ctrl+e')
   stdin.write('\x13')
-  await waitFor(lastFrame, 'v valider · r refuser · échap annuler')
+  await waitFor(lastFrame, 'a approve · r reject · esc cancel')
   stdin.write('r')
-  await waitFor(lastFrame, 'une note est obligatoire pour refuser')
-  expect(lastFrame()).toContain('une note est obligatoire pour refuser')
-  expect(lastFrame()).toContain('v valider · r refuser · échap annuler')
+  await waitFor(lastFrame, 'a note is required to reject')
+  expect(lastFrame()).toContain('a note is required to reject')
+  expect(lastFrame()).toContain('a approve · r reject · esc cancel')
   expect(calls).toEqual([])
 })
 
-test('deux v rapides n envoient qu une décision', async () => {
+test('two quick a keys send only one decision', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   let release: () => void = () => {}
@@ -242,34 +242,34 @@ test('deux v rapides n envoient qu une décision', async () => {
     },
   })
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g1')
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g1')
   stdin.write('\r')
   await until(() => calls.length === 1)
-  stdin.write('v')
-  await waitFor(lastFrame, 'aucune porte en attente')
-  // l'erreur reste affichée jusqu'à la touche suivante
-  expect(lastFrame()).toContain('aucune porte en attente')
+  stdin.write('a')
+  await waitFor(lastFrame, 'no pending gate')
+  // the error stays visible until the next key
+  expect(lastFrame()).toContain('no pending gate')
   stdin.write('\r')
   await tick()
   expect(calls).toHaveLength(1)
   release()
-  await waitFor(lastFrame, 'g1 validée')
-  stdin.write('v')
-  await waitFor(lastFrame, 'aucune porte en attente')
+  await waitFor(lastFrame, 'g1 approved')
+  stdin.write('a')
+  await waitFor(lastFrame, 'no pending gate')
   stdin.write('\r')
   await tick()
   expect(calls).toHaveLength(1)
 })
 
-test('tab et flèches changent la porte sélectionnée et v la vise', async () => {
+test('tab and arrows change the selected gate and a targets it', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   openGate(s, 'plan', 'B')
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
+  await waitFor(lastFrame, 'HELP')
   stdin.write('\t')
   await waitMatch(lastFrame, /▸.*g2/)
   expect(lastFrame()).toMatch(/▸.*g2/)
@@ -279,41 +279,41 @@ test('tab et flèches changent la porte sélectionnée et v la vise', async () =
   stdin.write('\u001b[D')
   await waitMatch(lastFrame, /▸.*g2/)
   expect(lastFrame()).toMatch(/▸.*g2/)
-  stdin.write('v')
-  await waitFor(lastFrame, 'Valider g2 (plan)')
-  expect(lastFrame()).toContain('Valider g2 (plan)')
+  stdin.write('a')
+  await waitFor(lastFrame, 'Approve g2 (plan)')
+  expect(lastFrame()).toContain('Approve g2 (plan)')
   stdin.write('\r')
   await until(() => calls.length === 1)
   expect(calls).toEqual([['validate', 'T-1', 'g2', undefined]])
 })
 
-test('f demande confirmation avant close et relaie la confirmation interne', async () => {
+test('c asks for confirmation before close and forwards the internal confirmation', async () => {
   const s = base()
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('f')
-  await waitFor(lastFrame, 'Fermer T-1 ?')
-  expect(lastFrame()).toContain('Fermer T-1 ?')
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('c')
+  await waitFor(lastFrame, 'Close T-1?')
+  expect(lastFrame()).toContain('Close T-1?')
   expect(calls).toEqual([])
   stdin.write(ESC)
-  await waitFor(lastFrame, 'fermeture annulée')
+  await waitFor(lastFrame, 'close cancelled')
   expect(calls).toEqual([])
-  expect(lastFrame()).toContain('fermeture annulée')
-  stdin.write('f')
-  await waitFor(lastFrame, 'Fermer T-1 ?')
+  expect(lastFrame()).toContain('close cancelled')
+  stdin.write('c')
+  await waitFor(lastFrame, 'Close T-1?')
   stdin.write('\r')
-  await waitFor(lastFrame, 'Fermer quand même ?')
+  await waitFor(lastFrame, 'Close anyway?')
   expect(calls).toEqual([['close', 'T-1']])
-  expect(lastFrame()).toContain('Fermer quand même ?')
+  expect(lastFrame()).toContain('Close anyway?')
   stdin.write(ESC)
-  await waitGone(lastFrame, 'Fermer quand même ?')
-  await waitFor(lastFrame, 'fermeture annulée')
-  expect(lastFrame()).not.toContain('Fermer quand même ?')
-  expect(lastFrame()).toContain('fermeture annulée')
+  await waitGone(lastFrame, 'Close anyway?')
+  await waitFor(lastFrame, 'close cancelled')
+  expect(lastFrame()).not.toContain('Close anyway?')
+  expect(lastFrame()).toContain('close cancelled')
 })
 
-test('pendant une fermeture, aucun autre geste n ouvre de saisie ni ne lance d action', async () => {
+test('during a close, no other gesture opens an input or starts an action', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   let go: () => void = () => {}
@@ -322,122 +322,122 @@ test('pendant une fermeture, aucun autre geste n ouvre de saisie ni ne lance d a
     close: async (id, confirm) => {
       calls.push(['close', id])
       await new Promise<void>((r) => { go = r })
-      answer = await confirm('Fermer quand même ?')
-      return ok(['fermée'])
+      answer = await confirm('Close anyway?')
+      return ok(['closed'])
     },
   })
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('f')
-  await waitFor(lastFrame, 'Fermer T-1 ?')
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('c')
+  await waitFor(lastFrame, 'Close T-1?')
   stdin.write('\r')
   await until(() => calls.length === 1)
-  await waitGone(lastFrame, 'Fermer T-1 ?')
-  for (const k of ['v', 'r', 'n', 'f', 'p', 'R', 'o']) {
+  await waitGone(lastFrame, 'Close T-1?')
+  for (const k of ['a', 'r', 'n', 'c', 'u', 'R', 'o']) {
     stdin.write(k)
-    await waitFor(lastFrame, 'action en cours')
-    await tick() // absence : le geste refusé ne doit rien ouvrir
-    expect(lastFrame()).toContain('action en cours')
-    expect(lastFrame()).not.toContain('Valider g1')
+    await waitFor(lastFrame, 'action in progress')
+    await tick() // absence: the refused gesture must open nothing
+    expect(lastFrame()).toContain('action in progress')
+    expect(lastFrame()).not.toContain('Approve g1')
     expect(lastFrame()).not.toContain('Note')
-    expect(lastFrame()).not.toContain('Fermer T-1 ?')
+    expect(lastFrame()).not.toContain('Close T-1?')
   }
   expect(calls).toEqual([['close', 'T-1']])
   go()
-  await waitFor(lastFrame, 'Fermer quand même ?')
-  expect(lastFrame()).toContain('Fermer quand même ?')
+  await waitFor(lastFrame, 'Close anyway?')
+  expect(lastFrame()).toContain('Close anyway?')
   stdin.write('\r')
   await until(() => answer === true)
-  await waitFor(lastFrame, 'fermée')
-  expect(lastFrame()).toContain('fermée')
-  stdin.write('p')
+  await waitFor(lastFrame, 'closed')
+  expect(lastFrame()).toContain('closed')
+  stdin.write('u')
   await until(() => calls.length === 2)
   expect(calls).toEqual([['close', 'T-1'], ['resume', 'T-1']])
 })
 
-test('une confirmation interne remplacée par une autre rend false', async () => {
+test('an internal confirmation replaced by another resolves false', async () => {
   const answers: boolean[] = []
   const { a } = fakeActions({
     close: async (_id, confirm) => {
-      const first = confirm('Première ?')
-      const second = confirm('Seconde ?')
+      const first = confirm('First?')
+      const second = confirm('Second?')
       answers.push(await first)
       answers.push(await second)
       return ok()
     },
   })
   const { stdin, lastFrame } = render(<Harness state={base()} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('f')
-  await waitFor(lastFrame, 'Fermer T-1 ?')
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('c')
+  await waitFor(lastFrame, 'Close T-1?')
   stdin.write('\r')
-  await waitFor(lastFrame, 'Seconde ?')
-  expect(lastFrame()).toContain('Seconde ?')
-  expect(lastFrame()).not.toContain('Première ?')
+  await waitFor(lastFrame, 'Second?')
+  expect(lastFrame()).toContain('Second?')
+  expect(lastFrame()).not.toContain('First?')
   stdin.write('\r')
   await until(() => answers.length === 2)
   expect(answers).toEqual([false, true])
 })
 
-test('p désactivé sur une mission fermée ; actif sinon', async () => {
+test('u is disabled on a closed mission; enabled otherwise', async () => {
   const s = base()
-  s.step = 'fermée'
+  s.step = 'closed'
   const { a, calls } = fakeActions()
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('p')
-  await waitFor(lastFrame, 'mission terminée')
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('u')
+  await waitFor(lastFrame, 'mission finished')
   expect(calls).toEqual([])
-  expect(lastFrame()).toContain('mission terminée')
-  expect(lastFrame()).toContain('(p reprendre)')
+  expect(lastFrame()).toContain('mission finished')
+  expect(lastFrame()).toContain('(u resume)')
   const live = render(<Harness state={base()} actions={a} />)
-  await waitFor(live.lastFrame, 'AIDE')
-  live.stdin.write('p')
+  await waitFor(live.lastFrame, 'HELP')
+  live.stdin.write('u')
   await until(() => calls.length === 1)
-  await waitFor(live.lastFrame, 'reprise demandée')
+  await waitFor(live.lastFrame, 'resume requested')
   expect(calls).toEqual([['resume', 'T-1']])
-  expect(live.lastFrame()).toContain('reprise demandée')
+  expect(live.lastFrame()).toContain('resume requested')
 })
 
-test('R redémarre, o ouvre, c appelle onBack', async () => {
+test('R restarts, o opens, b calls onBack', async () => {
   const s = base()
   const { a, calls } = fakeActions()
   const onBack = vi.fn(async () => {})
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} onBack={onBack} />)
-  await waitFor(lastFrame, 'c cockpit')
-  expect(lastFrame()).toContain('c cockpit')
+  await waitFor(lastFrame, 'b cockpit')
+  expect(lastFrame()).toContain('b cockpit')
   stdin.write('R')
   await until(() => calls.length === 1)
   stdin.write('o')
   await until(() => calls.length === 2)
-  stdin.write('c')
+  stdin.write('b')
   await until(() => onBack.mock.calls.length === 1)
   expect(calls).toEqual([['restart', 'T-1'], ['open', 'T-1']])
   const own = render(<Harness state={s} actions={a} ownPanel />)
-  await waitFor(own.lastFrame, 'AIDE')
+  await waitFor(own.lastFrame, 'HELP')
   own.stdin.write('R')
   await until(() => calls.length === 3)
-  expect(calls.at(-1)).toEqual(['restart', 'T-1', 'détaché'])
+  expect(calls.at(-1)).toEqual(['restart', 'T-1', 'detached'])
   expect(onBack).toHaveBeenCalledTimes(1)
 })
 
-test('une erreur de onBack s affiche', async () => {
+test('an onBack error is shown', async () => {
   const { a } = fakeActions()
-  const { stdin, lastFrame } = render(<Harness state={base()} actions={a} onBack={async () => { throw new Error('aucun cockpit') }} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('c')
-  await waitFor(lastFrame, 'aucun cockpit')
-  expect(lastFrame()).toContain('aucun cockpit')
+  const { stdin, lastFrame } = render(<Harness state={base()} actions={a} onBack={async () => { throw new Error('no cockpit') }} />)
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('b')
+  await waitFor(lastFrame, 'no cockpit')
+  expect(lastFrame()).toContain('no cockpit')
 })
 
-test('le message montre les 5 dernières lignes, est relayé et disparaît à l expiration', async () => {
+test('the message shows the last 5 lines, is forwarded and disappears when it expires', async () => {
   const pending: { fn: () => void; ms: number }[] = []
   const timer: Timer = (fn, ms) => { const e = { fn, ms }; pending.push(e); return () => { pending.splice(pending.indexOf(e), 1) } }
   const { a } = fakeActions({ resume: async () => ok(['l1', 'l2', 'l3', 'l4', 'l5', 'l6']) })
   const seen: string[] = []
   const { stdin, lastFrame } = render(<Harness state={base()} actions={a} timer={timer} onMessage={(m) => seen.push(m)} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('p')
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('u')
   await waitFor(lastFrame, 'l6')
   expect(lastFrame()).toContain('l6')
   expect(lastFrame()).not.toContain('l1')
@@ -448,84 +448,84 @@ test('le message montre les 5 dernières lignes, est relayé et disparaît à l 
   expect(lastFrame()).not.toContain('l6')
 })
 
-test('un échec garde les lignes KO et l erreur finale (8 lignes au plus), ne s efface pas seul mais à la touche suivante', async () => {
+test('a failure keeps KO lines and the final error (8 lines at most), does not clear alone but on the next key', async () => {
   const pending: { fn: () => void; ms: number }[] = []
   const timer: Timer = (fn, ms) => { const e = { fn, ms }; pending.push(e); return () => { pending.splice(pending.indexOf(e), 1) } }
   const lines = [
-    'OK git : présent', 'KO gh : absent', 'OK node : 24', 'KO herdr : hors session', 'OK a', 'OK b', 'OK c', 'OK d', 'OK e', 'OK f',
-    'environnement incomplet : corrige les KO ci-dessus',
+    'OK git: present', 'KO gh: missing', 'OK node : 24', 'KO herdr: outside session', 'OK a', 'OK b', 'OK c', 'OK d', 'OK e', 'OK f',
+    'incomplete environment: fix the KO lines above',
   ]
   const { a } = fakeActions({ resume: async () => ({ ok: false, lines }) })
   const { stdin, lastFrame } = render(<Harness state={base()} actions={a} timer={timer} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('p')
-  await waitFor(lastFrame, 'environnement incomplet')
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('u')
+  await waitFor(lastFrame, 'incomplete environment')
   const f = lastFrame()!
-  expect(f).toContain('KO gh : absent')
-  expect(f).toContain('KO herdr : hors session')
-  expect(f).toContain('environnement incomplet')
+  expect(f).toContain('KO gh: missing')
+  expect(f).toContain('KO herdr: outside session')
+  expect(f).toContain('incomplete environment')
   expect(f).not.toContain('OK f')
   expect(pending).toEqual([])
-  stdin.write('x')
-  await waitGone(lastFrame, 'environnement incomplet')
-  expect(lastFrame()).not.toContain('environnement incomplet')
+  stdin.write('D')
+  await waitGone(lastFrame, 'incomplete environment')
+  expect(lastFrame()).not.toContain('incomplete environment')
 })
 
-test('un échec sans ligne KO montre ses 8 dernières lignes', async () => {
-  const lines = Array.from({ length: 10 }, (_, i) => `ligne ${i + 1}`)
+test('a failure without KO lines shows its last 8 lines', async () => {
+  const lines = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`)
   const { a } = fakeActions({ resume: async () => ({ ok: false, lines }) })
   const { stdin, lastFrame } = render(<Harness state={base()} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('p')
-  await waitFor(lastFrame, 'ligne 10')
-  expect(lastFrame()).toContain('ligne 3')
-  expect(lastFrame()).toContain('ligne 10')
-  expect(lastFrame()).not.toContain('ligne 2\n')
-  expect(lastFrame()).not.toMatch(/ligne 2$/m)
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('u')
+  await waitFor(lastFrame, 'line 10')
+  expect(lastFrame()).toContain('line 3')
+  expect(lastFrame()).toContain('line 10')
+  expect(lastFrame()).not.toContain('line 2\n')
+  expect(lastFrame()).not.toMatch(/line 2$/m)
 })
 
-test('une erreur reste jusqu à l action suivante, qui la remplace', async () => {
+test('an error stays until the next action, which replaces it', async () => {
   const s = base()
-  const { a } = fakeActions({ resume: async () => ({ ok: false, lines: ['reprise impossible'] }) })
+  const { a } = fakeActions({ resume: async () => ({ ok: false, lines: ['cannot resume'] }) })
   const { stdin, lastFrame } = render(<Harness state={s} actions={a} />)
-  await waitFor(lastFrame, 'AIDE')
-  stdin.write('p')
-  await waitFor(lastFrame, 'reprise impossible')
-  expect(lastFrame()).toContain('reprise impossible')
+  await waitFor(lastFrame, 'HELP')
+  stdin.write('u')
+  await waitFor(lastFrame, 'cannot resume')
+  expect(lastFrame()).toContain('cannot resume')
   await tick(100)
-  expect(lastFrame()).toContain('reprise impossible')
+  expect(lastFrame()).toContain('cannot resume')
   stdin.write('R')
-  await waitFor(lastFrame, 'redémarrage demandé')
-  expect(lastFrame()).not.toContain('reprise impossible')
-  expect(lastFrame()).toContain('redémarrage demandé')
+  await waitFor(lastFrame, 'restart requested')
+  expect(lastFrame()).not.toContain('cannot resume')
+  expect(lastFrame()).toContain('restart requested')
 })
 
-test('une porte décidée redevient sélectionnable quand l état ne la montre plus en attente puis rouverte', async () => {
+test('a decided gate becomes selectable again when the state no longer shows it pending, then reopened', async () => {
   const s = base()
   openGate(s, 'spec', 'A')
   const { a, calls } = fakeActions()
   const r = render(<Harness state={s} actions={a} />)
-  await waitFor(r.lastFrame, 'AIDE')
-  r.stdin.write('v')
-  await waitFor(r.lastFrame, 'Valider g1')
+  await waitFor(r.lastFrame, 'HELP')
+  r.stdin.write('a')
+  await waitFor(r.lastFrame, 'Approve g1')
   r.stdin.write('\r')
-  await waitFor(r.lastFrame, 'g1 validée')
-  r.stdin.write('v')
-  await waitFor(r.lastFrame, 'aucune porte en attente')
-  expect(r.lastFrame()).toContain('aucune porte en attente')
+  await waitFor(r.lastFrame, 'g1 approved')
+  r.stdin.write('a')
+  await waitFor(r.lastFrame, 'no pending gate')
+  expect(r.lastFrame()).toContain('no pending gate')
   const done = { ...s, gates: s.gates.map((g) => ({ ...g, status: 'approved' as const })) }
   r.rerender(<Harness state={done} actions={a} />)
   await waitGone(r.lastFrame, 'g1')
   r.rerender(<Harness state={s} actions={a} />)
   await waitMatch(r.lastFrame, /▸.*g1/)
-  r.stdin.write('v')
-  await waitFor(r.lastFrame, 'Valider g1')
+  r.stdin.write('a')
+  await waitFor(r.lastFrame, 'Approve g1')
   r.stdin.write('\r')
   await until(() => calls.length === 2)
   expect(calls).toHaveLength(2)
 })
 
-test('missionActions avec focus:false transmet focus:false à resumeMission (p et R)', async () => {
+test('missionActions with focus:false passes focus:false to resumeMission (u and R)', async () => {
   const seen: unknown[] = []
   const d = {
     lifecycle: { e: {} },
@@ -537,7 +537,7 @@ test('missionActions avec focus:false transmet focus:false à resumeMission (p e
   expect(seen).toEqual([['T-1', { restart: false, focus: false }], ['T-1', { restart: true, focus: false }]])
 })
 
-test('missionActions relie les actions aux dépendances', async () => {
+test('missionActions wires actions to dependencies', async () => {
   const seen: unknown[] = []
   const d = {
     lifecycle: { e: { herdr: { workspaceFocus: async () => {} } } },
@@ -549,9 +549,9 @@ test('missionActions relie les actions aux dépendances', async () => {
   } as unknown as ActionDeps
   const m = missionActions(d)
   await m.validate('T-1', 'g1', undefined)
-  await m.refuse('T-1', 'g1', 'non')
+  await m.refuse('T-1', 'g1', 'no')
   await m.restart('T-1')
-  expect(seen).toEqual([['T-1', 'approved', 'g1', undefined], ['T-1', 'refused', 'g1', 'non'], ['resume', 'T-1', true]])
+  expect(seen).toEqual([['T-1', 'approved', 'g1', undefined], ['T-1', 'refused', 'g1', 'no'], ['resume', 'T-1', true]])
   const spawned: unknown[] = []
   const spawn: Spawner = (cmd, args, opts) => {
     spawned.push([cmd, args.slice(1), opts])
@@ -564,45 +564,45 @@ test('missionActions relie les actions aux dépendances', async () => {
     await rm(home, { recursive: true, force: true })
   })
   expect(seen).toHaveLength(3)
-  expect(spawned).toEqual([['node', ['reprendre', 'T-1', '--redemarrer'], expect.objectContaining({ detached: true })], 'unref'])
-  expect(r.lines[0]).toMatch(/^redémarrage lancé \(ce panneau va se relancer\) ; journal : .*redemarrage-.*\.log$/)
+  expect(spawned).toEqual([['node', ['resume', 'T-1', '--restart'], expect.objectContaining({ detached: true })], 'unref'])
+  expect(r.lines[0]).toMatch(/^restart started \(this panel will relaunch\); log: .*restart-.*\.log$/)
 })
 
-test('x supprime une mission fermée après confirmation ; Échap annule', async () => {
-  const s = { ...base(), step: 'fermée' as const }
+test('D deletes a closed mission after confirmation; Esc cancels', async () => {
+  const s = { ...base(), step: 'closed' as const }
   const { a, calls } = fakeActions()
   const r = render(<Harness state={s} actions={a} />)
-  await waitFor(r.lastFrame, 'AIDE')
-  expect(r.lastFrame()).toContain('x supprimer')
-  r.stdin.write('x')
-  await waitFor(r.lastFrame, 'Supprimer définitivement T-1 (état, spec, plan, journaux) ?')
+  await waitFor(r.lastFrame, 'HELP')
+  expect(r.lastFrame()!.replace(/\s+/g, ' ')).toContain('D delete')
+  r.stdin.write('D')
+  await waitFor(r.lastFrame, 'Permanently delete T-1 (state, spec, plan, logs)?')
   r.stdin.write(ESC)
-  await waitFor(r.lastFrame, 'suppression annulée')
+  await waitFor(r.lastFrame, 'delete cancelled')
   expect(calls).toEqual([])
-  r.stdin.write('x')
-  await waitFor(r.lastFrame, 'Supprimer définitivement T-1')
+  r.stdin.write('D')
+  await waitFor(r.lastFrame, 'Permanently delete T-1')
   r.stdin.write('\r')
-  await waitFor(r.lastFrame, 'Mission T-1 supprimée.')
+  await waitFor(r.lastFrame, 'Mission T-1 deleted.')
   expect(calls).toEqual([['remove', 'T-1']])
 })
 
-test('x refuse une mission pas fermée', async () => {
+test('D refuses a mission that is not closed', async () => {
   const { a, calls } = fakeActions()
   const r = render(<Harness state={base()} actions={a} />)
-  await waitFor(r.lastFrame, 'AIDE')
-  expect(r.lastFrame()).toContain('(x supprimer)')
-  r.stdin.write('x')
-  await waitFor(r.lastFrame, "supprimer indisponible : ferme d'abord la mission (f)")
+  await waitFor(r.lastFrame, 'HELP')
+  expect(r.lastFrame()!.replace(/\s+/g, ' ')).toContain('(D delete)')
+  r.stdin.write('D')
+  await waitFor(r.lastFrame, "delete unavailable: close the mission first (c)")
   expect(calls).toEqual([])
 })
 
-test('x absent du panneau tasks de la mission', async () => {
+test('D is absent from the mission tasks panel', async () => {
   const { a, calls } = fakeActions()
-  const r = render(<Harness state={{ ...base(), step: 'fermée' }} actions={a} ownPanel />)
-  await waitFor(r.lastFrame, 'AIDE')
-  expect(r.lastFrame()).not.toContain('supprimer')
-  r.stdin.write('x')
+  const r = render(<Harness state={{ ...base(), step: 'closed' }} actions={a} ownPanel />)
+  await waitFor(r.lastFrame, 'HELP')
+  expect(r.lastFrame()).not.toContain('delete')
+  r.stdin.write('D')
   await tick()
-  expect(r.lastFrame()).not.toContain('Supprimer')
+  expect(r.lastFrame()).not.toContain('Permanently delete')
   expect(calls).toEqual([])
 })
