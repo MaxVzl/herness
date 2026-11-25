@@ -686,7 +686,7 @@ async function amendedTaskText(s: MissionState, t: TaskState): Promise<string | 
 async function stepFix(s: MissionState, e: Effects, cfg: ProjectConfig, t: TaskState): Promise<StepResult> {
   if (arbitrationPending(s)) return 'wait'
   const dir = taskDir(s, t)
-  const file = join(dir, `correctifs-${t.round}.md`)
+  const file = join(dir, `fixes-${t.round}.md`)
   // Written once: a resume sends the same file again.
   if (!(await exists(file))) {
     const stop = t.stopDecision

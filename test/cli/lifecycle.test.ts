@@ -319,7 +319,7 @@ test('close also removes the proof database on main', async () => {
   const { fx, d } = await started({ git: { unpushedCount: async () => 0 } })
   await patch({ proofDbUp: true })
   await closeMission('gh12', d)
-  expect(fx.callsOf('run').map((c) => c[1])).toContainEqual(['down', 'gh12-main', join(missionDir('gh12'), 'preuve-main')])
+  expect(fx.callsOf('run').map((c) => c[1])).toContainEqual(['down', 'gh12-main', join(missionDir('gh12'), 'proof-main')])
   expect((await loadState('gh12')).proofDbUp).toBe(false)
 })
 

@@ -247,7 +247,7 @@ test('resume-blocked approved: back to the blocked step, rounds of the current t
   const tasks = [task({ n: 1, round: 2 }), task({ n: 2, title: 'Export', phase: 'test', round: 4 })]
   const { eng, gate } = await blocked('tasks', { tasks })
   await mkdir(join(missionDir('T-1'), 'tasks', '2'), { recursive: true })
-  await writeFile(join(missionDir('T-1'), 'tasks', '2', 'correctifs-1.md'), 'old')
+  await writeFile(join(missionDir('T-1'), 'tasks', '2', 'fixes-1.md'), 'old')
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: gate, decision: 'approved' })
   await eng.tick()
   const s = await loadState('T-1')
@@ -258,7 +258,7 @@ test('resume-blocked approved: back to the blocked step, rounds of the current t
   expect(s.log.some((l) => /resume approved/.test(l.msg))).toBe(true)
   // The old fix file is never resent on the new round 1: it is archived.
   const dir = join(missionDir('T-1'), 'tasks', '2')
-  expect(await readdir(dir)).toEqual([`correctifs-1.avant-${gate}.md`])
+  expect(await readdir(dir)).toEqual([`fixes-1.before-${gate}.md`])
 })
 
 test("resume-blocked approved on a task blocked at control with no commit: the implementer is restarted with its brief", async () => {

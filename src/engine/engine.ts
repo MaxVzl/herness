@@ -20,7 +20,7 @@ export type StepFn = (s: MissionState, e: Effects, cfg: ProjectConfig) => Promis
 
 const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 /** Temporary detached worktree for the proof on main. */
-export const proofWorktree = (id: string): string => join(missionDir(id), 'preuve-main')
+export const proofWorktree = (id: string): string => join(missionDir(id), 'proof-main')
 const fileExists = (p: string): Promise<boolean> => access(p).then(() => true, () => false)
 
 export function log(s: MissionState, e: Effects, msg: string): void {
@@ -234,13 +234,13 @@ export const steps: Record<Step, StepFn> = {
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
-/** Archives `correctifs-<n>.md` files in the directory: a replayed round writes a fresh one. */
+/** Archives `fixes-<n>.md` files in the directory: a replayed round writes a fresh one. */
 async function archiveCorrections(s: MissionState, e: Effects, dir: string, gateId: string): Promise<void> {
   const names = await readdir(dir).catch(() => [] as string[])
   for (const name of names) {
-    const m = /^correctifs-(\d+)\.md$/.exec(name)
+    const m = /^fixes-(\d+)\.md$/.exec(name)
     if (!m) continue
-    await rename(join(dir, name), join(dir, `correctifs-${m[1]}.avant-${gateId}.md`))
+    await rename(join(dir, name), join(dir, `fixes-${m[1]}.before-${gateId}.md`))
     log(s, e, `${join(dir, name)} archived before resume`)
   }
 }

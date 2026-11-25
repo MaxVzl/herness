@@ -265,7 +265,7 @@ async function nextGlobalRound(s: MissionState, e: Effects, failure?: string): P
 async function globalFix(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   const G = s.loops.globalReview
   const dir = globalDir(s)
-  const file = join(dir, `correctifs-${G.round}.md`)
+  const file = join(dir, `fixes-${G.round}.md`)
   if (!(await exists(file))) {
     if (arbitrationPending(s)) return 'wait'
     const failure = G.lastFailure ?? ''
@@ -668,7 +668,7 @@ async function mainGate(s: MissionState, e: Effects): Promise<StepResult> {
 async function preflightFix(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   const P = s.loops.preflight
   const dir = preflightDir(s)
-  const file = join(dir, `correctifs-${P.round}.md`)
+  const file = join(dir, `fixes-${P.round}.md`)
   if (!(await exists(file)) && arbitrationPending(s)) return 'wait'
   if (!(await exists(file))) await writeFix(s, cfg, dir, file, 'the preflight', P.fixFindings ?? '', P.fixFailure ?? '', P.stopDecision)
   delete P.stopDecision

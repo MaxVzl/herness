@@ -157,10 +157,10 @@ test('a global review with corrections starts a fresh implementer, then a re-rev
   const asks = fx.callsOf('agents.ask').map((c) => c.slice(0, 2))
   expect(asks).toEqual([
     ['rgt-1', join(gdir(), 'review-brief.md')],
-    ['cgt-1-1', join(gdir(), 'correctifs-1.md')],
+    ['cgt-1-1', join(gdir(), 'fixes-1.md')],
     ['rgt-1', join(gdir(), 'consigne-rerevue-1.md')],
   ])
-  const fix = await readFile(join(gdir(), 'correctifs-1.md'), 'utf8')
+  const fix = await readFile(join(gdir(), 'fixes-1.md'), 'utf8')
   expect(fix).toContain('src/a.ts:3 note from rgt-1')
   expect(fix).toContain(join(gdir(), 'report.md'))
   expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths, 'origin/main'])
@@ -199,7 +199,7 @@ test('global review: red tests after a fix start a new round with the red output
   const s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1', 'cgt-1-1', 'cgt-1-2'])
-  const fix2 = await readFile(join(gdir(), 'correctifs-2.md'), 'utf8')
+  const fix2 = await readFile(join(gdir(), 'fixes-2.md'), 'utf8')
   expect(fix2).toContain('AssertionError: expected 2')
 })
 
@@ -317,7 +317,7 @@ test('a planned cleanup runs in the process tab before the check is rerun', asyn
   expect(rip[3]![4]).toEqual(['pkill', '-f', `${wt}/node_modules/.*vitest`])
 })
 
-const MAIN_WT = () => join(missionDir('T-1'), 'preuve-main')
+const MAIN_WT = () => join(missionDir('T-1'), 'proof-main')
 
 test('a proven CAUSE: MAIN opens the pr-despite-main gate and removes the temporary worktree', async () => {
   const { fx, eng } = await setup({
@@ -390,7 +390,7 @@ test('CAUSE: MAIN not reproduced on main is fixed like BRANCH', async () => {
   s = await until(eng, (x) => x.step !== 'preflight')
   expect(s.step).toBe('pr')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rdt-1-1', 'cpt-1-1', 'rgt-1'])
-  const fix = await readFile(join(pdir(), 'correctifs-1.md'), 'utf8')
+  const fix = await readFile(join(pdir(), 'fixes-1.md'), 'utf8')
   expect(fix).toContain('note from rdt-1-1')
   expect(fix).toContain('green on origin/main')
   expect(fx.callsOf('git.controlCommits')[0]).toEqual([wt, 'sha-head', demo.forbiddenPaths, 'origin/main'])
@@ -532,7 +532,7 @@ test('after an amendment, loop directories are archived and the new global revie
   })
   // Leftovers from a previous global review and preflight.
   await mkdir(gdir(), { recursive: true })
-  await writeFile(join(gdir(), 'correctifs-1.md'), 'OLD fix\n')
+  await writeFile(join(gdir(), 'fixes-1.md'), 'OLD fix\n')
   await writeFile(join(gdir(), 'review.md'), 'VERDICT: APPROVED\n\nOLD review\n')
   await mkdir(pdir(), { recursive: true })
   await writeFile(join(pdir(), 'diagnostic-1.md'), 'CAUSE: MAIN\n')
@@ -540,7 +540,7 @@ test('after an amendment, loop directories are archived and the new global revie
   let s = await loadState('T-1')
   expect(s.step).toBe('tasks')
   expect(s.loopGeneration).toBe(2)
-  expect(await readFile(join(`${gdir()}.1`, 'correctifs-1.md'), 'utf8')).toContain('OLD')
+  expect(await readFile(join(`${gdir()}.1`, 'fixes-1.md'), 'utf8')).toContain('OLD')
   expect(await readFile(join(`${pdir()}.1`, 'diagnostic-1.md'), 'utf8')).toContain('CAUSE: MAIN')
   await expect(access(gdir())).rejects.toThrow()
   await expect(access(pdir())).rejects.toThrow()
@@ -553,7 +553,7 @@ test('after an amendment, loop directories are archived and the new global revie
   s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1-g2', 'cgt-1-1-g2'])
-  const fix = await readFile(join(gdir(), 'correctifs-1.md'), 'utf8')
+  const fix = await readFile(join(gdir(), 'fixes-1.md'), 'utf8')
   expect(fix).not.toContain('OLD')
   expect(fix).toContain('note from rgt-1-g2')
 })
@@ -648,12 +648,12 @@ test('global review: a finding "imposed by the plan" opens an arbitration before
   expect(g.summary).toContain('src/a.ts:3 imposed by the plan')
   expect(await eng.tick()).toBe('wait')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1'])
-  await expect(readFile(join(gdir(), 'correctifs-1.md'))).rejects.toThrow()
+  await expect(readFile(join(gdir(), 'fixes-1.md'))).rejects.toThrow()
   expect(fx.callsOf('herdr.agentPrompt').map((c) => String(c[1])).some((p) => p.startsWith('[herness] global review: review CORRECTIONS (round 1)'))).toBe(true)
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'refused', note: 'follow the plan' })
   s = await until(eng, (x) => x.step !== 'global-review')
   expect(s.step).toBe('preflight')
-  expect(await readFile(join(gdir(), 'correctifs-1.md'), 'utf8')).toContain('follow the plan')
+  expect(await readFile(join(gdir(), 'fixes-1.md'), 'utf8')).toContain('follow the plan')
   expect(s.consumedArbitrages).toEqual([g.id])
 })
 
@@ -682,8 +682,8 @@ test("global review: fixer stopped without a commit and with a report, agent-sto
 
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved', note: 'do not rename' })
   s = await until(eng, (x) => x.loops.globalReview.round === 2 && x.loops.globalReview.phase === 'control')
-  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cgt-1-2', join(gdir(), 'correctifs-2.md')])
-  const fix = await readFile(join(gdir(), 'correctifs-2.md'), 'utf8')
+  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cgt-1-2', join(gdir(), 'fixes-2.md')])
+  const fix = await readFile(join(gdir(), 'fixes-2.md'), 'utf8')
   expect(fix).toContain('src/a.ts:3 rename')
   expect(fix).toContain('User decision: do not rename')
   s = await until(eng, (x) => x.step !== 'global-review')
@@ -718,8 +718,8 @@ test('preflight: fixer stopped without a commit and with a report; gate approved
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g1.id, decision: 'approved', note: 'disable the rule locally' })
   s = await until(eng, (x) => x.gates.filter((g) => g.kind === 'agent-stopped').length === 2)
   expect(s.loops.preflight.round).toBe(2)
-  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cpt-1-2', join(pdir(), 'correctifs-2.md')])
-  const fix = await readFile(join(pdir(), 'correctifs-2.md'), 'utf8')
+  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['cpt-1-2', join(pdir(), 'fixes-2.md')])
+  const fix = await readFile(join(pdir(), 'fixes-2.md'), 'utf8')
   expect(fix).toContain('src/x.ts:1 lint')
   expect(fix).toContain('User decision: disable the rule locally')
 

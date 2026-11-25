@@ -174,8 +174,8 @@ test('red tests send the same implementer back without starting a reviewer', asy
 
   s = await until(eng, (x) => x.tasks[0]!.phase === 'control')
   const asks = fx.callsOf('agents.ask')
-  expect(asks.at(-1)!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'correctifs-1.md')])
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
+  expect(asks.at(-1)!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'fixes-1.md')])
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
   expect(fix).toContain('AssertionError: expected 2')
   expect(fix).toContain('/l/t.log')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['ct-1-t1'])
@@ -187,8 +187,8 @@ test('on round 3 a new grok-4.7-high implementer is started', async () => {
   const starts = fx.callsOf('agents.start')
   expect(starts.map((c) => c[0])).toEqual(['ct-1-t1', 'ct-1-t1b'])
   expect((starts[1]![3] as { args: string[] }).args).toContain('grok-4.7-high')
-  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['ct-1-t1b', join(taskDir(), 'correctifs-3.md')])
-  const fix3 = await readFile(join(taskDir(), 'correctifs-3.md'), 'utf8')
+  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['ct-1-t1b', join(taskDir(), 'fixes-3.md')])
+  const fix3 = await readFile(join(taskDir(), 'fixes-3.md'), 'utf8')
   expect(fix3).toContain(join(taskDir(), 'brief.md'))
   expect(s.tasks[0]!.implementer).toBe('ct-1-t1b')
   // rounds 1 and 2 went to the same implementer
@@ -218,7 +218,7 @@ test('a re-review uses the same reviewer and the diff since reviewedSha', async 
   s = await until(eng, (x) => x.step !== 'tasks')
   expect(s.tasks[0]).toMatchObject({ phase: 'done', reviewedSha: 'h2' })
 
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
   expect(fix).toContain('src/a.ts:3 note 1')
   const diffs = fx.callsOf('git.diffPackage')
   expect(diffs[1]![1]).toBe('h1')
@@ -364,8 +364,8 @@ test('a pending arbitration gate suspends the correction and its note goes into 
 
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'keep the column' })
   const s = await until(eng, (x) => x.tasks[0]!.phase === 'control')
-  expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'correctifs-1.md')])
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
+  expect(fx.callsOf('agents.ask')[0]!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'fixes-1.md')])
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
   expect(fix).toContain('src/b.ts:9 extra column')
   expect(fix).toContain('User decision')
   expect(fix).toContain('keep the column')
@@ -569,7 +569,7 @@ test('resume: correction in progress, implementer gone with a commit since the p
     patch: {
       tasks: [task({
         phase: 'fix', round: 1, fixer: 'same', baseSha: 'b0', implementer: 'ct-1-t1',
-        pendingAsk: { agent: 'ct-1-t1', file: join(taskDir(), 'correctifs-1.md'), fromSha: 'h1' },
+        pendingAsk: { agent: 'ct-1-t1', file: join(taskDir(), 'fixes-1.md'), fromSha: 'h1' },
       })],
     },
   })
@@ -659,10 +659,10 @@ test('a finding "imposed by the plan" opens an arbitration gate and suspends fix
   expect(prompts.some((p) => p.includes(`Gate ${g.id} (arbitration)`))).toBe(true)
 
   expect(await eng.tick()).toBe('wait')
-  await expect(readFile(join(taskDir(), 'correctifs-1.md'))).rejects.toThrow()
+  await expect(readFile(join(taskDir(), 'fixes-1.md'))).rejects.toThrow()
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved', note: 'the plan wins, keep the column' })
   s = await until(eng, (x) => x.tasks[0]!.phase === 'control')
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
   expect(fix).toContain('the plan wins, keep the column')
 })
 
@@ -731,8 +731,8 @@ test("stop without a commit with a report: agent-stopped gate, the orchestrator 
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: g.id, decision: 'approved', note: 'keep the placeholder, document it' })
   s = await until(eng, (x) => x.tasks[0]!.phase === 'control' && x.tasks[0]!.round === 1)
   expect(s.tasks[0]!.stopGate).toBeUndefined()
-  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'correctifs-1.md')])
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
+  expect(fx.callsOf('agents.ask').at(-1)!.slice(0, 2)).toEqual(['ct-1-t1', join(taskDir(), 'fixes-1.md')])
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
   expect(fix).toContain('User decision: keep the placeholder, document it')
   expect(fix).not.toContain('Amended task')
   s = await until(eng, (x) => x.step !== 'tasks')
@@ -744,7 +744,7 @@ test("stop without a commit approved with no note: the decision passed on is \"c
   const s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-stopped'))
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: s.gates[0]!.id, decision: 'approved' })
   await until(eng, (x) => x.tasks[0]!.round === 1 && x.tasks[0]!.phase === 'control')
-  expect(await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')).toContain('User decision: continue')
+  expect(await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')).toContain('User decision: continue')
 })
 
 test('stop without a commit, agent-stopped gate refused: the mission is blocked', async () => {
@@ -787,7 +787,7 @@ test("stop without a commit approved after a task amendment: the fix file carrie
   fx.herdr.started.add('ct-1-t1')
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: 'g1', decision: 'approved', note: 'ok' })
   await until(eng, (x) => x.tasks[0]!.round === 1 && x.tasks[0]!.phase === 'control')
-  const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
+  const fix = await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')
   expect(fix).toContain('User decision: ok')
   expect(fix).toContain('## Amended task instructions')
   expect(fix).toContain('do a, keeping the placeholder')
@@ -899,7 +899,7 @@ test("an arbitration decided while a correction is waiting is not reported as ha
   await eng.tick()
   const prompts = fx.callsOf('herdr.agentPrompt').map((c) => String(c[1]))
   expect(prompts.some((p) => p.includes('with no effect'))).toBe(false)
-  expect(await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')).toContain('keep it')
+  expect(await readFile(join(taskDir(), 'fixes-1.md'), 'utf8')).toContain('keep it')
 })
 
 // ---------- review, round 1 ----------
