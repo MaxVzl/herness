@@ -39,7 +39,7 @@ Everything herness launches (engine, dashboard, viewers, MCP server, cockpit) st
 
 Finish or close missions that are still running before you install this version. Do not restart a mission created by herness 0.8 or earlier: finish it on that version, or close it (`herness close <id>`). An engine already running on 0.8 keeps its old code until something restarts it, so the mission can still finish after the upgrade if you leave it alone.
 
-Run that upgrade with `herness mise-a-jour` (the 0.8 command). Answer no when it offers to restart missions, or have no mission in progress: the offer runs `current/bin/herness` with a command this version does not know.
+When the 0.8 install offers to restart missions, answer no, or have no mission in progress: the offer runs `current/bin/herness` with a command this version does not know.
 
 Add `language: 'fr'` to the config of francophone projects. A missing value means `'en'`.
 

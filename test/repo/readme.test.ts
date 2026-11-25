@@ -5,7 +5,8 @@ import { expect, test } from 'vitest'
 const readme = readFileSync(join(import.meta.dirname, '..', '..', 'README.md'), 'utf8')
 
 test('upgrading from 0.8 refuses the old restart offer', () => {
-  expect(readme).toContain('herness mise-a-jour')
+  expect(readme).not.toContain('mise-a-jour')
+  expect(readme).toMatch(/0\.8 install offers to restart/i)
   expect(readme).toMatch(/answer no/i)
   expect(readme).toMatch(/no mission in progress/i)
 })
