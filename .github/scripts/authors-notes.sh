@@ -1,18 +1,18 @@
 #!/bin/sh
-# Ajoute « by @auteur » aux entrées des notes de release et de la PR de release.
-# release-please ne nomme personne : l'auteur vient de la PR liée, sinon du commit.
-# Usage : auteurs-notes.sh <propriétaire/dépôt>  (notes sur l'entrée standard)
+# Appends " by @author" to entries in the release notes and the release PR.
+# release-please names nobody: the author comes from the linked PR, otherwise from the commit.
+# Usage: authors-notes.sh <owner/repo>  (notes on standard input)
 
 repo=$1
 cr=$(printf '\r')
 while IFS= read -r line || [ -n "$line" ]; do
-  # Une description éditée sur le web peut finir en CRLF : le \r ne fait pas partie du texte.
-  fin=
+  # A description edited on the web may end in CRLF: the \r is not part of the text.
+  ending=
   case "$line" in
-    *"$cr") line=${line%"$cr"}; fin=$cr ;;
+    *"$cr") line=${line%"$cr"}; ending=$cr ;;
   esac
   if printf '%s\n' "$line" | grep -E ' by @[A-Za-z0-9-]+$' >/dev/null; then
-    printf '%s\n' "$line$fin"
+    printf '%s\n' "$line$ending"
     continue
   fi
   who=
@@ -31,5 +31,5 @@ while IFS= read -r line || [ -n "$line" ]; do
     ''|*bot*|app/*) ;;
     *) line="$line by @$who" ;;
   esac
-  printf '%s\n' "$line$fin"
+  printf '%s\n' "$line$ending"
 done

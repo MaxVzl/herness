@@ -22,8 +22,8 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
       - uses: actions/checkout@v4
-      # Archive installée par install.sh : contrat « herness-<version>.tar.gz, avec bin/herness ».
-      - name: Archive de la version
+      # Archive installed by install.sh: contract "herness-<version>.tar.gz, with bin/herness".
+      - name: Version archive
         if: ${{ steps.release.outputs.release_created }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -34,24 +34,24 @@ jobs:
           git archive --format=tar.gz --prefix="herness-$v/" -o "herness-$v.tar.gz" "$TAG"
           tar -tzf "herness-$v.tar.gz" | grep -qx "herness-$v/bin/herness"
           gh release upload "$TAG" "herness-$v.tar.gz" --repo "$GITHUB_REPOSITORY" --clobber
-      # L'auteur est trouvé par la PR ou, à défaut, par le commit. Les lignes déjà
-      # annotées, venues de la PR de release, ne bougent pas.
-      - name: Auteurs des PR dans les notes de release
+      # The author comes from the PR or, failing that, from the commit. Lines already
+      # annotated, coming from the release PR, stay as they are.
+      - name: PR authors in the release notes
         if: ${{ steps.release.outputs.release_created }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag_name }}
         run: |
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
-          .github/scripts/auteurs-notes.sh "$GITHUB_REPOSITORY" < notes.md > notes-auteurs.md
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes-auteurs.md
-      # release-please réécrit la description à chaque push, d'où une annotation à chaque passage.
-      - name: Auteurs des PR dans la PR de release
+          .github/scripts/authors-notes.sh "$GITHUB_REPOSITORY" < notes.md > notes-authors.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes-authors.md
+      # release-please rewrites the description on every push, so annotate on every run.
+      - name: PR authors in the release PR
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --label 'autorelease: pending' --json number --jq '.[0].number // empty')
           [ -n "$pr" ] || exit 0
-          gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json body --jq .body > corps.md
-          .github/scripts/auteurs-notes.sh "$GITHUB_REPOSITORY" < corps.md > corps-auteurs.md
-          cmp -s corps.md corps-auteurs.md || gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --body-file corps-auteurs.md
+          gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json body --jq .body > body.md
+          .github/scripts/authors-notes.sh "$GITHUB_REPOSITORY" < body.md > body-authors.md
+          cmp -s body.md body-authors.md || gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --body-file body-authors.md
