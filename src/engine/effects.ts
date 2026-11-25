@@ -10,7 +10,7 @@ import type { AgentApi } from '../agents/adapters.ts'
 export type EngineHerdr = HerdrApi & AgentApi & Pick<Herdr, 'notify'>
 
 /** Surface d'`AgentRunner` utilisée par le moteur. */
-export type Agents = Pick<AgentRunner, 'start' | 'ask' | 'wait'>
+export type Agents = Pick<AgentRunner, 'start' | 'ask' | 'wait' | 'nudge'>
 
 /** Tous les effets de bord du moteur passent par ici ; les tests injectent `fakeEffects`. */
 export interface Effects {

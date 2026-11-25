@@ -334,9 +334,13 @@ test('CAUSE: MAIN prouvée ouvre la porte pr-malgre-main et supprime le worktree
   expect(proof.map((c) => [c[1], c[2], c[3], c[4]])).toEqual([
     [s.herdr.tabs['process'], MAIN_WT(), 'preuve main · préparation', [demo.prepare[0], MAIN_WT()]],
     [s.herdr.tabs['process'], MAIN_WT(), 'preuve main · base de test', [demo.testDb!.up[0], 'up', 'T-1-main', MAIN_WT()]],
-    [s.herdr.tabs['process'], MAIN_WT(), 'preuve main · lint', ['pnpm', 'lint']],
+    // Le cache turbo est partagé entre worktrees et rejouerait un ancien succès.
+    [s.herdr.tabs['process'], MAIN_WT(), 'preuve main · lint', ['env', 'TURBO_FORCE=1', 'pnpm', 'lint']],
     [s.herdr.tabs['process'], wt, 'preuve main · arrêt de la base', [demo.testDb!.down[0], 'down', 'T-1-main', MAIN_WT()]],
   ])
+  // Le check de la branche n'est pas forcé : seul le rejeu sur main contourne le cache turbo.
+  const branch = fx.callsOf('runInPane').filter((c) => c[3] === 'preflight · lint')
+  expect(branch.map((c) => c[4])).toEqual([['pnpm', 'lint']])
   // La base de la preuve est arrêtée avant la suppression du worktree.
   const order = fx.calls.map((c) => (c.fn === 'runInPane' ? String(c.args[3]) : c.fn)).filter((f) => f === 'preuve main · arrêt de la base' || f === 'git.worktreeRemove')
   expect(order).toEqual(['preuve main · arrêt de la base', 'git.worktreeRemove'])
@@ -631,19 +635,19 @@ test("une correction de branche efface les rouges acceptés : le check repasse p
   expect(s.loops.preflight.diag).toBe(2)
 })
 
-test('revue globale : une remarque « imposé par le plan » ouvre un arbitrage avant les correctifs, la note y entre', async () => {
+test('revue globale : une remarque marquée [plan] ouvre un arbitrage avant les correctifs, la note y entre', async () => {
   const ask = async (name: string, file: string) => {
     if (name.startsWith('rg')) {
       const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
       const first = !out.includes('rerevue')
-      await writeFile(out, first ? 'VERDICT: CORRECTIONS\n\n- src/a.ts:3 imposé par le plan mais incohérent\n' : 'VERDICT: APPROUVÉ\n')
+      await writeFile(out, first ? 'VERDICT: CORRECTIONS\n\n- [plan] src/a.ts:3 incohérent\n' : 'VERDICT: APPROUVÉ\n')
     }
     return 'done' as const
   }
   const { fx, eng } = await setup({ over: { agents: { ask } } })
   let s = await until(eng, (x) => x.gates.some((g) => g.kind === 'arbitrage'))
   const g = s.gates.find((x) => x.kind === 'arbitrage')!
-  expect(g.summary).toContain('src/a.ts:3 imposé par le plan')
+  expect(g.summary).toContain('[plan] src/a.ts:3 incohérent')
   expect(await eng.tick()).toBe('wait')
   expect(fx.callsOf('agents.start').map((c) => c[0])).toEqual(['rgt-1'])
   await expect(readFile(join(gdir(), 'correctifs-1.md'))).rejects.toThrow()

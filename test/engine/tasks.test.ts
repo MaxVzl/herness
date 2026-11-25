@@ -4,7 +4,7 @@ import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import demo from '../fixtures/demo/config.ts'
 import { Engine } from '../../src/engine/engine.ts'
-import { stopAgent } from '../../src/engine/tasks.ts'
+import { ASK_TIMEOUT_MS, CONTRADICTS_PLAN, stopAgent } from '../../src/engine/tasks.ts'
 import { postInbox } from '../../src/mission/inbox.ts'
 import { loadState, newState, saveState, type Gate, type MissionState, type TaskState } from '../../src/mission/state.ts'
 import { missionDir, planPath, specPath } from '../../src/paths.ts'
@@ -238,6 +238,69 @@ test("un agent sans réponse bloque la mission", async () => {
   const { eng } = await setup({ over: { agents: { ask: async () => 'timeout' as const } } })
   const s = await until(eng, (x) => x.step === 'bloquée')
   expect(s.blockedReason).toContain('agent ct-1-t1 sans réponse')
+})
+
+test('Entrée de secours : une consigne stalled encore visible est envoyée et la tâche continue', async () => {
+  let implAsks = 0
+  const review = scriptedAsk(['VERDICT: APPROUVÉ'])
+  const { fx, eng } = await setup({
+    over: {
+      agents: {
+        ask: async (name: string, file: string) => {
+          if (name.startsWith('c') && implAsks++ === 0) return 'stalled' as const
+          return review(name, file)
+        },
+        nudge: async () => 'done' as const,
+      },
+    },
+  })
+  const s = await until(eng, (x) => x.tasks[0]!.phase === 'control' || x.step === 'bloquée')
+  expect(s.step).not.toBe('bloquée')
+  const agent = 'ct-1-t1'
+  expect(fx.callsOf('agents.nudge')).toEqual([[agent, s.herdr.panes[agent], join(taskDir(), 'brief.md'), ASK_TIMEOUT_MS.implementer]])
+  expect(s.log.map((l) => l.msg).join('\n')).toContain(`consigne de ${agent} restée dans la saisie, Entrée envoyée`)
+})
+
+test('Entrée de secours : stalled sans consigne visible bloque la mission comme avant', async () => {
+  const { fx, eng } = await setup({
+    over: { agents: { ask: async () => 'stalled' as const, nudge: async () => 'absent' as const } },
+  })
+  const s = await until(eng, (x) => x.step === 'bloquée')
+  expect(s.log.map((l) => l.msg).join('\n')).toContain('sans réponse')
+  expect(s.log.map((l) => l.msg).join('\n')).not.toContain('Entrée envoyée')
+  expect(fx.callsOf('agents.nudge')).toHaveLength(1)
+})
+
+test('Entrée de secours : stalled puis timeout après l\'Entrée bloque la mission', async () => {
+  const { fx, eng } = await setup({
+    over: { agents: { ask: async () => 'stalled' as const, nudge: async () => 'timeout' as const } },
+  })
+  const s = await until(eng, (x) => x.step === 'bloquée')
+  expect(s.step).toBe('bloquée')
+  expect(fx.callsOf('agents.nudge')).toHaveLength(1)
+})
+
+test('Entrée de secours : stalled sans panneau enregistré n\'appelle pas nudge', async () => {
+  const { fx, eng } = await setup({
+    over: {
+      herdr: { agentGet: async () => ({ state: 'idle' }) },
+      agents: { ask: async () => 'stalled' as const, nudge: async () => 'done' as const },
+    },
+  })
+  const s = await until(eng, (x) => x.step === 'bloquée')
+  expect(s.blockedReason).toContain('sans réponse')
+  expect(s.log.map((l) => l.msg).join('\n')).not.toContain('Entrée envoyée')
+  expect(fx.callsOf('agents.nudge')).toHaveLength(0)
+})
+
+test('Entrée de secours : stalled puis blocked ouvre une porte agent-bloque', async () => {
+  const { fx, eng } = await setup({
+    over: { agents: { ask: async () => 'stalled' as const, nudge: async () => 'blocked' as const } },
+  })
+  const s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-bloque'))
+  expect(s.gates[0]).toMatchObject({ kind: 'agent-bloque', status: 'pending' })
+  expect(s.step).not.toBe('bloquée')
+  expect(fx.callsOf('agents.nudge')).toHaveLength(1)
 })
 
 // herdr voit un cursor-agent au repos pendant une longue commande (vitest…) : seul le compte rendu prouve la fin.
@@ -592,11 +655,11 @@ test('une proposition modifiée après la demande est rejetée, le worktree rest
 
 // ---------- arbitrage des remarques qui contredisent le plan (I4) ----------
 
-test('une remarque « imposé par le plan » ouvre une porte arbitrage et suspend les correctifs ; chaque CORRECTIONS est signalé', async () => {
+test('une remarque marquée [plan] ouvre une porte arbitrage et suspend les correctifs ; chaque CORRECTIONS est signalé', async () => {
   const ask = async (name: string, file: string) => {
     if (name.startsWith('r')) {
       const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
-      await writeFile(out, 'VERDICT: CORRECTIONS\n\n## Remarques\n- src/a.ts:3 nom de variable\n- src/b.ts:9 colonne supprimée alors que c\'est Imposé par le plan (tâche 1)\n')
+      await writeFile(out, 'VERDICT: CORRECTIONS\n\n## Remarques\n- src/a.ts:3 nom de variable\n- [plan] src/b.ts:9 colonne supprimée (tâche 1)\n')
     }
     return 'done' as const
   }
@@ -616,6 +679,39 @@ test('une remarque « imposé par le plan » ouvre une porte arbitrage et suspen
   s = await until(eng, (x) => x.tasks[0]!.phase === 'control')
   const fix = await readFile(join(taskDir(), 'correctifs-1.md'), 'utf8')
   expect(fix).toContain('le plan prime, garder la colonne')
+})
+
+test('le libellé « imposé par le plan » cité dans une revue n\'ouvre pas d\'arbitrage', async () => {
+  const reviews = [
+    [
+      'VERDICT: CORRECTIONS',
+      '',
+      '1. **`src/engine/tasks.ts:73` : l\'arbitrage « imposé par le plan » ne se déclenche plus.**',
+      '   - Correction : passer la regex à `/imposed by the plan/i`.',
+      '- le marqueur `[plan]` n\'est pas écrit ici',
+      '- remarque Imposé par le plan (tâche 1)',
+    ].join('\n'),
+    'VERDICT: APPROUVÉ',
+  ]
+  let i = 0
+  const ask = async (name: string, file: string) => {
+    if (name.startsWith('r')) {
+      const out = join(dirname(file), basename(file).replace(/^consigne-/, ''))
+      await writeFile(out, `${reviews[Math.min(i++, reviews.length - 1)]}\n`)
+    }
+    return 'done' as const
+  }
+  const { eng } = await setup({ over: { agents: { ask } } })
+  const s = await until(eng, (x) => x.tasks[0]!.phase === 'done')
+  expect(s.gates.filter((g) => g.kind === 'arbitrage')).toEqual([])
+})
+
+test('CONTRADICTS_PLAN reconnaît [plan] en tête de remarque seulement', () => {
+  for (const line of ['- [plan] …', '* [plan] …', '1. [plan] …', '1. **[plan]** …', '**[plan]** …', '[plan] …']) {
+    expect(CONTRADICTS_PLAN.test(line)).toBe(true)
+  }
+  expect(CONTRADICTS_PLAN.test('le marqueur `[plan]` ici')).toBe(false)
+  expect(CONTRADICTS_PLAN.test('- texte [plan] au milieu')).toBe(false)
 })
 
 test('un verdict CORRECTIONS sans contradiction du plan informe l\'orchestrateur sans ouvrir de porte', async () => {

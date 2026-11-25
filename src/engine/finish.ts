@@ -566,7 +566,8 @@ async function startFix(s: MissionState, e: Effects, findings: string, failure: 
 
 /**
  * Preuve qu'un rouge existe déjà sur main : worktree détaché temporaire sur `origin/<main>`, préparation, base de
- * test `<id>-main`, puis la même commande. Worktree et base supprimés quoi qu'il arrive.
+ * test `<id>-main`, puis la même commande, avec `TURBO_FORCE=1` (le cache turbo est partagé entre worktrees et
+ * rejouerait un ancien succès). Worktree et base supprimés quoi qu'il arrive.
  */
 async function proveOnMain(s: MissionState, e: Effects, cfg: ProjectConfig): Promise<StepResult> {
   const P = s.loops.preflight
@@ -613,7 +614,7 @@ async function proveOnMain(s: MissionState, e: Effects, cfg: ProjectConfig): Pro
       const up = await e.runInPane(e.herdr, tab, path, 'preuve main · base de test', fill(cfg.testDb.up, vars), logs)
       if (up.exitCode !== 0) failure = `base de test ${vars.id} non créée (code ${up.exitCode}), journal : ${up.logPath}`
     }
-    if (!failure) proof = await e.runInPane(e.herdr, tab, path, `preuve main · ${f.label}`, fill(check.command, vars), logs)
+    if (!failure) proof = await e.runInPane(e.herdr, tab, path, `preuve main · ${f.label}`, ['env', 'TURBO_FORCE=1', ...fill(check.command, vars)], logs)
   } finally {
     await cleanup()
   }

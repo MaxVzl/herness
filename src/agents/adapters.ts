@@ -23,7 +23,7 @@ export interface AgentOptions {
 }
 
 /** Surface de `Herdr` utilisée ici ; une doublure l'implémente dans les tests. */
-export type AgentApi = Pick<Herdr, 'agentStart' | 'agentPrompt' | 'agentWait' | 'agentGet' | 'agentRead'>;
+export type AgentApi = Pick<Herdr, 'agentStart' | 'agentPrompt' | 'agentWait' | 'agentGet' | 'agentRead' | 'paneSendKeys'>;
 
 /** Dans une règle de permission, `/x` est relatif au projet : un chemin absolu prend `//`. */
 const absRule = (tool: string, path: string, glob: string): string => `${tool}(/${path}/${glob})`;
@@ -74,6 +74,14 @@ export function agentArgs(role: Role, o: AgentOptions): AgentLaunch {
 
 const START_TIMEOUT_MS = 90_000;
 
+/** Même garde que `agent prompt --wait` : une activité doit apparaître dans les 5 s, sinon l'Entrée n'a rien lancé. */
+const ACTIVITY_GUARD_MS = 5_000;
+const ACTIVITY_POLL_MS = 200;
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const PROMPT_MARK = 'Lis et exécute intégralement le fichier';
+
 export class AgentRunner {
   constructor(
     private readonly h: AgentApi,
@@ -84,10 +92,41 @@ export class AgentRunner {
     await this.h.agentStart(name, launch.kind, pane, launch.args, START_TIMEOUT_MS);
   }
 
-  /** Donne un fichier de consigne à l'agent et attend. Jamais de renvoi à l'aveugle après un délai. */
-  async ask(name: string, promptFile: string, timeoutMs: number): Promise<'done' | 'blocked' | 'timeout'> {
-    const outcome = await this.h.agentPrompt(name, `Lis et exécute intégralement le fichier ${promptFile}`, { wait: true, timeoutMs });
+  /**
+   * Donne un fichier de consigne à l'agent et attend. Jamais de renvoi à l'aveugle après un délai.
+   * `stalled` rendu tel quel : l'appelant peut tenter `nudge`.
+   */
+  async ask(name: string, promptFile: string, timeoutMs: number): Promise<'done' | 'blocked' | 'timeout' | 'stalled'> {
+    const outcome = await this.h.agentPrompt(name, `${PROMPT_MARK} ${promptFile}`, { wait: true, timeoutMs });
+    if (outcome === 'stalled') {
+      await this.note(name, outcome);
+      return 'stalled';
+    }
     return this.settle(name, outcome);
+  }
+
+  /**
+   * Jamais de renvoi du texte : une seule Entrée si la consigne est encore visible.
+   * L'attente ne part que si l'agent passe à `working` ou `blocked` pendant la garde ; sinon `timeout`.
+   */
+  async nudge(name: string, pane: string, promptFile: string, timeoutMs: number): Promise<'done' | 'blocked' | 'timeout' | 'absent'> {
+    const tail = await this.h.agentRead(name, 40);
+    if (!tail.includes(basename(promptFile)) || !tail.includes(PROMPT_MARK)) return 'absent';
+    await this.h.paneSendKeys(pane, 'Enter');
+    if (!(await this.sawActivity(name))) return 'timeout';
+    return this.wait(name, timeoutMs);
+  }
+
+  /** `working` ou `blocked` observé via `agentGet` dans les ~5 s qui suivent l'Entrée. */
+  private async sawActivity(name: string): Promise<boolean> {
+    const deadline = Date.now() + ACTIVITY_GUARD_MS;
+    for (;;) {
+      const state = (await this.h.agentGet(name))?.state;
+      if (state === 'working' || state === 'blocked') return true;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await delay(Math.min(ACTIVITY_POLL_MS, remaining));
+    }
   }
 
   /** Attend la fin du travail en cours sans rien envoyer (reprise après un redémarrage du moteur). */
@@ -96,12 +135,16 @@ export class AgentRunner {
     return this.settle(name, outcome);
   }
 
-  private async settle(name: string, outcome: string): Promise<'done' | 'blocked' | 'timeout'> {
-    if (outcome === 'idle' || outcome === 'done') return 'done';
-    if (outcome === 'blocked') return 'blocked';
+  private async note(name: string, outcome: string): Promise<void> {
     const info = await this.h.agentGet(name);
     const tail = await this.h.agentRead(name, 80);
     this.log(`agent ${name} : ${outcome}, état ${info?.state ?? 'introuvable'}\n${tail}`);
+  }
+
+  private async settle(name: string, outcome: string): Promise<'done' | 'blocked' | 'timeout'> {
+    if (outcome === 'idle' || outcome === 'done') return 'done';
+    if (outcome === 'blocked') return 'blocked';
+    await this.note(name, outcome);
     return 'timeout';
   }
 }

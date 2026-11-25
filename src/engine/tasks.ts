@@ -70,11 +70,11 @@ export async function findingsOf(path: string | undefined): Promise<string> {
   return raw.split('\n').slice(1).join('\n').trim() || '(aucune)'
 }
 
-const CONTRADICTS_PLAN = /imposé par le plan/i
+export const CONTRADICTS_PLAN = /^(?:[-*]|\d+\.)?\s*(?:\*\*)?\[plan\]/i
 
 /**
  * Verdict CORRECTIONS (tâche, revue globale, re-revue du preflight) : l'orchestrateur est prévenu en une ligne ; des
- * remarques qui contredisent le plan (« imposé par le plan ») ouvrent une porte `arbitrage`, et les correctifs
+ * remarques qui contredisent le plan (marqueur `[plan]` en tête de remarque) ouvrent une porte `arbitrage`, et les correctifs
  * attendent la décision de l'utilisateur (`arbitrationPending`), dont la note entre dans le fichier de correctifs.
  */
 export async function onCorrections(s: MissionState, e: Effects, what: string, reviewPath: string, round: number): Promise<void> {
@@ -227,7 +227,15 @@ export type AskHolder = { pendingAsk?: PendingAsk | undefined; blockedGate?: str
 export async function askAgent(s: MissionState, e: Effects, h: AskHolder, what: string, role: Role, pending: PendingAsk): Promise<'done' | StepResult> {
   h.pendingAsk = pending
   await saveState(s)
-  const r = await e.agents.ask(pending.agent, pending.file, ASK_TIMEOUT_MS[role])
+  let r: 'done' | 'blocked' | 'timeout' | 'stalled' = await e.agents.ask(pending.agent, pending.file, ASK_TIMEOUT_MS[role])
+  if (r === 'stalled') {
+    const pane = s.herdr.panes[pending.agent]
+    const nudged = pane ? await e.agents.nudge(pending.agent, pane, pending.file, ASK_TIMEOUT_MS[role]) : 'absent'
+    if (nudged !== 'absent') {
+      log(s, e, `${what} : consigne de ${pending.agent} restée dans la saisie, Entrée envoyée`)
+      r = nudged
+    } else r = 'timeout'
+  }
   return settle(s, e, h, what, pending.agent, await proven(s, e, what, pending, r))
 }
 
