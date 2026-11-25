@@ -34,7 +34,7 @@ async function setup(opts: { over?: FakeOverrides; patch?: Partial<MissionState>
   loops.preflight.validatedSha = 'sha-head'
   loops.preflight.results = [
     { label: 'lint', exitCode: 0, durationMs: 4200, logPath: '/l/lint.log' },
-    { label: 'test', exitCode: 1, durationMs: 125000, logPath: '/l/test.log', note: 'rouge aussi sur origin/main' },
+    { label: 'test', exitCode: 1, durationMs: 125000, logPath: '/l/test.log', note: 'also red on origin/main' },
   ]
   loops.preflight.acceptedRed = ['test']
   const s: MissionState = {
@@ -182,7 +182,7 @@ test('stepPr with a recorded prUrl goes straight to pr-open', async () => {
 })
 
 test('stepPr returns to preflight when HEAD is not the head validated by preflight', async () => {
-  const { fx, eng } = await setup({ over: { git: { headSha: async () => 'sha-autre' } } })
+  const { fx, eng } = await setup({ over: { git: { headSha: async () => 'sha-other' } } })
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.step).toBe('preflight')
@@ -200,11 +200,11 @@ test('stepPr refuses to push the main branch or a branch other than the mission 
   expect(s.blockedReason).toMatch(/main branch/)
   expect(r.fx.callsOf('git.push')).toEqual([])
 
-  r = await setup({ over: { git: { currentBranch: async () => 'feature/autre' } } })
+  r = await setup({ over: { git: { currentBranch: async () => 'feature/other' } } })
   await r.eng.tick()
   s = await loadState('T-1')
   expect(s.step).toBe('blocked')
-  expect(s.blockedReason).toMatch(/feature\/autre/)
+  expect(s.blockedReason).toMatch(/feature\/other/)
   expect(r.fx.callsOf('git.push')).toEqual([])
   expect(r.fx.callsOf('git.rebaseOnto')).toEqual([])
 })
@@ -247,7 +247,7 @@ test('resume-blocked approved: back to the blocked step, rounds of the current t
   const tasks = [task({ n: 1, round: 2 }), task({ n: 2, title: 'Export', phase: 'test', round: 4 })]
   const { eng, gate } = await blocked('tasks', { tasks })
   await mkdir(join(missionDir('T-1'), 'tasks', '2'), { recursive: true })
-  await writeFile(join(missionDir('T-1'), 'tasks', '2', 'correctifs-1.md'), 'ancien')
+  await writeFile(join(missionDir('T-1'), 'tasks', '2', 'correctifs-1.md'), 'old')
   await postInbox('T-1', { type: 'decision', source: 'user', gateId: gate, decision: 'approved' })
   await eng.tick()
   const s = await loadState('T-1')
@@ -305,7 +305,7 @@ test('resume-blocked approved from the global review or preflight: loop rounds a
 
 test('resume-blocked refused: the mission stays blocked', async () => {
   const { eng, gate } = await blocked('tasks', { tasks: [task({ phase: 'test', round: 4 })] })
-  await postInbox('T-1', { type: 'decision', source: 'user', gateId: gate, decision: 'refused', note: 'pas encore' })
+  await postInbox('T-1', { type: 'decision', source: 'user', gateId: gate, decision: 'refused', note: 'not yet' })
   await eng.tick()
   const s = await loadState('T-1')
   expect(s.step).toBe('blocked')

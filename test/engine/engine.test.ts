@@ -174,7 +174,7 @@ test('a rejected spec gate sends the note back to the orchestrator and returns t
   expect((await loadState('T-1')).step).toBe('spec')
 })
 
-const PLAN = '# Plan\n\n### Tâche 1 : Model\n\n**Test :** `pnpm test a`\n\nfaire a\n\n### Tâche 2 : Export\n\n**Test :** `pnpm test b`\n\nfaire b\n'
+const PLAN = '# Plan\n\n### Task 1: Model\n\n**Test:** `pnpm test a`\n\ndo a\n\n### Task 2: Export\n\n**Test:** `pnpm test b`\n\ndo b\n'
 
 test('an approved plan gate fills state.tasks from the plan', async () => {
   const s0 = await mission({ step: 'plan', type: 'feat', slug: 'export-csv' })

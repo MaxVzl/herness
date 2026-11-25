@@ -46,9 +46,6 @@ const EXCEPTIONS: { file: string; excerpt: string; reason: string }[] = [
   { file: 'src/mission/state.ts', excerpt: 'bloquée', reason: 'migrateLegacy table: 0.8 step bloquée' },
   { file: 'src/ui/model.ts', excerpt: 'mission fermée', reason: '0.8 close log line is still recognized' },
   { file: 'src/update.ts', excerpt: 'herness reprendre', reason: '0.8 command quoted when rolling back with --version' },
-  { file: 'test/engine/engine.test.ts', excerpt: '### Tâche', reason: 'fixture of a legacy plan' },
-  { file: 'test/engine/finish.test.ts', excerpt: '### Tâche', reason: 'fixture of a legacy plan' },
-  { file: 'test/engine/tasks.test.ts', excerpt: '### Tâche', reason: 'fixture of a legacy plan' },
   { file: 'test/errreport-send.test.ts', excerpt: '(étape', reason: 'fixture of a legacy error log' },
   { file: 'test/errreport.test.ts', excerpt: '(étape', reason: 'fixture of a legacy error log' },
   { file: 'test/install/update.test.ts', excerpt: 'herness reprendre', reason: 'asserts the 0.8 rollback message' },
@@ -75,14 +72,20 @@ function allowed(file: string, line: string): boolean {
 
 test('tracked sources, tests and docs stay in English', () => {
   const hits: string[] = []
+  const used = new Set<number>()
   for (const file of trackedFiles()) {
     const text = readFileSync(join(root, file), 'utf8')
     text.split('\n').forEach((line, index) => {
+      EXCEPTIONS.forEach((entry, i) => {
+        if (entry.file === file && line.includes(entry.excerpt)) used.add(i)
+      })
       if (allowed(file, line)) return
       if (ACCENTS.test(line) || WORD_RE.test(line)) {
         hits.push(`${file}:${index + 1}: ${line.trim()}`)
       }
     })
   }
+  const unused = EXCEPTIONS.filter((_, i) => !used.has(i)).map((entry) => `${entry.file}: ${entry.excerpt}`)
+  expect(unused, unused.join('\n')).toEqual([])
   expect(hits, hits.join('\n')).toEqual([])
 })

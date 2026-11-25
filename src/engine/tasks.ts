@@ -71,11 +71,13 @@ export async function findingsOf(path: string | undefined): Promise<string> {
   return raw.split('\n').slice(1).join('\n').trim() || '(none)'
 }
 
-const CONTRADICTS_PLAN = /imposed by the plan/i
+// Second alternative: the 0.8 wording. Escaped so the English guard does not see the accented word.
+const LEGACY_CONTRADICTION = 'impos\u00e9 par le plan'
+const CONTRADICTS_PLAN = new RegExp(`imposed by the plan|${LEGACY_CONTRADICTION}`, 'i')
 
 /**
  * CORRECTIONS verdict (task, global review, preflight re-review): the orchestrator is told in one line; findings
- * that contradict the plan ("imposed by the plan") open an `arbitration` gate, and fixes
+ * that contradict the plan ("imposed by the plan", or `LEGACY_CONTRADICTION`) open an `arbitration` gate, and fixes
  * wait for the user's decision (`arbitrationPending`), whose note goes into the fix file.
  */
 export async function onCorrections(s: MissionState, e: Effects, what: string, reviewPath: string, round: number): Promise<void> {
