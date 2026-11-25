@@ -280,6 +280,29 @@ test('Entrée de secours : stalled puis timeout après l\'Entrée bloque la miss
   expect(fx.callsOf('agents.nudge')).toHaveLength(1)
 })
 
+test('Entrée de secours : stalled sans panneau enregistré n\'appelle pas nudge', async () => {
+  const { fx, eng } = await setup({
+    over: {
+      herdr: { agentGet: async () => ({ state: 'idle' }) },
+      agents: { ask: async () => 'stalled' as const, nudge: async () => 'done' as const },
+    },
+  })
+  const s = await until(eng, (x) => x.step === 'bloquée')
+  expect(s.blockedReason).toContain('sans réponse')
+  expect(s.log.map((l) => l.msg).join('\n')).not.toContain('Entrée envoyée')
+  expect(fx.callsOf('agents.nudge')).toHaveLength(0)
+})
+
+test('Entrée de secours : stalled puis blocked ouvre une porte agent-bloque', async () => {
+  const { fx, eng } = await setup({
+    over: { agents: { ask: async () => 'stalled' as const, nudge: async () => 'blocked' as const } },
+  })
+  const s = await until(eng, (x) => x.gates.some((g) => g.kind === 'agent-bloque'))
+  expect(s.gates[0]).toMatchObject({ kind: 'agent-bloque', status: 'pending' })
+  expect(s.step).not.toBe('bloquée')
+  expect(fx.callsOf('agents.nudge')).toHaveLength(1)
+})
+
 // herdr voit un cursor-agent au repos pendant une longue commande (vitest…) : seul le compte rendu prouve la fin.
 test("un implémenteur vu au repos sans compte rendu n'est pas contrôlé avant d'avoir écrit son compte rendu", async () => {
   let sleeps = 0

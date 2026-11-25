@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AgentRunner, agentArgs, type AgentApi } from '../../src/agents/adapters.js';
 
 const base = { model: 'm', worktree: '/wt', missionDir: '/home/u/missions/42' };
@@ -115,6 +115,44 @@ describe('AgentRunner', () => {
     expect(await new AgentRunner(api, () => {}).nudge('a', 'w:p1', '/p/x/brief.md', 5000)).toBe('absent');
     expect(calls.some((c) => c.startsWith('keys'))).toBe(false);
     expect(calls.some((c) => c.startsWith('wait'))).toBe(false);
+  });
+
+  it('nudge ignore un nom de fichier cité sans la phrase de consigne', async () => {
+    const { api, calls } = fake('idle', 'working', 'sortie précédente : lu brief.md');
+    expect(await new AgentRunner(api, () => {}).nudge('a', 'w:p1', '/p/x/brief.md', 5000)).toBe('absent');
+    expect(calls.some((c) => c.startsWith('keys'))).toBe(false);
+    expect(calls.some((c) => c.startsWith('wait'))).toBe(false);
+  });
+
+  it('nudge rend timeout sans appeler wait si l\'agent reste idle après l\'Entrée', async () => {
+    vi.useFakeTimers();
+    try {
+      const { api, calls } = fake('idle', 'idle', '> Lis et exécute intégralement le fichier /p/brief.md', 'done');
+      const pending = new AgentRunner(api, () => {}).nudge('a', 'w:p1', '/p/brief.md', 5000);
+      await vi.runAllTimersAsync();
+      expect(await pending).toBe('timeout');
+      expect(calls.filter((c) => c.startsWith('keys'))).toHaveLength(1);
+      expect(calls.some((c) => c.startsWith('wait'))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('nudge attend l\'agent dès qu\'une activité working ou blocked apparaît dans la garde', async () => {
+    vi.useFakeTimers();
+    try {
+      const states = ['idle', 'idle', 'blocked'];
+      const { api, calls } = fake('idle', 'idle', '> Lis et exécute intégralement le fichier /p/brief.md', 'blocked');
+      api.agentGet = async (n) => (calls.push(`get ${n}`), { state: states.shift() ?? 'blocked' });
+      const pending = new AgentRunner(api, () => {}).nudge('a', 'w:p1', '/p/brief.md', 5000);
+      await vi.runAllTimersAsync();
+      expect(await pending).toBe('blocked');
+      const waitAt = calls.indexOf('wait a idle,done,blocked 5000');
+      const getsBeforeWait = calls.slice(0, waitAt).filter((c) => c.startsWith('get')).length;
+      expect(getsBeforeWait).toBeGreaterThanOrEqual(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('nudge rend timeout si l\'agent reste stalled après l\'Entrée', async () => {
